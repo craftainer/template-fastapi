@@ -56,14 +56,24 @@ needs no change).
    questions" below — since a multi-platform OCI tarball isn't something
    plain `docker load` can consume.
 
-5. **Docs.** Update `.github/workflows/README.md` (the `checks.yml`/
+5. **Pin `ubuntu-latest` to `ubuntu-24.04` repo-wide.** While touching
+   `runs-on` for the matrix, replace the floating `ubuntu-latest` default
+   with the concrete `ubuntu-24.04` everywhere it appears
+   (`checks.yml`, `smoke.yml`, `release.yml`, `perf.yml`,
+   `template-sync.yml`), so the amd64 leg is pinned to the same Ubuntu
+   release as the new `ubuntu-24.04-arm` leg instead of drifting
+   independently whenever GitHub rolls `ubuntu-latest` to a new default.
+   Update `.github/workflows/README.md`'s "Every workflow's `runs-on`
+   defaults to `ubuntu-latest`..." line to match.
+
+6. **Docs.** Update `.github/workflows/README.md` (the `checks.yml`/
    `smoke.yml`/`release.yml` bullets, and the `CI_RUNNER` paragraph) and
    `docs/TEMPLATE.md`'s "Checks" section to describe the matrix and the
    split runner-override variables, per this repo's own rule that a
    convention about the repo belongs in that directory's `README.md`,
    not only in a plan file.
 
-6. **Verify.** Push a branch/PR and confirm both matrix legs go green on
+7. **Verify.** Push a branch/PR and confirm both matrix legs go green on
    `checks.yml` and `smoke.yml`; run `release.yml` once (an `alpha`
    release) and confirm the resulting image/tarball(s) actually contain
    both platforms (`docker buildx imagetools inspect` against the
@@ -80,12 +90,14 @@ needs no change).
   release (`template-fastapi-<version>-amd64.tar` /
   `-arm64.tar`), or (c) attach the single multi-platform OCI tarball and
   document `docker buildx imagetools`/`skopeo` as the way to load it.
-- **Runner cost/speed for `checks.yml`/`smoke.yml`.** Real
-  `ubuntu-24.04-arm` runners are fast but only free on public repos;
-  QEMU-emulated arm64 on a regular amd64 runner is free everywhere but
-  meaningfully slower for a job that already runs the full
-  `--hook-stage manual` suite. Confirm which this repository (or its
-  instances) actually needs before implementing the matrix.
+- ~~**Runner cost/speed for `checks.yml`/`smoke.yml`.**~~ Resolved:
+  `template-fastapi` is public (as of 2026-09-06), so `ubuntu-24.04-arm`
+  runners are free and billed as ordinary public-repo Actions minutes —
+  use native arm64 runners as step 2/3 already describe, not QEMU
+  emulation. QEMU stays only where step 4 already needs it, to
+  cross-build the arm64 layer for `release.yml` on an amd64 runner. A
+  fork or private instance of this template would need to revisit this
+  (QEMU-on-amd64 trades cost for slower emulated builds).
 - **`CI_RUNNER` split.** Splitting into `CI_RUNNER_AMD64`/
   `CI_RUNNER_ARM64` is a breaking rename for anyone who already set the
   single `CI_RUNNER` variable for a self-hosted runner — confirm this
