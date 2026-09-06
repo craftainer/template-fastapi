@@ -20,4 +20,4 @@ class HealthCheck(Protocol):
 
     async def check(self) -> HealthCheckResult:
         """Run the check and return its result."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...

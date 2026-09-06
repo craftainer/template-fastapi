@@ -48,7 +48,7 @@ class RevisionSink(Protocol):
         self, *, resource: str, record_id: int, action: str, snapshot: dict[str, Any], actor: str
     ) -> None:
         """Append one revision log entry."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
 
 @dataclass(frozen=True)
@@ -102,7 +102,7 @@ class EventSink(Protocol):
         """Publish one event for `resource`/`record_id` -- delivery semantics are the
         concrete adapter's own (see MQTTEventSink: at-least-once at QoS 1; InMemoryEventSink:
         best-effort, no delivery guarantee)."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
 
 class EventSource(Protocol):
@@ -128,7 +128,7 @@ class EventSource(Protocol):
         guarantee" section. A caller that discards its subscriber_id and passes None gets
         a fresh session with no replay, by design.
         """
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
 
 def _event_envelope(
@@ -366,7 +366,7 @@ class CRUDLike[SchemaT: BaseModel](Protocol):
         self, record_id: int, *, include_archived: bool = False, include_unpublished: bool = False
     ) -> SchemaT | None:
         """Return the record with the given id as a view, or None if it doesn't exist."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
     async def list(
         self,
@@ -379,7 +379,7 @@ class CRUDLike[SchemaT: BaseModel](Protocol):
         include_unpublished: bool = False,
     ) -> list[SchemaT]:
         """Return up to `limit` matching records as views, skipping the first `skip`."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
     async def count(
         self,
@@ -389,29 +389,29 @@ class CRUDLike[SchemaT: BaseModel](Protocol):
         include_unpublished: bool = False,
     ) -> int:
         """Return how many records match the given filters."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
     async def create(self, data: BaseModel) -> SchemaT:
         """Create a record from the given input view and return it as a view."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
     async def update(self, record_id: int, data: BaseModel) -> SchemaT | None:
         """Apply the given input view's set fields to the record, if it exists."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
     async def delete(self, record_id: int) -> bool:
         """Delete the record with the given id; return whether it existed."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
     async def update_many(
         self, *, filters: Sequence[FilterClause], data: BaseModel
     ) -> Sequence[SchemaT]:
         """Apply the given input view's set fields to every matching record; return them."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
     async def delete_many(self, *, filters: Sequence[FilterClause]) -> Sequence[SchemaT]:
         """Delete every record matching the filters; return the records that were deleted."""
-        ...  # pragma: no cover -- Protocol stub, never executed directly
+        ...
 
 
 class CRUDInterface[SchemaT: BaseModel, ModelT]:

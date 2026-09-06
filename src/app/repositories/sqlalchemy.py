@@ -298,7 +298,7 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
                 await self._session.delete(instance)  # pragma: no cover -- see module docstring
         await self._session.flush()
         for instance in instances:
-            if hasattr(instance, "archived_at"):  # pragma: no cover -- see module docstring
+            if hasattr(instance, "archived_at"):  # pragma: no branch -- see module docstring
                 await self._session.refresh(instance)
         return instances
 
