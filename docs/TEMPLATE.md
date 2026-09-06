@@ -69,8 +69,8 @@ defaults), then
 are all configured to fail on any violation — see `pyproject.toml`.
 `pytest` also fails below 100% coverage of `src/app`, for both the
 default run (`tests/unit` + `tests/integration`) and `uv run pytest
-tests/e2e`. `.github/dependabot.yml` opens a weekly update PR for Python
-dependencies, GitHub Actions, and the Dockerfile's base images. Run
+tests/e2e`. `.github/renovate.json` opens a weekly update PR for Python
+dependencies, GitHub Actions, and every Dockerfile/compose image tag. Run
 everything at once with:
 
 ```bash
@@ -149,7 +149,7 @@ duplicates or re-pins it elsewhere:
   per PEP 621) instead of re-pinning the same package a second time.
 - Everything else pinned (base images, Actions, hook revisions): pinned
   once, at its single point of use, to an exact patch version — never a
-  floating range or `latest` — so Renovate/Dependabot can bump them one
+  floating range or `latest` — so Renovate can bump them one
   at a time and the diff shows exactly what changed. The one exception is
   the Dockerfile's `PYTHON_VERSION` `ARG`: it's pinned to minor only,
   because `mcr.microsoft.com/devcontainers/python` (the `develop` stage's

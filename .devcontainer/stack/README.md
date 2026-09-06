@@ -86,7 +86,7 @@ assembles them into the settings the app itself reads.
   in `../devcontainer.json` — never to a `ports:` mapping here.
 - Pin an image tag to the app version only (`postgres:16.15-alpine`),
   not the OS sub-patch a multi-part tag like `postgres:16.15-alpine3.24`
-  adds on top — Renovate/Dependabot still bumps the app version fine
+  adds on top — Renovate still bumps the app version fine
   either way, and the extra digits just add unrelated diffs. A tag
   segment that names a genuinely different build variant (`-glibc` vs.
   the default, `-noble` vs. another base OS) isn't this kind of

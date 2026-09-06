@@ -1,0 +1,21 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 6am on monday"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\nARG \\w+_VERSION=(?<currentValue>.*)\\s"
+      ]
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["^\\.claude/mcp/playwright_selenium_bridge\\.py$"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\n_PLAYWRIGHT_MCP_VERSION = \"(?<currentValue>.*)\"\\s"
+      ]
+    }
+  ]
+}

@@ -116,4 +116,4 @@ process itself starts with anyway.
 - Add a `ports:` mapping or a `networks:` block anywhere here — see
   `stack/README.md`'s "Devcontainer stack pattern" section.
 - Pin a feature or image version as `latest` — pin the exact version so
-  Renovate/Dependabot can bump it deliberately.
+  Renovate can bump it deliberately.
