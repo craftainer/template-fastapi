@@ -31,12 +31,14 @@
     }
   },
   "mounts": [
-    "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"
+    "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind",
+    "source=/run/host-services/ssh-auth.sock,target=/ssh-agent-macos,type=bind"
   ],
   "remoteEnv": {
-    "SSH_AUTH_SOCK": "/ssh-agent"
+    "SSH_AUTH_SOCK": "/home/vscode/.ssh-agent-resolved.sock"
   },
   "postCreateCommand": "git config --global --add safe.directory /workspace && uv sync --extra dev && uv run prek install && uv run alembic upgrade head",
+  "postStartCommand": "sh /workspace/.devcontainer/resolve-ssh-agent.sh",
   "customizations": {
     "vscode": {
       "extensions": [

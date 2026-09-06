@@ -28,22 +28,47 @@ this affects.
 
 ## SSH agent forwarding
 
-`devcontainer.json`'s `mounts` bind-mounts the host's SSH agent socket
-(`${localEnv:SSH_AUTH_SOCK}`) to `/ssh-agent`, and `remoteEnv` points
-`SSH_AUTH_SOCK` at it, so `git push` over SSH inside the container
+`devcontainer.json`'s `mounts` bind-mounts two possible SSH agent
+sockets, and `postStartCommand` runs `resolve-ssh-agent.sh` on every
+container start to symlink whichever one actually works to
+`/home/vscode/.ssh-agent-resolved.sock` — the path `remoteEnv` points
+`SSH_AUTH_SOCK` at. Either way, `git push` over SSH inside the container
 authenticates against the same agent and keys already loaded on the
-host — no key material is ever copied into the container. This requires
-an agent to actually be running on the host with `SSH_AUTH_SOCK` set
-*in the process VS Code itself launches from* (e.g. running `code .`
-from the same shell that started the agent) before connecting, and a
-full "Rebuild Container" (mounts don't apply to an already-running
-container) after this file changes. If `SSH_AUTH_SOCK` is unset when
-the container is created (true for `devcontainers/ci` in
-`.github/workflows/checks.yml` — GitHub Actions runners have no agent),
-`@devcontainers/cli` drops the empty source and the mount degrades to a
-plain anonymous volume at `/ssh-agent` instead of erroring — `ssh`/`git`
-inside the container then fall back to failing the way they did before
-this was added, which is harmless there since CI never pushes.
+host — no key material is ever copied into the container.
+
+The two candidates:
+
+- `/ssh-agent` — the host's own `SSH_AUTH_SOCK` (`${localEnv:SSH_AUTH_SOCK}`),
+  bind-mounted directly. This is a real Linux socket on WSL2, so normal
+  Unix permissions carry through and it works as-is (see "Windows" below
+  for getting an agent running there in the first place). If
+  `SSH_AUTH_SOCK` is unset when the container is created (true for
+  `devcontainers/ci` in `.github/workflows/checks.yml` — GitHub Actions
+  runners have no agent), `@devcontainers/cli` drops the empty source and
+  this mount degrades to a plain anonymous volume instead of erroring —
+  harmless there since CI never pushes.
+- `/ssh-agent-macos` — Docker Desktop's own agent-forwarding proxy, always
+  available at the fixed path `/run/host-services/ssh-auth.sock` inside
+  its VM on both macOS and Windows. macOS has no real `SSH_AUTH_SOCK`
+  equivalent to WSL2's — the closest thing is this VM-internal proxy.
+
+Both sockets arrive owned `root:root` mode `660` regardless of platform
+or who owns the socket on the host side — bind-mounting a socket special
+file carries over the owning uid/gid as seen inside the Docker Desktop
+VM (root), not the host user's — so `remoteUser` (`vscode`) can't connect
+to either without help. `resolve-ssh-agent.sh` runs `sudo chmod 666` on
+each candidate before testing it (harmless: these are forwarding sockets
+meant to be reachable by whatever connects to them, and chmod on a bind
+mount only touches this one inode, not host files) — this needs the
+passwordless `sudo` already granted to `vscode`.
+
+Both also require an agent to actually be running on the host — on
+macOS, `ssh-add -l` in a host Terminal should list a key; if it doesn't,
+`ssh-add --apple-use-keychain ~/.ssh/id_ed25519` first — and a full
+"Rebuild Container" after `mounts` changes (mounts don't apply to an
+already-running container). `resolve-ssh-agent.sh` re-checks both
+sockets on every start (not just container creation) since which one is
+live can change if the host agent restarts between sessions.
 
 ### Windows
 
