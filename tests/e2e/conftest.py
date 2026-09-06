@@ -97,6 +97,10 @@ def _running_app(app_mode: str, base_url: str) -> Generator[None]:
         # that's covered directly instead, in tests/unit/test_rate_limit.py.
         "RATE_LIMIT_MOCK_TOKEN": "1000/minute",
         "RATE_LIMIT_BULK_ACTION": "1000/minute",
+        # Short, not the 15s production default: test_hero_events_e2e.py waits for a
+        # real keep-alive comment on an idle GET .../events subscription, and doing
+        # that at the production interval would make that test needlessly slow.
+        "SSE_KEEPALIVE_SECONDS": "0.2",
     }
     # 0.0.0.0: must be reachable from the sibling selenium container, not
     # just loopback -- same as the root README's manual startup command.

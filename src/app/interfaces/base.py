@@ -20,6 +20,7 @@ what's counted toward the separate `pytest tests/e2e` coverage gate.
 """
 
 import asyncio
+import contextlib
 import json
 import uuid
 from collections.abc import AsyncIterator, Sequence
@@ -143,6 +144,15 @@ def _event_envelope(
     }
 
 
+# Strong references for MQTTEventSource._events's detached disconnect tasks -- asyncio
+# only holds a *weak* reference to a task once nothing else does, so a fire-and-forget
+# `asyncio.ensure_future(...)` with no reference kept anywhere is eligible for garbage
+# collection mid-run (see the stdlib docs' own "Save a reference to the result" note on
+# asyncio.create_task); `add_done_callback` below is what lets each entry clean itself
+# up once its disconnect actually finishes, so this doesn't grow unboundedly.
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
 @dataclass(frozen=True)
 class MQTTEventSink:
     """EventSink publishing to a real MQTT broker at QoS 1, one short-lived connection per call.
@@ -200,22 +210,66 @@ class MQTTEventSource:
     async def subscribe(
         self, subscriber_id: str | None
     ) -> tuple[str, AsyncIterator[dict[str, Any]]]:
-        """Resolve subscriber_id and return it with an async iterator of event envelopes."""
-        resolved = subscriber_id or str(uuid.uuid4())
-        return resolved, self._events(resolved)
+        """Resolve subscriber_id, connect and subscribe the persistent session, and
+        return it with an async iterator of event envelopes from that point on.
 
-    async def _events(self, subscriber_id: str) -> AsyncIterator[dict[str, Any]]:
-        """Open the persistent-session connection and yield decoded event envelopes."""
-        async with aiomqtt.Client(
+        Connecting and subscribing *here*, before returning, rather than lazily on the
+        iterator's first `__anext__()`, is what makes the delivery guarantee this class
+        promises actually hold: app.controllers.crud_router's `_sse_events` sends its
+        first (`id: 0`) frame -- the caller's signal that `subscriber_id` is now safely
+        registered and safe to reconnect with -- as soon as `subscribe()` returns, and
+        a caller is free to disconnect the instant it sees that frame (this is exactly
+        what tests/integration/crud_1/heroes/test_heroes_v2_events.py does). Deferring
+        the actual MQTT CONNECT/SUBSCRIBE to the iterator's first step raced that: a
+        caller could disconnect -- cancelling the not-yet-connected iterator -- before
+        this client ID's session was ever registered with the broker at all, so a
+        message published in the gap had no persistent session to queue against and
+        was simply dropped, never replayed on reconnect.
+        """
+        resolved = subscriber_id or str(uuid.uuid4())
+        client = aiomqtt.Client(
             hostname=self.hostname,
             port=self.port,
-            identifier=f"crud-events-{self.resource}-{subscriber_id}",
+            identifier=f"crud-events-{self.resource}-{resolved}",
             clean_session=False,
             keepalive=self.keepalive,
-        ) as client:
-            await client.subscribe(f"crud-events/{self.resource}", qos=1)
+        )
+        await client.__aenter__()
+        await client.subscribe(f"crud-events/{self.resource}", qos=1)
+        return resolved, self._events(client)
+
+    async def _events(self, client: aiomqtt.Client) -> AsyncIterator[dict[str, Any]]:
+        """Yield decoded event envelopes from `client`'s already-subscribed session,
+        disconnecting once the caller stops consuming (return, exception, or
+        cancellation -- see `subscribe()`'s own docstring for why connecting happens
+        there rather than here).
+
+        Disconnecting is a detached background task, not a plain `await` in this
+        generator's own `finally` -- when the caller stops consuming because the ASGI
+        server cancelled it (the common case: a client disconnected), this generator's
+        own `finally` runs inside that same cancellation, and any further `await`
+        there (confirmed via tests/integration/crud_1/heroes/test_heroes_v2_events.py,
+        run with tracing) is immediately cancelled again rather than allowed to
+        complete -- observed as aiomqtt's own disconnect-acknowledgement wait raising
+        `CancelledError` before it could send a clean MQTT DISCONNECT. A `Task` started
+        here, by contrast, is independent of this generator's own cancellation and gets
+        to actually finish disconnecting.
+        """
+
+        async def _disconnect() -> None:
+            # Best-effort: this runs detached (see the docstring above), so there's no
+            # caller left to usefully react to a disconnect failure -- swallowing it
+            # here is what avoids an "exception was never retrieved" log for it.
+            with contextlib.suppress(Exception):
+                await client.__aexit__(None, None, None)
+
+        try:
             async for message in client.messages:
                 yield json.loads(message.payload)
+        finally:
+            task = asyncio.ensure_future(_disconnect())
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
 
 class InMemoryEventSink:

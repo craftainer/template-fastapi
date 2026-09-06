@@ -736,6 +736,24 @@ async def test_sse_events_yields_keep_alive_on_timeout(monkeypatch: pytest.Monke
     assert frames == ['id: 0\ndata: {"subscriber_id": "sub-1"}\n\n', ": keep-alive\n\n"]
 
 
+async def test_sse_events_reuses_the_same_pending_task_across_keep_alives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second keep-alive still waits on the *same* pending `__anext__()` task rather
+    than starting a new one -- see _sse_events's own docstring for why a fresh one per
+    keep-alive would silently end the stream instead.
+    """
+    monkeypatch.setattr(crud_router_module.settings, "sse_keepalive_seconds", 0.01)
+    request = cast(Request, _StubRequest(disconnect_after_calls=2))  # two keep-alives, then gone
+    events = _no_events_forthcoming()
+    frames = [frame async for frame in crud_router_module._sse_events(request, "sub-1", events)]
+    assert frames == [
+        'id: 0\ndata: {"subscriber_id": "sub-1"}\n\n',
+        ": keep-alive\n\n",
+        ": keep-alive\n\n",
+    ]
+
+
 async def test_sse_events_ends_on_client_disconnect() -> None:
     """The stream ends as soon as request.is_disconnected() reports the client is gone."""
     request = cast(Request, _StubRequest(disconnect_after_calls=0))  # disconnected immediately

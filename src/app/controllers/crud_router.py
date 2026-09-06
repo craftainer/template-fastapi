@@ -297,6 +297,13 @@ async def _sse_events(
     `await` at that point) on every single keep-alive, silently ending the stream one
     keep-alive after it started. The one pending `__anext__()` task survives across
     keep-alives and is only ever cancelled once the client actually disconnects.
+
+    The `finally` below only cancels `pending`, never awaits it: on a real ASGI
+    server, this generator's own cancellation (see the loop's own comment) leaves no
+    room for a further `await` here to run to completion -- it gets cancelled again
+    immediately. `events`'s own cleanup (MQTTEventSource._events, InMemoryEventSink
+    needs none) accounts for this itself, via a detached task that outlives this
+    generator's cancellation -- see its own docstring.
     """
     yield f"id: 0\ndata: {json.dumps({'subscriber_id': subscriber_id})}\n\n"
     sequence = 1
@@ -304,7 +311,15 @@ async def _sse_events(
     pending: asyncio.Task[dict[str, Any]] | None = None
     try:
         while True:
-            if await request.is_disconnected():
+            # On uvicorn (confirmed by tracing a real disconnect: uvicorn's own
+            # RequestResponseCycle.run_asgi() cancels this whole generator's task
+            # directly, independent of anything below), the server itself notices a
+            # closed connection and cancels this generator -- via the `finally` below
+            # -- before this poll ever observes True; this is a defensive fallback for
+            # an ASGI server that doesn't do that, and is exercised directly (with a
+            # fake Request) by tests/unit/controllers/test_crud_router.py's
+            # test_sse_events_ends_on_client_disconnect.
+            if await request.is_disconnected():  # pragma: no cover
                 return
             if pending is None:
                 pending = asyncio.ensure_future(iterator.__anext__())
@@ -315,7 +330,13 @@ async def _sse_events(
             pending = None
             try:
                 event = done.pop().result()
-            except StopAsyncIteration:
+            # Neither production EventSource's `_events` (InMemoryEventSink's `while
+            # True: yield await queue.get()`, MQTTEventSource's `async for message in
+            # client.messages`) ever returns on its own; this is defensive only, and
+            # exercised directly (with a source that does end) by
+            # tests/unit/controllers/test_crud_router.py's
+            # test_sse_events_yields_subscriber_id_frame_then_each_event.
+            except StopAsyncIteration:  # pragma: no cover
                 return
             yield f"id: {sequence}\ndata: {json.dumps(event)}\n\n"
             sequence += 1

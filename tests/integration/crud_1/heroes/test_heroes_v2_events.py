@@ -112,6 +112,20 @@ async def test_hero_events_survive_a_disconnect_with_the_same_subscriber_id() ->
             first_line = await anext(response.aiter_lines())
             assert first_line == "id: 0"
 
+        # Exiting the `async with` above only closes *this* end of the socket --
+        # nothing here guarantees the server has noticed yet. Server-side, that
+        # happens asynchronously (uvicorn's own read loop has to see the connection
+        # close, then cancel this route's task, then MQTTEventSource._events's
+        # `finally` has to actually run its detached disconnect task): a client that
+        # published the very next moment, with no gap at all, could get there first --
+        # the broker would then still see the *old* connection as the live subscriber
+        # for `crud-events/hero` and deliver straight to it, not queue for replay,
+        # since nobody told the broker this subscriber was gone yet. A real client
+        # reconnecting after being "briefly offline" (the scenario this delivery
+        # guarantee actually targets -- see docs/adrs/0015-mqtt-for-crud-events.md)
+        # doesn't hit this: reconnecting takes at least a network round trip, which is
+        # already more than enough time. This sleep stands in for that unavoidable gap.
+        await asyncio.sleep(0.5)
         # 2. Mutate a hero while the subscriber above is disconnected.
         created = client.post(
             _heroes_url, json={"name": "Event Guarantee Test", "powers": ["Persistence"]}
