@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.27
 # Three-stage build for the app: develop (devcontainer), builder, runner.
 
 # PYTHON_VERSION is pinned to minor only, not an exact patch like every
