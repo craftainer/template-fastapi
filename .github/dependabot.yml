@@ -1,4 +1,7 @@
-# Automated dependency-update PRs, checked weekly.
+# Automated dependency-update PRs, checked weekly. Dependabot's "docker"
+# ecosystem doesn't scan directories recursively, so each devcontainer
+# stack compose file with an `image:` tag needs its own directory entry
+# (see .devcontainer/stack/*/compose.yml) alongside the root Dockerfile.
 version: 2
 updates:
   - package-ecosystem: "uv"
@@ -11,5 +14,25 @@ updates:
       interval: "weekly"
   - package-ecosystem: "docker"
     directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer/stack/postgres"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer/stack/keycloak"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer/stack/redis"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer/stack/s3"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer/stack/selenium"
     schedule:
       interval: "weekly"
