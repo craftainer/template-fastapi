@@ -1,14 +1,14 @@
-# Stack service: Redis, reachable only from other containers on the
+# Stack service: Valkey, reachable only from other containers on the
 # compose-generated default network (see ../README.md).
 services:
   redis:
-    image: redis:7.4.11-alpine
+    image: valkey/valkey:8.1.10-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: valkey-server --appendonly yes
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
