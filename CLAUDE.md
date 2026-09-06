@@ -85,6 +85,11 @@ Practices below are distilled from Anthropic's own Claude Code guidance
   then dispatch one subagent per independent gap to write/fix its tests
   concurrently rather than working through the list serially. Gaps that
   share a file or depend on each other's changes stay sequential.
+- **Flag devcontainer changes as needing a rebuild.** Editing anything
+  under `.devcontainer/` (compose files, `stack/`, Dockerfiles) doesn't
+  take effect in the running container — tell the user a rebuild is
+  required and that only they can trigger it; don't claim the change is
+  active or try to verify it live.
 - **Use the devcontainer's own services, don't spin up your own.**
   Check `.devcontainer/compose.yml`'s `include:` and `.devcontainer/stack/`
   for which backing services (databases, object storage, auth, browsers,
