@@ -84,8 +84,8 @@ assembles them into the settings the app itself reads.
 - If host-browser access to the service is genuinely needed (as with
   keycloak's login UI), add its port to `forwardPorts`/`portsAttributes`
   in `../devcontainer.json` — never to a `ports:` mapping here.
-- Pin an image tag to the app version only (`postgres:16.15-alpine`),
-  not the OS sub-patch a multi-part tag like `postgres:16.15-alpine3.24`
+- Pin an image tag to the app version only (`postgres:18.6-alpine`),
+  not the OS sub-patch a multi-part tag like `postgres:18.6-alpine3.24`
   adds on top — Renovate still bumps the app version fine
   either way, and the extra digits just add unrelated diffs. A tag
   segment that names a genuinely different build variant (`-glibc` vs.

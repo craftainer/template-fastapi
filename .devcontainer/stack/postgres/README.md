@@ -1,9 +1,9 @@
 # postgres
 
-PostgreSQL 16, used as the primary application database.
+PostgreSQL 18, used as the primary application database.
 
 - Compose file: `compose.yml`
-- Image: `postgres:16.15-alpine`
+- Image: `postgres:18.6-alpine`
 - Host (from other containers only — see root README's "Don't"): `postgres`
 - Port (container-internal): `5432`
 - User / password / database: `app` / `app` / `app`
