@@ -10,7 +10,7 @@ ARG PYTHON_VERSION=3.14
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.8
+ARG UV_VERSION=0.12.10
 
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
 ARG CLAUDE_CODE_VERSION=2.1.259
