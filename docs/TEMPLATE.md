@@ -137,7 +137,13 @@ duplicates or re-pins it elsewhere:
   `ARG` defaults at the top of the `Dockerfile`. `.devcontainer/compose.yml`
   does **not** pass matching `args:` — the Dockerfile's own defaults are
   authoritative because it's the file closer to where they're used. To
-  change them, edit the `Dockerfile`, not the compose file.
+  change them, edit the `Dockerfile`, not the compose file. `PYTHON_VERSION`
+  is a single exact-patch pin shared by all three stages: `builder`/`runner`
+  use it directly as the `python:${PYTHON_VERSION}-slim-${DEBIAN_VERSION}`
+  base image, while `develop` (based on the generic
+  `mcr.microsoft.com/devcontainers/base` image, which carries no Python of
+  its own) has `develop.sh` install that same version via `uv python
+  install`, so all three stages run identical interpreters.
 - Python package versions: `pyproject.toml` / `uv.lock`. Dependencies are
   managed with `uv` — use `uv add <package>` / `uv sync` rather than
   editing the dependency lists by hand or invoking `pip` directly.
@@ -149,12 +155,8 @@ duplicates or re-pins it elsewhere:
   per PEP 621) instead of re-pinning the same package a second time.
 - Everything else pinned (base images, Actions, hook revisions): pinned
   once, at its single point of use, to an exact patch version — never a
-  floating range or `latest` — so Renovate can bump them one
-  at a time and the diff shows exactly what changed. The one exception is
-  the Dockerfile's `PYTHON_VERSION` `ARG`: it's pinned to minor only,
-  because `mcr.microsoft.com/devcontainers/python` (the `develop` stage's
-  base image) doesn't publish patch-granularity tags — there is no patch
-  version to pin to. See the comment at that `ARG` in the `Dockerfile`.
+  floating range or `latest` — so Renovate can bump them one at a time and
+  the diff shows exactly what changed.
 
 `ruff`, `mypy`, and `pytest` all point their cache dirs at
 `/home/vscode/.cache/<tool>` (set once each, in `pyproject.toml`'s

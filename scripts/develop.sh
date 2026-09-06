@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Sets up the `develop` stage on top of Microsoft's Python devcontainer
-# image (which already provides the `vscode` user, git, sudo, and curl).
+# Sets up the `develop` stage on top of Microsoft's generic base
+# devcontainer image (which already provides the `vscode` user, git, sudo,
+# and curl); Python itself is installed below via `uv`, pinned to the same
+# exact version as the builder/runner stages.
 set -euo pipefail
 
-uv_version=$1
-claude_code_version=$2
-pyright_version=$3
-snip_version=$4
-rustfs_cli_version=$5
+python_version=$1
+uv_version=$2
+claude_code_version=$3
+pyright_version=$4
+snip_version=$5
+rustfs_cli_version=$6
 
 apt-get update
 # postgresql-client/redis-tools give psql/redis-cli for connecting to the
@@ -26,6 +29,12 @@ curl -LsSf "https://releases.astral.sh/github/uv/releases/download/${uv_version}
     | sudo -u vscode env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 sh
 ln -s /home/vscode/.local/bin/uv /usr/local/bin/uv
 ln -s /home/vscode/.local/bin/uvx /usr/local/bin/uvx
+
+# Installs the exact pinned CPython build (from python-build-standalone) --
+# UV_PYTHON in the Dockerfile's develop stage then pins `uv sync` and every
+# other uv invocation to it, so it matches the builder/runner stages' own
+# python:${PYTHON_VERSION}-slim base image exactly.
+sudo -u vscode env HOME=/home/vscode /usr/local/bin/uv python install "$python_version"
 
 curl -fsSL https://claude.ai/install.sh \
     | sudo -u vscode env HOME=/home/vscode bash -s "$claude_code_version"

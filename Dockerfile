@@ -1,12 +1,7 @@
 # syntax=docker/dockerfile:1.27
 # Three-stage build for the app: develop (devcontainer), builder, runner.
 
-# PYTHON_VERSION is pinned to minor only, not an exact patch like every
-# other version in this file: mcr.microsoft.com/devcontainers/python (the
-# develop stage's base image below) only publishes tags at minor-version
-# granularity, so there is no patch tag to pin to. See CLAUDE.md's
-# "Dependency management" section.
-ARG PYTHON_VERSION=3.14
+ARG PYTHON_VERSION=3.14.0
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=astral-sh/uv
@@ -30,10 +25,12 @@ ARG SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ARG SSL_CERT_DIR=/etc/ssl/certs
 
 ########################################
-# develop — interactive devcontainer image, based on Microsoft's Python
-# devcontainer image. Source is bind-mounted, not copied.
+# develop — interactive devcontainer image, based on Microsoft's generic
+# base devcontainer image, with uv installing the pinned Python version
+# itself (see PYTHON_VERSION above). Source is bind-mounted, not copied.
 ########################################
-FROM mcr.microsoft.com/devcontainers/python:${PYTHON_VERSION}-${DEBIAN_VERSION} AS develop
+FROM mcr.microsoft.com/devcontainers/base:${DEBIAN_VERSION} AS develop
+ARG PYTHON_VERSION
 ARG UV_VERSION
 ARG CLAUDE_CODE_VERSION
 ARG PYRIGHT_VERSION
@@ -45,17 +42,21 @@ ARG SSL_CERT_DIR
 # Keep the virtualenv outside the bind-mounted /workspace: on Windows hosts
 # a .venv inside the mount gets scanned file-by-file by antivirus/malware
 # tools and is painfully slow to install into. See .devcontainer/compose.yml.
+# UV_PYTHON pins uv (including postCreateCommand's `uv sync`) to the exact
+# interpreter installed by develop.sh below, rather than whatever uv would
+# otherwise pick.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/home/vscode/.venv \
+    UV_PYTHON=${PYTHON_VERSION} \
     SSL_CERT_FILE=${SSL_CERT_FILE} \
     SSL_CERT_DIR=${SSL_CERT_DIR} \
     REQUESTS_CA_BUNDLE=${SSL_CERT_FILE} \
     CURL_CA_BUNDLE=${SSL_CERT_FILE}
 
 COPY scripts/develop.sh /tmp/develop.sh
-RUN bash /tmp/develop.sh "$UV_VERSION" "$CLAUDE_CODE_VERSION" "$PYRIGHT_VERSION" "$SNIP_VERSION" "$RUSTFS_CLI_VERSION"
+RUN bash /tmp/develop.sh "$PYTHON_VERSION" "$UV_VERSION" "$CLAUDE_CODE_VERSION" "$PYRIGHT_VERSION" "$SNIP_VERSION" "$RUSTFS_CLI_VERSION"
 
 USER vscode
 WORKDIR /workspace
