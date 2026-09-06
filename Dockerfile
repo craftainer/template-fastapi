@@ -19,7 +19,7 @@ ARG CLAUDE_CODE_VERSION=2.1.263
 ARG PYRIGHT_VERSION=1.1.411
 
 # renovate: datasource=github-releases depName=edouard-claude/snip
-ARG SNIP_VERSION=0.25.0
+ARG SNIP_VERSION=0.25.1
 
 # renovate: datasource=github-releases depName=rustfs/cli
 ARG RUSTFS_CLI_VERSION=0.1.32
