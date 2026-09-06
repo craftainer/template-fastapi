@@ -52,6 +52,33 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.3.0
 
+      # Predictable release-asset URLs, computed before the image build so
+      # they can be baked into the image's own labels below -- GitHub's
+      # download URL shape is deterministic and the tag is already known
+      # from the version step, so this doesn't need the release to exist
+      # yet.
+      - name: Compute SBOM/coverage asset URLs
+        id: asset_urls
+        run: |
+          base="https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}"
+          echo "sbom=$base/template-fastapi-${{ steps.version.outputs.version }}.spdx.json" >> "$GITHUB_OUTPUT"
+          echo "coverage=$base/coverage.xml" >> "$GITHUB_OUTPUT"
+
+      # Derives standard org.opencontainers.image.* labels from git/GitHub
+      # context, plus two custom pointer labels (namespaced under the repo
+      # owner, not the org.opencontainers.image.* namespace reserved for
+      # the spec's own keys) so the image is self-describing: anyone with
+      # just the image can find its SBOM and coverage report.
+      - name: Compute image labels
+        id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: template-fastapi
+          tags: type=raw,value=${{ steps.version.outputs.version }}
+          labels: |
+            io.github.${{ github.repository_owner }}.sbom=${{ steps.asset_urls.outputs.sbom }}
+            io.github.${{ github.repository_owner }}.coverage-report=${{ steps.asset_urls.outputs.coverage }}
+
       # Attached to the GitHub release below regardless of whether an OCI
       # registry is configured below -- a portable, offline-loadable
       # artifact (`docker load --input`) of exactly what was released.
@@ -61,9 +88,44 @@ jobs:
           context: .
           target: runner
           tags: template-fastapi:${{ steps.version.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           outputs: type=oci,dest=template-fastapi-${{ steps.version.outputs.version }}.tar
+
+      # Syft (via sbom-action) introspects the built image's layers
+      # directly, so this step is language-agnostic -- it doesn't change
+      # if the template's stack changes.
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.24.2
+        with:
+          image: template-fastapi:${{ steps.version.outputs.version }}
+          format: spdx-json
+          output-file: template-fastapi-${{ steps.version.outputs.version }}.spdx.json
+
+      # Unique per run, matching checks.yml's reasoning -- avoids colliding
+      # with a concurrent run on container/volume/network names.
+      - name: Set compose project name
+        run: echo "COMPOSE_PROJECT_NAME=ci-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+
+      # Runs the suite against the exact commit being released, producing
+      # a Cobertura-style coverage.xml to attach to the release --
+      # checks.yml already gates every commit, but this ties a coverage
+      # report to the specific artifact rather than just the pipeline.
+      - name: Run tests with coverage report
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: uv run pytest --cov-report=xml
+
+      # devcontainers/ci starts the compose stack but never tears it down
+      # -- see checks.yml's identical step for why this repo wants an
+      # explicit teardown regardless.
+      - name: Tear down devcontainer stack
+        if: always()
+        run: |
+          docker compose \
+            -p ${{ env.COMPOSE_PROJECT_NAME }} \
+            down --volumes --remove-orphans
 
       # Optional: only runs when an OCI registry is actually configured
       # (a repository variable), so this workflow works out of the box
@@ -94,6 +156,7 @@ jobs:
           target: runner
           push: true
           tags: ${{ vars.OCI_REGISTRY }}/${{ steps.oci_image.outputs.name }}:${{ steps.version.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -111,6 +174,8 @@ jobs:
           fi
           gh release create "${{ steps.version.outputs.tag }}" \
             "template-fastapi-${{ steps.version.outputs.version }}.tar" \
+            "template-fastapi-${{ steps.version.outputs.version }}.spdx.json" \
+            "coverage.xml" \
             --title "${{ steps.version.outputs.tag }}" \
             --target "${{ github.sha }}" \
             --generate-notes \

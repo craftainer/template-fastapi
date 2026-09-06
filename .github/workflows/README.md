@@ -15,8 +15,16 @@
   (`major`/`minor`/`patch`/`none`), computes the next tag via
   `../scripts/compute_next_version.py`, builds the `runner` stage of the
   root `Dockerfile`, and creates a GitHub release with auto-generated
-  notes and that image attached as an OCI tarball. Also pushes the image
-  to an OCI registry if one is configured (see "OCI registry" below).
+  notes and that image attached as an OCI tarball, an SPDX-JSON SBOM
+  (via `anchore/sbom-action`/Syft), and a `coverage.xml` report from
+  running the test suite against the released commit. The built image
+  (both the tarball and, if configured, the registry push) carries
+  standard `org.opencontainers.image.*` labels via
+  `docker/metadata-action`, plus two custom
+  `io.github.<repository_owner>.*` labels pointing at the SBOM and
+  coverage-report release assets, so the image is self-describing.
+  Also pushes the image to an OCI registry if one is configured (see
+  "OCI registry" below).
 - `template-sync.yml` — runs in an *instance* of this template, not
   here (see the root `docs/TEMPLATE.md`'s "Template sync" section and
   `../template-sync-manifest.yml`'s header for the full design). On a
@@ -57,6 +65,23 @@ workflow works with no registry configured at all. When it is set:
 - `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets,
   required whenever `OCI_REGISTRY` is set) — credentials for
   `docker/login-action`.
+
+## Image labels
+
+Both copies of the published image (the OCI tarball and, if configured,
+the registry push) carry the same label set, computed once by
+`docker/metadata-action`:
+
+- Standard `org.opencontainers.image.title` / `.description` / `.url` /
+  `.source` / `.revision` (`github.sha`) / `.created` / `.version`,
+  derived from git/GitHub context.
+- `io.github.<repository_owner>.sbom` and
+  `io.github.<repository_owner>.coverage-report` — URLs to that
+  release's SBOM and `coverage.xml` assets. Namespaced under the repo
+  owner (not `org.opencontainers.image.*`, which is reserved for the
+  spec's own keys) and derived from `github.repository_owner` alone, so
+  it's one stable prefix per org across every repo/template instance
+  that org owns, rather than a per-repo namespace to look up each time.
 
 ## Do
 
