@@ -155,10 +155,14 @@ def _mqtt_connection_kwargs(
     .devcontainer/stack/mqtt/mosquitto.conf) -- app.config.Settings requires all
     three to be set in production (see its own
     `_require_mqtt_auth_in_production`), so this is only ever unauthenticated/
-    plaintext for local dev.
+    plaintext for local dev. `# pragma: no cover` below is for tests/e2e
+    specifically: its one live process always talks to that local, no-TLS
+    broker, so `use_tls` is never True there -- tests/unit/interfaces/
+    test_base.py exercises this branch directly and still counts toward its
+    own 95% gate.
     """
     kwargs: dict[str, Any] = {"username": username, "password": password}
-    if use_tls:
+    if use_tls:  # pragma: no cover -- see docstring
         kwargs["tls_context"] = ssl.create_default_context()
     return kwargs
 

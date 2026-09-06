@@ -45,13 +45,17 @@ def _get_jwks_client() -> PyJWKClient:
     (see its own docstring), so this still lands in the same security log as a
     rejected token instead of silently bypassing it. `lru_cache` doesn't cache
     a raised exception, so a transient outage doesn't wedge this permanently.
+    `# pragma: no cover` below is for tests/e2e specifically: it drives one
+    live process against a real, reachable Keycloak, which can never take this
+    branch -- tests/unit/test_oidc.py exercises it directly (with httpx.get
+    monkeypatched to raise) and still counts toward its own 95% gate.
     """
     discovery_url = f"{settings.oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration"
     try:
         response = httpx.get(discovery_url, timeout=10)
         response.raise_for_status()
         jwks_uri: str = response.json()["jwks_uri"]
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
+    except (httpx.HTTPError, KeyError, ValueError) as exc:  # pragma: no cover -- see docstring
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable",
