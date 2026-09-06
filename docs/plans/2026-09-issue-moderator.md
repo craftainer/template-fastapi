@@ -96,9 +96,9 @@ runs inside the container:
 `run_claude.sh` reads the key
 (`export ANTHROPIC_API_KEY="$(cat .secrets/claude.txt)"`), configures a
 dedicated git identity (e.g. `claude-moderator[bot]`) for every commit
-this pipeline makes, and invokes `claude -p "$(cat "$1")"
---output-format json --allowedTools "$2"` with the resource limits
-below. The container teardown step from `checks.yml` (unique
+this pipeline makes, and invokes `claude -p "$(cat "$1")" --model
+claude-sonnet-5 --effort medium --output-format json --allowedTools
+"$2"` with the resource limits below. The container teardown step from `checks.yml` (unique
 `COMPOSE_PROJECT_NAME`, `docker compose down --volumes
 --remove-orphans` with `if: always()`) is reused verbatim, and a final
 `if: always()` step removes `.secrets/claude.txt` from the runner
@@ -236,14 +236,22 @@ spend:
   re-edit cycles), so a job ends deterministically on turn exhaustion
   rather than only on wall-clock. Both are starting defaults to revisit
   once real runs show whether either stage routinely gets cut off.
+- **Model/effort**: every `claude -p` invocation pins `--model
+  claude-sonnet-5 --effort medium` explicitly rather than inheriting
+  whatever default the pinned CLI version ships with, matching the
+  model/effort already used for interactive work in this repo. Applies
+  uniformly to all four stages (triage ×2, fix/build ×2) — none of them
+  need a heavier model or effort level to start; revisit per-stage only
+  if real runs show a specific stage under-performing at medium.
 - **Spend**: `claude` itself has no per-invocation spend-limit flag —
   the actual control surface is the Anthropic Console. Use a dedicated
   Console **workspace** (not the default one) scoped to this pipeline,
   with its own `ANTHROPIC_API_KEY`, a **monthly spend limit** (default
-  **$50/month** — a starting cap, sized to occasional triage/fix runs
-  rather than continuous usage; raise it if real usage warrants) and a
-  usage alert at 80% of that limit, so the workspace itself hard-stops
-  spend instead of relying only on turns/wall-clock to bound cost.
+  **$15/month** — a starting cap sized to see a few weeks of real
+  triage/fix volume before committing to a higher number; raise it once
+  usage data justifies it) and a usage alert at 80% of that limit, so
+  the workspace itself hard-stops spend instead of relying only on
+  turns/wall-clock to bound cost.
 - **Concurrency**: a `concurrency:` group keyed on the issue number
   (e.g. `moderate-issue-${{ github.event.issue.number }}`), shared
   across **all five** workflows, so a burst of comments can't launch
@@ -282,8 +290,9 @@ spend:
 - Who owns creating/rotating the dedicated Anthropic Console workspace
   and API key, and storing it as the `ANTHROPIC_API_KEY` repository
   secret.
-- Confirm `--max-turns` is still the correct flag name (and check for
-  any spend/budget-related flag added since) against the CLI version
+- Confirm `--max-turns`, `--model`, and `--effort` are still the
+  correct flag names (and check for any spend/budget-related flag added
+  since — none exists as of this writing) against the CLI version
   actually pinned in the `Dockerfile` at implementation time — flag
   names can change between releases.
 - Whether to hand-roll the CLI invocation (as sketched above) or use
