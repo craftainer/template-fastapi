@@ -103,6 +103,10 @@ Practices below are distilled from Anthropic's own Claude Code guidance
   or framework's API, use the context7 MCP tool to pull current
   documentation, rather than guessing or assuming an API shape from
   memory.
+- **Use clear-thought for non-trivial reasoning when available.** When
+  planning an approach, debugging, or working through a decision with
+  more than one plausible path, use the clear-thought MCP tool if it's
+  available, rather than reasoning through it unstructured.
 
 `.claude/hooks/self-check.sh` automates the fast tier of this (see
 `.claude/README.md`) but doesn't replace running `mypy`/`pytest`/the
