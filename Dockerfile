@@ -13,7 +13,7 @@ ARG DEBIAN_VERSION=trixie
 ARG UV_VERSION=0.12.8
 
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.259
+ARG CLAUDE_CODE_VERSION=2.1.263
 
 # renovate: datasource=pypi depName=pyright
 ARG PYRIGHT_VERSION=1.1.411
