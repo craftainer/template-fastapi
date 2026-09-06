@@ -139,8 +139,9 @@ async def test_delete_many_removes_every_match(repository: InMemoryRepository[He
 async def test_lock_blocks_update_and_delete_except_the_unlocking_update(
     repository: InMemoryRepository[Hero],
 ) -> None:
-    """A locked Hero refuses update/delete (single and bulk), except an update that
-    itself sets `is_locked=False` -- see app.repositories.base.RecordLockedError.
+    """A locked Hero refuses update/delete (single and bulk), except an update whose
+    data is exactly `{"is_locked": False}` -- see
+    app.repositories.base.RecordLockedError and app.models.mixins.Lockable.
     """
     locked = await repository.create(
         {"name": "Locked Hero", "powers": ["Immovable"], "is_locked": True}
@@ -157,10 +158,18 @@ async def test_lock_blocks_update_and_delete_except_the_unlocking_update(
     with pytest.raises(RecordLockedError):
         await repository.delete_many(filters=id_filter)
 
-    unlocked = await repository.update(locked.id, {"is_locked": False, "powers": ["Freed"]})
+    # Unlocking and editing in the same request is refused too -- unlock must be
+    # its own request, not a way to slip an edit past the lock.
+    with pytest.raises(RecordLockedError):
+        await repository.update(locked.id, {"is_locked": False, "powers": ["Should not apply"]})
+
+    unlocked = await repository.update(locked.id, {"is_locked": False})
     assert unlocked is not None
     assert unlocked.is_locked is False
-    assert unlocked.powers == ["Freed"]
+
+    edited = await repository.update(locked.id, {"powers": ["Freed"]})
+    assert edited is not None
+    assert edited.powers == ["Freed"]
 
 
 async def test_schedulable_visibility_excludes_future_publish_and_past_unpublish(

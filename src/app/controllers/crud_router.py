@@ -36,7 +36,7 @@ from app.controllers.crud_actions import (
     resolve_update,
 )
 from app.controllers.crud_query import FieldFilterInfo, describe_fields
-from app.rate_limit import exempt_single_record_action, limiter
+from app.rate_limit import limiter
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
 from app.views.bulk import BulkDeleteResult, BulkUpdateResult
 from app.views.revision import RevisionView
@@ -182,7 +182,7 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
         return describe_fields(schema)
 
     @router.patch("", dependencies=[write_roles])
-    @limiter.limit(settings.rate_limit_bulk_action, exempt_when=exempt_single_record_action)
+    @limiter.limit(settings.rate_limit_bulk_action)
     async def update_records(
         crud: crud_dependency,
         request: Request,
@@ -192,7 +192,7 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
         return await resolve_update(crud, schema, request, id=id, data=record, not_found=not_found)  # type: ignore[no-any-return]
 
     @router.delete("", dependencies=[delete_roles], response_model=None)
-    @limiter.limit(settings.rate_limit_bulk_action, exempt_when=exempt_single_record_action)
+    @limiter.limit(settings.rate_limit_bulk_action)
     async def delete_records(
         crud: crud_dependency,
         request: Request,
@@ -233,7 +233,7 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
     if archivable:
 
         @router.post("/restore", dependencies=[write_roles])
-        @limiter.limit(settings.rate_limit_bulk_action, exempt_when=exempt_single_record_action)
+        @limiter.limit(settings.rate_limit_bulk_action)
         async def restore_records(
             crud: crud_dependency,
             request: Request,
@@ -400,7 +400,7 @@ def build_xml_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel]
         )
 
     @router.patch("", dependencies=[write_roles])
-    @limiter.limit(settings.rate_limit_bulk_action, exempt_when=exempt_single_record_action)
+    @limiter.limit(settings.rate_limit_bulk_action)
     async def update_records_xml(
         crud: crud_dependency,
         request: Request,
@@ -418,7 +418,7 @@ def build_xml_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel]
         return _with_dependency_headers(response, Response(content=body, media_type=xml_media_type))
 
     @router.delete("", dependencies=[delete_roles])
-    @limiter.limit(settings.rate_limit_bulk_action, exempt_when=exempt_single_record_action)
+    @limiter.limit(settings.rate_limit_bulk_action)
     async def delete_records_xml(
         crud: crud_dependency,
         request: Request,

@@ -80,16 +80,13 @@ class Lockable:
     Enforced in the repository layer (see app.repositories.base.RecordLockedError)
     so it's atomic with the mutation itself -- update/update_many/delete/delete_many
     refuse to touch a locked row, except an update whose own data sets
-    `is_locked=False`.
+    `is_locked=False` and nothing else.
 
-    That escape hatch checks only `data.get("is_locked") is False`, not whether
-    `data` carries any other field -- so `PATCH ?id= {"is_locked": false, "name":
-    "new name"}` unlocks and edits in the same request. Kept intentional rather
-    than restricted to a dedicated unlock-only request: a caller who could send
-    that PATCH already had write access to every field in it regardless of the
-    lock, so combining unlock-and-edit grants no additional power, only saves a
-    round trip; a resource that wants stricter "unlock touches nothing else"
-    semantics would need its own dedicated route instead of reusing PATCH.
+    That escape hatch requires `data == {"is_locked": False}` exactly -- a `PATCH
+    ?id= {"is_locked": false, "name": "new name"}` against a locked record still
+    raises RecordLockedError, same as any other field-changing PATCH against a
+    locked row. Unlock is its own request; a caller edits the now-unlocked record
+    in a follow-up PATCH.
     """
 
     is_locked: Mapped[bool] = mapped_column(default=False)

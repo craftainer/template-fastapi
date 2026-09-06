@@ -2,13 +2,13 @@
 
 sunset() is a reusable FastAPI dependency any route can opt into to advertise
 that it will stop being available at a given time -- see
-app.controllers.protected for the applied example. add_security_headers(app)
+app.crud_1.heroes.heroes_v1 for the applied example. add_security_headers(app)
 is unconditional middleware instead of a dependency (see its own docstring for
 why) applied to every response, including error responses a route's own
 dependencies never run for.
 
 `sunset()`'s `link is None` branch is `# pragma: no cover`: every call site in
-this app (app.controllers.heroes_v1/heroes_v1_xml/heroes_v1_web/protected)
+this app (app.controllers.heroes_v1/heroes_v1_xml/heroes_v1_web)
 passes a `link`, so a live request never reaches the no-link path.
 tests/unit/test_http_headers.py exercises it directly and still counts toward
 its own 95% gate.

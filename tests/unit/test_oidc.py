@@ -3,6 +3,7 @@
 import logging
 from typing import Annotated, Any
 
+import httpx
 import jwt
 import pytest
 from fastapi import Depends, FastAPI, HTTPException
@@ -40,6 +41,34 @@ def test_get_current_claims_logs_a_warning_on_rejection(caplog: pytest.LogCaptur
         response = TestClient(app).get("/whoami", headers={"Authorization": "Bearer not-a-jwt"})
     assert response.status_code == 401
     assert "Rejected bearer token for /whoami" in caplog.text
+
+
+def test_get_jwks_client_reports_503_on_discovery_failure(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An unreachable/malformed OIDC discovery document is a 503, not an unhandled 500,
+    and still goes through get_current_claims's own rejection log.
+    """
+    oidc._get_jwks_client.cache_clear()
+
+    def _raise(url: str, *, timeout: float) -> httpx.Response:
+        raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr(httpx, "get", _raise)
+    monkeypatch.setattr(oidc.settings, "mode", "dev")
+
+    app = FastAPI()
+
+    @app.get("/whoami")
+    def whoami(claims: Annotated[dict[str, Any], Depends(get_current_claims)]) -> dict[str, Any]:
+        return claims
+
+    with caplog.at_level(logging.WARNING, logger="app.oidc"):
+        response = TestClient(app).get("/whoami", headers={"Authorization": "Bearer x.y.z"})
+
+    assert response.status_code == 503
+    assert "Rejected bearer token for /whoami (status=503)" in caplog.text
+    oidc._get_jwks_client.cache_clear()
 
 
 def _require_roles_app() -> FastAPI:

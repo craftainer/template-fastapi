@@ -22,6 +22,7 @@ what's counted toward the separate `pytest tests/e2e` coverage gate.
 import asyncio
 import contextlib
 import json
+import ssl
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
@@ -144,6 +145,24 @@ def _event_envelope(
     }
 
 
+def _mqtt_connection_kwargs(
+    *, username: str | None, password: str | None, use_tls: bool
+) -> dict[str, Any]:
+    """Build the auth/TLS kwargs shared by MQTTEventSink/MQTTEventSource's aiomqtt.Client.
+
+    `username`/`password`/`use_tls` default to None/None/False, matching
+    mosquitto.conf's own no-auth/no-TLS local-dev default (see
+    .devcontainer/stack/mqtt/mosquitto.conf) -- app.config.Settings requires all
+    three to be set in production (see its own
+    `_require_mqtt_auth_in_production`), so this is only ever unauthenticated/
+    plaintext for local dev.
+    """
+    kwargs: dict[str, Any] = {"username": username, "password": password}
+    if use_tls:
+        kwargs["tls_context"] = ssl.create_default_context()
+    return kwargs
+
+
 # Strong references for MQTTEventSource._events's detached disconnect tasks -- asyncio
 # only holds a *weak* reference to a task once nothing else does, so a fire-and-forget
 # `asyncio.ensure_future(...)` with no reference kept anywhere is eligible for garbage
@@ -172,6 +191,9 @@ class MQTTEventSink:
     port: int
     resource: str
     keepalive: int
+    username: str | None = None
+    password: str | None = None
+    use_tls: bool = False
 
     async def publish(
         self, *, resource: str, record_id: int, action: str, snapshot: dict[str, Any]
@@ -181,7 +203,12 @@ class MQTTEventSink:
             resource=resource, record_id=record_id, action=action, snapshot=snapshot
         )
         async with aiomqtt.Client(
-            hostname=self.hostname, port=self.port, keepalive=self.keepalive
+            hostname=self.hostname,
+            port=self.port,
+            keepalive=self.keepalive,
+            **_mqtt_connection_kwargs(
+                username=self.username, password=self.password, use_tls=self.use_tls
+            ),
         ) as client:
             await client.publish(f"crud-events/{resource}", json.dumps(envelope), qos=1)
 
@@ -206,6 +233,9 @@ class MQTTEventSource:
     port: int
     resource: str
     keepalive: int
+    username: str | None = None
+    password: str | None = None
+    use_tls: bool = False
 
     async def subscribe(
         self, subscriber_id: str | None
@@ -233,6 +263,9 @@ class MQTTEventSource:
             identifier=f"crud-events-{self.resource}-{resolved}",
             clean_session=False,
             keepalive=self.keepalive,
+            **_mqtt_connection_kwargs(
+                username=self.username, password=self.password, use_tls=self.use_tls
+            ),
         )
         await client.__aenter__()
         await client.subscribe(f"crud-events/{self.resource}", qos=1)

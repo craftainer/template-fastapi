@@ -37,11 +37,25 @@ oauth2_scheme = OAuth2AuthorizationCodeBearer(
 
 @lru_cache
 def _get_jwks_client() -> PyJWKClient:
-    """Discover the provider's JWKS endpoint and return a caching client for it."""
+    """Discover the provider's JWKS endpoint and return a caching client for it.
+
+    A discovery-document fetch failure (provider outage, or a document missing
+    `jwks_uri`) is reported as a 503 rather than left to propagate as an
+    unhandled 500 -- get_current_claims logs every HTTPException it sees
+    (see its own docstring), so this still lands in the same security log as a
+    rejected token instead of silently bypassing it. `lru_cache` doesn't cache
+    a raised exception, so a transient outage doesn't wedge this permanently.
+    """
     discovery_url = f"{settings.oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration"
-    response = httpx.get(discovery_url, timeout=10)
-    response.raise_for_status()
-    jwks_uri: str = response.json()["jwks_uri"]
+    try:
+        response = httpx.get(discovery_url, timeout=10)
+        response.raise_for_status()
+        jwks_uri: str = response.json()["jwks_uri"]
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service unavailable",
+        ) from exc
     return PyJWKClient(jwks_uri, cache_keys=True)
 
 
@@ -80,15 +94,18 @@ async def get_current_claims(
 ) -> dict[str, Any]:
     """FastAPI dependency: validate the request's bearer token and return its claims.
 
-    Logs a WARNING (path only -- there's no verified subject to include, since the
-    token itself failed to validate) on every rejection, so brute-force/enumeration
-    attempts against protected routes are detectable (see app.problem_details for the
-    matching unhandled-exception log).
+    Logs a WARNING (path and status only -- there's no verified subject to include,
+    since the token itself failed to validate) on every rejection, so brute-force/
+    enumeration attempts against protected routes are detectable, and an IdP-outage
+    503 from _get_jwks_client is visible here too rather than only in the 500 path
+    (see app.problem_details for the matching unhandled-exception log).
     """
     try:
         return decode_bearer_token(token)
-    except HTTPException:
-        logger.warning("Rejected bearer token for %s", request.url.path)
+    except HTTPException as exc:
+        logger.warning(
+            "Rejected bearer token for %s (status=%d)", request.url.path, exc.status_code
+        )
         raise
 
 

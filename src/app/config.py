@@ -94,10 +94,16 @@ class Settings(BaseSettings):
     # app.interfaces.dependency.build_event_sink_provider/build_event_source_provider's
     # real (non-MODE=mock) backend -- see .devcontainer/stack/mqtt/.
     # mqtt_keepalive_seconds is the aiomqtt.Client keepalive passed to both
-    # MQTTEventSink and MQTTEventSource.
+    # MQTTEventSink and MQTTEventSource. mqtt_username/mqtt_password/mqtt_use_tls
+    # default to unset/False -- matching .devcontainer/stack/mqtt/mosquitto.conf's
+    # own no-auth/no-TLS local-dev default (see its "Don't" section) -- and are
+    # required to be set in production, see _require_mqtt_auth_in_production below.
     mqtt_host: str = "localhost"
     mqtt_port: int = 1883
     mqtt_keepalive_seconds: int = 60
+    mqtt_username: str | None = None
+    mqtt_password: str | None = None
+    mqtt_use_tls: bool = False
 
     # app.controllers.crud_router's `GET <prefix>/events` SSE route: how often an
     # idle stream sends a `: keep-alive` comment, so intermediary proxies/load
@@ -195,6 +201,26 @@ class Settings(BaseSettings):
             "https://"
         ):
             raise ValueError("oidc_issuer_url must use https:// when MODE=production")
+        return self
+
+    @model_validator(mode="after")
+    def _require_mqtt_auth_in_production(self) -> Self:
+        """Refuse to construct production Settings with an unauthenticated MQTT broker.
+
+        app.interfaces.base.MQTTEventSink/MQTTEventSource connect with no
+        credentials/TLS unless these are set, matching mosquitto.conf's own
+        no-auth/no-TLS local-dev default (see .devcontainer/stack/mqtt/
+        mosquitto.conf's "Don't" section) -- a production broker reachable over
+        the network with that default would let anyone read or forge every
+        resource's create/update/delete events.
+        """
+        if self.mode == "production" and (  # pragma: no cover
+            not self.mqtt_use_tls or self.mqtt_username is None or self.mqtt_password is None
+        ):
+            raise ValueError(
+                "mqtt_use_tls, mqtt_username, and mqtt_password must all be set "
+                "when MODE=production"
+            )
         return self
 
 

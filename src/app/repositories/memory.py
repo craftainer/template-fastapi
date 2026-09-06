@@ -112,10 +112,15 @@ def _is_visible(instance: object, *, include_archived: bool, include_unpublished
 
 
 def _raise_if_locked(instance: object, data: dict[str, Any] | None) -> None:
-    """Raise RecordLockedError unless `instance` isn't locked or `data` unlocks it."""
+    """Raise RecordLockedError unless `instance` isn't locked or `data` unlocks-only.
+
+    See app.models.mixins.Lockable's own docstring: the unlock escape hatch only
+    applies when `data` is exactly `{"is_locked": False}`, not a PATCH that also
+    changes other fields in the same request.
+    """
     if not getattr(instance, "is_locked", False):
         return
-    if data is not None and data.get("is_locked") is False:
+    if data is not None and data == {"is_locked": False}:
         return
     raise RecordLockedError(f"record {getattr(instance, 'id', '?')!r} is locked")
 

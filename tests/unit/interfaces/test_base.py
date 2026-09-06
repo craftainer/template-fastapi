@@ -4,6 +4,7 @@ Uses an in-memory fake Repository and a small standalone Pydantic view, not tied
 to Hero/SQLAlchemy at all, to prove the CRUD interface is genuinely generic.
 """
 
+import ssl
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -11,7 +12,13 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from app.interfaces.base import CRUDInterface, EventSink, InMemoryEventSink, OwnerScope
+from app.interfaces.base import (
+    CRUDInterface,
+    EventSink,
+    InMemoryEventSink,
+    OwnerScope,
+    _mqtt_connection_kwargs,
+)
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
 
 
@@ -692,3 +699,25 @@ async def test_in_memory_event_sink_publish_with_no_subscribers_is_a_no_op() -> 
     """publish() with nothing subscribed yet doesn't raise."""
     sink: EventSink = InMemoryEventSink()
     await sink.publish(resource="hero", record_id=1, action="create", snapshot={"id": 1})
+
+
+def test_mqtt_connection_kwargs_without_tls_omits_tls_context() -> None:
+    """No TLS: the returned kwargs carry only username/password, no tls_context."""
+    kwargs = _mqtt_connection_kwargs(
+        username="u",
+        password="p",  # noqa: S106 -- test fixture value, not a real secret
+        use_tls=False,
+    )
+    assert kwargs == {"username": "u", "password": "p"}
+
+
+def test_mqtt_connection_kwargs_with_tls_adds_a_default_ssl_context() -> None:
+    """TLS enabled: the returned kwargs also carry a default SSLContext."""
+    kwargs = _mqtt_connection_kwargs(
+        username="u",
+        password="p",  # noqa: S106 -- test fixture value, not a real secret
+        use_tls=True,
+    )
+    assert kwargs["username"] == "u"
+    assert kwargs["password"] == "p"  # noqa: S105 -- test fixture value, not a real secret
+    assert isinstance(kwargs["tls_context"], ssl.SSLContext)

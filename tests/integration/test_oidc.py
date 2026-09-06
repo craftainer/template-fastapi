@@ -40,11 +40,12 @@ def test_decode_bearer_token_accepts_a_real_keycloak_token() -> None:
     assert claims["preferred_username"] == "viewer"
 
 
-def test_protected_route_accepts_a_real_keycloak_token() -> None:
-    """GET /protected with a real bearer token returns its subject claim."""
+def test_role_gated_route_accepts_a_real_keycloak_token() -> None:
+    """GET a role-gated route with a real bearer token succeeds for a "viewer"-roled user."""
     access_token = _fetch_access_token()
 
-    response = client.get("/protected", headers={"Authorization": f"Bearer {access_token}"})
+    response = client.get(
+        "/crud/v1/heroes/v2/json", headers={"Authorization": f"Bearer {access_token}"}
+    )
 
     assert response.status_code == 200
-    assert response.json() == {"sub": decode_bearer_token(access_token)["sub"]}

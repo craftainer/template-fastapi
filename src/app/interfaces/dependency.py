@@ -67,6 +67,9 @@ def build_event_sink_provider(resource: str) -> Callable[[], EventSink]:
             port=settings.mqtt_port,
             resource=resource,
             keepalive=settings.mqtt_keepalive_seconds,
+            username=settings.mqtt_username,
+            password=settings.mqtt_password,
+            use_tls=settings.mqtt_use_tls,
         )
 
     return provider
@@ -86,6 +89,9 @@ def build_event_source_provider(resource: str) -> Callable[[], EventSource]:
             port=settings.mqtt_port,
             resource=resource,
             keepalive=settings.mqtt_keepalive_seconds,
+            username=settings.mqtt_username,
+            password=settings.mqtt_password,
+            use_tls=settings.mqtt_use_tls,
         )
 
     return provider

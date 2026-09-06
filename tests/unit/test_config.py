@@ -1,6 +1,6 @@
 """Unit test: Settings.database_url assembles the async Postgres DSN, plus its
 mode-dependent validation (production requires oidc_audience/non-default
-credentials/https issuer, mock requires allow_mock_mode).
+credentials/https issuer/authenticated MQTT, mock requires allow_mock_mode).
 """
 
 import pytest
@@ -15,6 +15,9 @@ _PRODUCTION_KWARGS: dict[str, object] = {
     "RUSTFS_ACCESS_KEY": "real-access-key",
     "RUSTFS_SECRET_KEY": "real-secret-key",
     "oidc_issuer_url": "https://issuer.example.com/realms/prod",
+    "mqtt_use_tls": True,
+    "mqtt_username": "real-mqtt-user",
+    "mqtt_password": "real-mqtt-password",
 }
 
 
@@ -75,6 +78,29 @@ def test_production_mode_requires_https_oidc_issuer() -> None:
 def test_dev_mode_allows_http_oidc_issuer() -> None:
     """Settings(mode="dev") (the default) keeps the local http:// issuer URL default."""
     assert Settings().oidc_issuer_url.startswith("http://")
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"mqtt_use_tls": False},
+        {"mqtt_username": None},
+        {"mqtt_password": None},
+    ],
+)
+def test_production_mode_requires_authenticated_mqtt(override: dict[str, object]) -> None:
+    """Settings(mode="production") with TLS off or no username/password raises."""
+    kwargs = {**_PRODUCTION_KWARGS, **override}
+    with pytest.raises(ValidationError, match="mqtt_use_tls, mqtt_username, and mqtt_password"):
+        Settings(**kwargs)  # type: ignore[arg-type]
+
+
+def test_dev_mode_allows_unauthenticated_mqtt() -> None:
+    """Settings(mode="dev") (the default) keeps the local no-auth/no-TLS MQTT defaults."""
+    settings = Settings()
+    assert settings.mqtt_use_tls is False
+    assert settings.mqtt_username is None
+    assert settings.mqtt_password is None
 
 
 def test_unrelated_env_vars_are_not_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

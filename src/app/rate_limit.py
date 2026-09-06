@@ -14,13 +14,18 @@ docstring documents as breaking a regression test by splitting a single
 middleware -- it checks the limit inline in the route's own call, before the
 handler body runs.
 
+Applied to a route's update/delete/restore handler as a whole (see
+app.controllers.crud_router), not just its bulk branch -- a single-record
+edit (`?id=`) shares the same budget as a bulk one, since exempting single-
+record calls would leave per-record updates/deletes unrated regardless of
+how many a single client issues.
+
 `slowapi.errors.RateLimitExceeded` is itself a `starlette.exceptions.HTTPException`
 subclass (status_code=429), so app.problem_details's existing StarletteHTTPException
 handler already renders it as a normal RFC 9457 problem-details body -- no separate
 exception handler needed here.
 """
 
-from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -29,14 +34,3 @@ from app.config import get_settings
 settings = get_settings()
 
 limiter = Limiter(key_func=get_remote_address, storage_uri=settings.redis_url)
-
-
-def exempt_single_record_action(request: Request) -> bool:
-    """True when `request` addresses one record by id, for `limiter.limit(...,
-    exempt_when=...)` on app.controllers.crud_router's update/delete routes.
-
-    Those routes act on a single record when `?id=` is given, and in bulk over
-    filters otherwise (see app.controllers.crud_actions) -- rate_limit_bulk_action
-    is meant for the bulk branch specifically, not every single-record edit.
-    """
-    return request.query_params.get("id") is not None

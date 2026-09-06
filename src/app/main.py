@@ -14,7 +14,6 @@ from app.controllers import (
     audit,
     health,
     mock,
-    protected,
 )
 from app.controllers.crud_router import ROUTER_VERSION
 from app.crud_1 import router as crud_v1_router
@@ -112,6 +111,5 @@ add_security_headers(app)
 
 app.include_router(health.router, prefix="/health")
 app.include_router(crud_v1_router, prefix=f"/crud/v{ROUTER_VERSION}")
-app.include_router(protected.router, prefix="/protected")
 app.include_router(audit.router, prefix="/audit")
 _mount_mode_specific_routers(app, settings.mode)

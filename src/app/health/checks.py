@@ -12,6 +12,7 @@ reason as app.repositories.memory -- see its module docstring.
 """
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING
 
 import boto3
@@ -24,6 +25,15 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.health.base import HealthCheckResult
+
+logger = logging.getLogger(__name__)
+
+# GET /ready is unauthenticated (a k8s-style readiness probe) -- the real
+# exception text (which can embed a DSN host/port/credentials, an S3 endpoint,
+# or an OIDC issuer's response body) goes only to the logs below, for
+# whoever's on call to look up; the HTTP response gets this fixed string
+# regardless of which service failed or why.
+_UNHEALTHY_DETAIL = "dependency check failed; see server logs"
 
 if TYPE_CHECKING:
     # boto3-stubs[s3] is a dev-only dependency (pyproject.toml) -- not
@@ -47,8 +57,9 @@ class DatabaseHealthCheck:
         try:
             async with self._engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
-        except SQLAlchemyError as exc:  # pragma: no cover -- see module docstring
-            return HealthCheckResult(self.name, healthy=False, detail=str(exc))
+        except SQLAlchemyError:  # pragma: no cover -- see module docstring
+            logger.exception("Database health check failed")
+            return HealthCheckResult(self.name, healthy=False, detail=_UNHEALTHY_DETAIL)
         return HealthCheckResult(self.name, healthy=True)
 
 
@@ -66,8 +77,9 @@ class RedisHealthCheck:
         client = Redis.from_url(self._redis_url)
         try:
             await client.ping()
-        except RedisError as exc:  # pragma: no cover -- see module docstring
-            return HealthCheckResult(self.name, healthy=False, detail=str(exc))
+        except RedisError:  # pragma: no cover -- see module docstring
+            logger.exception("Redis health check failed")
+            return HealthCheckResult(self.name, healthy=False, detail=_UNHEALTHY_DETAIL)
         finally:
             await client.aclose()
         return HealthCheckResult(self.name, healthy=True)
@@ -97,8 +109,9 @@ class S3HealthCheck:
         """Call ListBuckets in a thread and report whether it succeeded."""
         try:
             await asyncio.to_thread(self._list_buckets)
-        except (BotoCoreError, ClientError) as exc:  # pragma: no cover -- see module docstring
-            return HealthCheckResult(self.name, healthy=False, detail=str(exc))
+        except BotoCoreError, ClientError:  # pragma: no cover -- see module docstring
+            logger.exception("S3 health check failed")
+            return HealthCheckResult(self.name, healthy=False, detail=_UNHEALTHY_DETAIL)
         return HealthCheckResult(self.name, healthy=True)
 
 
@@ -130,6 +143,7 @@ class OIDCHealthCheck:
             async with httpx.AsyncClient(timeout=5) as client:
                 response = await client.get(discovery_url)
                 response.raise_for_status()
-        except httpx.HTTPError as exc:  # pragma: no cover -- see module docstring
-            return HealthCheckResult(self.name, healthy=False, detail=str(exc))
+        except httpx.HTTPError:  # pragma: no cover -- see module docstring
+            logger.exception("OIDC health check failed")
+            return HealthCheckResult(self.name, healthy=False, detail=_UNHEALTHY_DETAIL)
         return HealthCheckResult(self.name, healthy=True)
