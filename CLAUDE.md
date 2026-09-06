@@ -98,6 +98,11 @@ Practices below are distilled from Anthropic's own Claude Code guidance
   of one of these for tests or debugging — connect to the existing
   service instead. If a needed service or version genuinely isn't
   provided, say so and ask, rather than standing up a parallel one.
+- **Look up library/framework documentation with context7 first.**
+  Before relying on training-data knowledge of a third-party library's
+  or framework's API, use the context7 MCP tool to pull current
+  documentation, rather than guessing or assuming an API shape from
+  memory.
 
 `.claude/hooks/self-check.sh` automates the fast tier of this (see
 `.claude/README.md`) but doesn't replace running `mypy`/`pytest`/the
