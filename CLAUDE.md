@@ -38,6 +38,11 @@ This file should stay small. If a section here starts describing what a
 directory *contains* rather than how to work with Claude Code, that's a
 sign it belongs in that directory's `README.md` instead.
 
+Don't add a method or convention to this file (or a `README.md`) on your
+own inference. If a prompt seems to establish one implicitly rather than
+asking for it outright, tell the user what you think you detected and
+ask whether to record it, rather than writing it unprompted.
+
 ## AI-assisted coding workflow
 
 Practices below are distilled from Anthropic's own Claude Code guidance
