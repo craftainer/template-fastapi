@@ -16,8 +16,12 @@ from typing import Annotated, Any
 from fastapi import Depends
 
 from app.controllers.crud_router import ROUTER_VERSION, build_resource_router
-from app.interfaces.base import CRUDInterface, OwnerScope, RepositoryRevisionSink
-from app.interfaces.dependency import build_repository_provider
+from app.interfaces.base import CRUDInterface, EventSource, OwnerScope, RepositoryRevisionSink
+from app.interfaces.dependency import (
+    build_event_sink_provider,
+    build_event_source_provider,
+    build_repository_provider,
+)
 from app.models.base import DBSession
 from app.models.hero import Hero as HeroModel
 from app.models.revision import Revision
@@ -27,6 +31,16 @@ from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
 
 _hero_repository = build_repository_provider(HeroModel)
 _revision_repository = build_repository_provider(Revision)
+_hero_event_sink = build_event_sink_provider("hero")
+_hero_event_source = build_event_source_provider("hero")
+
+
+def get_hero_event_source() -> EventSource:
+    """Return the shared EventSource for Hero's `GET <prefix>/events` route."""
+    return _hero_event_source()
+
+
+HeroEventSource = Annotated[EventSource, Depends(get_hero_event_source)]
 
 
 def get_hero_revision_repository(session: DBSession) -> Repository[Revision]:
@@ -56,6 +70,11 @@ def get_hero_crud(
     `actor` is resolved from the same per-request claims `owner` already reads,
     the same pattern app.interfaces.README.md's "Do" section describes.
 
+    `events=_hero_event_sink()`: every create/update/update_many/delete/
+    delete_many **and** restore/restore_many is published for real-time streaming
+    -- see app.interfaces.base.EventSink's own docstring and `GET <prefix>/events`,
+    added below via `event_source_dependency`.
+
     MODE=mock uses the shared in-memory repository instead of `session` -- an
     unused AsyncSession's commit() never opens a connection, so `session` stays a
     harmless, uniform dependency across every mode rather than needing two
@@ -66,6 +85,7 @@ def get_hero_crud(
         repository=_hero_repository(session),
         owner=OwnerScope("owner_id", claims["sub"], read_scoped=False),
         revisions=RepositoryRevisionSink(_revision_repository(session)),
+        events=_hero_event_sink(),
         resource="hero",
         actor=str(claims.get("sub", "unknown")),
     )
@@ -96,4 +116,5 @@ router = build_resource_router(
     draft_schema=HeroV2Update,
     archivable=True,
     revision_repository_dependency=HeroRevisionRepository,
+    event_source_dependency=HeroEventSource,
 )

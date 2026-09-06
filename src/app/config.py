@@ -91,6 +91,19 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    # app.interfaces.dependency.build_event_sink_provider/build_event_source_provider's
+    # real (non-MODE=mock) backend -- see .devcontainer/stack/mqtt/.
+    # mqtt_keepalive_seconds is the aiomqtt.Client keepalive passed to both
+    # MQTTEventSink and MQTTEventSource.
+    mqtt_host: str = "localhost"
+    mqtt_port: int = 1883
+    mqtt_keepalive_seconds: int = 60
+
+    # app.controllers.crud_router's `GET <prefix>/events` SSE route: how often an
+    # idle stream sends a `: keep-alive` comment, so intermediary proxies/load
+    # balancers don't time out the connection.
+    sse_keepalive_seconds: float = 15.0
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:

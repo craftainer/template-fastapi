@@ -17,13 +17,15 @@ single record; otherwise -> filtered list, or a bulk update/delete over the
 given filters" logic each factory's routes wrap in their own response format.
 """
 
-from collections.abc import Sequence
+import asyncio
+import json
+from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
 
 from defusedxml.common import DefusedXmlException
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
@@ -115,6 +117,7 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
     archivable: bool = False,
     revision_repository_dependency: Any = None,  # Annotated[Repository[Revision], Depends(...)]
     resource: str | None = None,
+    event_source_dependency: Any = None,  # Annotated[EventSource, Depends(...)]
 ) -> APIRouter:
     """Build the standard list/create/get/update/delete JSON router for one resource.
 
@@ -146,6 +149,14 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
     table (see app.models.revision) for that record's history, newest first --
     not routed through `crud_dependency` at all, since it reads a different
     model entirely.
+
+    `event_source_dependency`, if given, adds `GET <prefix>/events`: a
+    Server-Sent Events stream of this resource's create/update/update_many/
+    delete/delete_many/restore/restore_many activity (see
+    app.interfaces.base.EventSink/EventSource and
+    docs/adrs/0015-mqtt-for-crud-events.md). Gated by the same `read_roles`
+    dependency as the plain `GET` list route above, JSON-only for now like the
+    other record-lifecycle routes.
     """
     router = APIRouter(prefix=prefix, tags=list(tags), dependencies=list(router_dependencies))
     not_found = f"{resource_label} not found"
@@ -247,7 +258,70 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
             )
             return [RevisionView.model_validate(record) for record in records]
 
+    if event_source_dependency is not None:
+
+        @router.get("/events", dependencies=[read_roles])
+        async def stream_events(
+            source: event_source_dependency,
+            request: Request,
+            subscriber_id: str | None = None,
+        ) -> StreamingResponse:
+            resolved_subscriber_id = subscriber_id or request.headers.get("last-event-id")
+            resolved_id, events = await source.subscribe(resolved_subscriber_id)
+            return StreamingResponse(
+                _sse_events(request, resolved_id, events), media_type="text/event-stream"
+            )
+
     return router
+
+
+async def _sse_events(
+    request: Request, subscriber_id: str, events: AsyncIterator[dict[str, Any]]
+) -> AsyncIterator[str]:
+    """Render one EventSource subscription as an SSE byte stream.
+
+    The first frame always carries `subscriber_id` (see EventSource.subscribe's own
+    docstring) so a client that connected with none yet learns which one to pass back
+    on reconnect. Every subsequent frame gets its own `id:` line, a per-connection
+    sequence number -- unlike the MQTT-side persistent-session replay this rides on
+    top of (see docs/adrs/0015-mqtt-for-crud-events.md), this sequence number is
+    purely informational and isn't itself used to resume a gap. A `: keep-alive`
+    comment fills any gap longer than `Settings.sse_keepalive_seconds` so intermediary
+    proxies/load balancers don't time out an idle connection; the stream ends as soon
+    as `request.is_disconnected()` reports the client is gone.
+
+    Uses `asyncio.wait` (checking, not consuming, a still-pending task) rather than
+    `asyncio.wait_for` around `iterator.__anext__()` -- `wait_for` cancels its inner
+    awaitable on timeout, which would tear down `events`'s underlying async generator
+    (e.g. InMemoryEventSink._events/MQTTEventSource._events, both suspended in an
+    `await` at that point) on every single keep-alive, silently ending the stream one
+    keep-alive after it started. The one pending `__anext__()` task survives across
+    keep-alives and is only ever cancelled once the client actually disconnects.
+    """
+    yield f"id: 0\ndata: {json.dumps({'subscriber_id': subscriber_id})}\n\n"
+    sequence = 1
+    iterator = events.__aiter__()
+    pending: asyncio.Task[dict[str, Any]] | None = None
+    try:
+        while True:
+            if await request.is_disconnected():
+                return
+            if pending is None:
+                pending = asyncio.ensure_future(iterator.__anext__())
+            done, _ = await asyncio.wait({pending}, timeout=settings.sse_keepalive_seconds)
+            if not done:
+                yield ": keep-alive\n\n"
+                continue
+            pending = None
+            try:
+                event = done.pop().result()
+            except StopAsyncIteration:
+                return
+            yield f"id: {sequence}\ndata: {json.dumps(event)}\n\n"
+            sequence += 1
+    finally:
+        if pending is not None:
+            pending.cancel()
 
 
 def build_xml_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel](
@@ -472,6 +546,7 @@ def build_resource_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseM
     draft_schema: Any = None,  # type[BaseModel] | None -- see build_json_router
     archivable: bool = False,
     revision_repository_dependency: Any = None,  # Annotated[Repository[Revision], Depends(...)]
+    event_source_dependency: Any = None,  # Annotated[EventSource, Depends(...)]
 ) -> APIRouter:
     """Compose build_json_router/build_xml_router/build_web_router into one resource-version router.
 
@@ -493,9 +568,10 @@ def build_resource_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseM
     `include_router`'d into it, so this single declaration reaches JSON/XML/web
     alike, rather than each per-format factory call repeating it.
 
-    `draft_schema`/`archivable`/`revision_repository_dependency` are forwarded to
-    `build_json_router` only -- draft/publish/restore/revisions are JSON-only for
-    now (see build_json_router's own docstring); XML/web keep their existing
+    `draft_schema`/`archivable`/`revision_repository_dependency`/
+    `event_source_dependency` are forwarded to `build_json_router` only --
+    draft/publish/restore/revisions/events are JSON-only for now (see
+    build_json_router's own docstring); XML/web keep their existing
     list/create/get/update/delete shape unchanged.
     """
     full_prefix = prefix if api_prefix is None else api_prefix
@@ -516,6 +592,7 @@ def build_resource_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseM
             archivable=archivable,
             revision_repository_dependency=revision_repository_dependency,
             resource=resource,
+            event_source_dependency=event_source_dependency,
         ),
         prefix="/json",
     )

@@ -23,6 +23,7 @@ dependencies = [
     "opentelemetry-instrumentation-logging==0.65b0",
     "defusedxml==0.7.1",
     "slowapi==0.1.10",
+    "aiomqtt==2.5.1",
 ]
 
 [project.optional-dependencies]

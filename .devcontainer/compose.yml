@@ -3,6 +3,7 @@ include:
   - ./stack/s3/compose.yml
   - ./stack/keycloak/compose.yml
   - ./stack/redis/compose.yml
+  - ./stack/mqtt/compose.yml
   - ./stack/selenium/compose.yml
 
 # App service: the FastAPI application itself, built from the top-level
@@ -45,6 +46,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mqtt:
+        condition: service_healthy
       keycloak:
         condition: service_healthy
       selenium:
@@ -59,6 +62,8 @@ services:
       POSTGRES_PORT: "5432"
       S3_ENDPOINT_URL: http://s3:9000
       REDIS_URL: redis://redis:6379/0
+      MQTT_HOST: mqtt
+      MQTT_PORT: "1883"
       MODE: dev
     # No ports: mapping and no networks: block — see the root README's
     # "Don't". Host access to :8000 comes from devcontainer.json's

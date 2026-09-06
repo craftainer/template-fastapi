@@ -111,8 +111,23 @@ update/delete routes). `revision_repository_dependency` + `resource`
 together add `GET <prefix>/revisions?id=`, a plain query against the
 shared `Revision` table (`app.models.revision`) — not routed through
 `crud_dependency`/`CRUDLike` at all, since it reads a different model
-entirely. See `app.crud_1.heroes.heroes_v2` for all of the above wired up
-on Hero, and `app/README.md`'s "Record-lifecycle mixins" section.
+entirely. `event_source_dependency` (an
+`Annotated[app.interfaces.base.EventSource, Depends(...)]`-shaped value,
+mirroring `crud_dependency`'s own shape) adds `GET <prefix>/events`: a
+`StreamingResponse` (`media_type="text/event-stream"`) of that resource's
+create/update/update_many/delete/delete_many/restore/restore_many
+activity, gated by the same `read_roles` dependency as the plain `GET`
+list route. The route resolves an optional `subscriber_id` query param
+(falling back to the standard `Last-Event-ID` header on reconnect), calls
+`EventSource.subscribe`, and renders the result via `crud_router.py`'s
+private `_sse_events` — which uses `asyncio.wait` on a persisted
+`__anext__()` task rather than `asyncio.wait_for` around each keep-alive
+tick specifically because `wait_for` would cancel (and tear down) the
+underlying event generator on every single keep-alive interval; see
+`_sse_events`'s own docstring. See `app.crud_1.heroes.heroes_v2` for all
+of the above wired up on Hero, `app/README.md`'s "Record-lifecycle
+mixins" section, and `docs/adrs/0015-mqtt-for-crud-events.md` for the
+event stream's transport and delivery-guarantee design.
 
 The generated route functions' `crud`/`record` parameters are annotated
 with a TypeVar-bound runtime value (e.g. `create_schema`, a `type[CreateT]`

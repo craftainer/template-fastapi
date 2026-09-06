@@ -63,6 +63,30 @@ CRUD class, only a model, a view, and a router that wires the two through
   Unlike the five original mutating methods, `restore`/`restore_many`
   don't call `revisions` (the plan they were added under scoped revision
   logging to `create`/`update`/`update_many`/`delete`/`delete_many` only).
+
+  `base.py` also has `EventSink`/`EventSource`, the publish/subscribe
+  Protocols backing a resource's opt-in `GET <prefix>/events` Server-Sent
+  Events stream — the same opt-in shape as `RevisionSink` above, but
+  deliberately broader in scope: `events`, if passed to `CRUDInterface`,
+  is called on every create/update/update_many/delete/delete_many **and**
+  restore/restore_many (a subscriber watching real-time activity cares
+  about a record becoming visible again, unlike the revision log — see
+  `EventSink`'s own docstring). `MQTTEventSink`/`MQTTEventSource` are the
+  concrete adapters backing the real deployment (QoS 1, a persistent MQTT
+  session keyed by a client-supplied `subscriber_id` — see
+  `docs/adrs/0015-mqtt-for-crud-events.md` for the full delivery-guarantee
+  design and why MQTT was chosen over this app's existing Redis/Valkey
+  service); `InMemoryEventSink` is the single `MODE=mock` adapter
+  satisfying both Protocols at once (a plain `asyncio.Queue` fan-out per
+  resource, best-effort only, no delivery guarantee). Pass
+  `CRUDInterface(..., events=EventSink)` and add
+  `event_source_dependency=` to `build_json_router`/`build_resource_router`
+  (see `../controllers/README.md`'s "Generic CRUD router factories") —
+  `events=None` (the default) changes nothing. `app.interfaces.dependency.
+  build_event_sink_provider(resource)`/`build_event_source_provider(resource)`
+  choose between the two adapters by `Settings.mode`, the same pattern as
+  `build_repository_provider` — see `app.crud_1.heroes.heroes_v2.
+  get_hero_crud` for the worked example.
 - `compat.py` — `CompatCRUD`, a generic wrapper that adapts a current
   `CRUDInterface` to speak in terms of an older (deprecated) API
   version's view, via caller-supplied converter functions. The building
@@ -75,6 +99,12 @@ CRUD class, only a model, a view, and a router that wires the two through
   vs. a request-scoped `SQLAlchemyRepository`. Returns a
   `Callable[[AsyncSession], Repository[ModelT]]` a controller calls with
   its request's session — see `app.crud_1.heroes` for the pattern.
+  `build_event_sink_provider(resource)`/`build_event_source_provider(resource)`
+  follow the same MODE-branching shape for `EventSink`/`EventSource`
+  above: a shared `InMemoryEventSink` under `MODE=mock` (one per resource,
+  paired so a sink's `publish()` reaches a source's `subscribe()`-
+  registered queues), a fresh, stateless `MQTTEventSink`/`MQTTEventSource`
+  otherwise.
   The route-level factories built on top of `CRUDInterface`/`CompatCRUD`
   (`build_json_router`/`build_xml_router`/`build_web_router`) live in
   `../controllers/crud_router.py`, one layer up — see `../controllers/

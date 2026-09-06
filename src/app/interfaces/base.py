@@ -8,21 +8,26 @@ conversion happens, so a new resource never needs its own CRUD class.
 
 A few branches below are `# pragma: no cover` for the same reason as
 app.repositories.sqlalchemy's module docstring: Hero -- the only resource
-tests/e2e's journeys exercise -- always builds its CRUDInterface with `owner`
-and `revisions` both set (see app.crud_1.heroes.heroes_v2.get_hero_crud), and
-`owner.read_scoped=False`, so the `owner is None`/`revisions is None`/
-`owner.read_scoped is True` branches below can never run through `tests/e2e`.
-tests/unit/interfaces/test_base.py exercises every one of them directly against
-a standalone owner-less/revision-less CRUDInterface, which is what actually
-covers them for the primary (`pytest`, i.e. tests/unit + tests/integration)
-coverage gate; the pragma only affects what's counted toward the separate
-`pytest tests/e2e` coverage gate.
+tests/e2e's journeys exercise -- always builds its CRUDInterface with `owner`,
+`revisions`, and `events` all set (see app.crud_1.heroes.heroes_v2.get_hero_crud),
+and `owner.read_scoped=False`, so the `owner is None`/`revisions is None`/
+`events is None`/`owner.read_scoped is True` branches below can never run
+through `tests/e2e`. tests/unit/interfaces/test_base.py exercises every one of
+them directly against a standalone owner-less/revision-less/event-less
+CRUDInterface, which is what actually covers them for the primary (`pytest`,
+i.e. tests/unit + tests/integration) coverage gate; the pragma only affects
+what's counted toward the separate `pytest tests/e2e` coverage gate.
 """
 
-from collections.abc import Sequence
+import asyncio
+import json
+import uuid
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
+import aiomqtt
 from pydantic import BaseModel
 
 from app.repositories.base import Repository
@@ -71,6 +76,194 @@ class RepositoryRevisionSink:
                 "actor": actor,
             }
         )
+
+
+class EventSink(Protocol):
+    """Opt-in hook for a CRUDInterface to publish record-mutation events for real-time streaming.
+
+    A small Protocol (rather than a concrete class), the same shape as RevisionSink
+    above -- see MQTTEventSink/InMemoryEventSink below for the concrete adapters a
+    resource that opts in actually uses, and EventSource (below) for the paired
+    subscribe-side Protocol app.controllers.crud_router's `GET <prefix>/events`
+    route depends on. Deliberately broader in scope than RevisionSink: fired after
+    every successful create/update/update_many/delete/delete_many **and**
+    restore/restore_many, since a subscriber watching a resource's real-time
+    activity cares about visibility changes (restore) too -- unlike revision
+    logging, which docs/adrs/0015-mqtt-for-crud-events.md and RepositoryRevisionSink's
+    own docstring above deliberately scope to the original five mutating methods
+    only. See docs/adrs/0015-mqtt-for-crud-events.md for why MQTT (not this app's
+    existing Redis/Valkey service) backs the concrete adapter.
+    """
+
+    async def publish(
+        self, *, resource: str, record_id: int, action: str, snapshot: dict[str, Any]
+    ) -> None:
+        """Publish one event for `resource`/`record_id` -- delivery semantics are the
+        concrete adapter's own (see MQTTEventSink: at-least-once at QoS 1; InMemoryEventSink:
+        best-effort, no delivery guarantee)."""
+        ...  # pragma: no cover -- Protocol stub, never executed directly
+
+
+class EventSource(Protocol):
+    """Opt-in subscribe-side counterpart to EventSink, for `GET <prefix>/events`.
+
+    A small Protocol, structurally distinct from EventSink even though a resource's
+    two concrete adapters (MQTTEventSink/MQTTEventSource, or the single
+    InMemoryEventSink instance satisfying both) are typically built together and
+    share the same underlying transport -- see app.interfaces.dependency.
+    build_event_sink_provider/build_event_source_provider.
+    """
+
+    async def subscribe(
+        self, subscriber_id: str | None
+    ) -> tuple[str, AsyncIterator[dict[str, Any]]]:
+        """Resolve `subscriber_id` (issuing a new one if None) and return it alongside
+        an async iterator of this resource's event envelopes (the same JSON-shaped dict
+        `EventSink.publish` was called with, plus a `timestamp`) from this point on.
+
+        For the MQTT-backed adapter, a persistent subscriber_id (QoS 1, `clean_session=
+        False`) is what lets a reconnecting caller receive events published while it was
+        briefly disconnected -- see docs/adrs/0015-mqtt-for-crud-events.md's "Delivery
+        guarantee" section. A caller that discards its subscriber_id and passes None gets
+        a fresh session with no replay, by design.
+        """
+        ...  # pragma: no cover -- Protocol stub, never executed directly
+
+
+def _event_envelope(
+    *, resource: str, record_id: int, action: str, snapshot: dict[str, Any]
+) -> dict[str, Any]:
+    """Build the JSON-safe event envelope shared by every EventSink/EventSource adapter."""
+    return {
+        "resource": resource,
+        "record_id": record_id,
+        "action": action,
+        "snapshot": snapshot,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+
+
+@dataclass(frozen=True)
+class MQTTEventSink:
+    """EventSink publishing to a real MQTT broker at QoS 1, one short-lived connection per call.
+
+    Each `publish()` opens its own `aiomqtt.Client` connection rather than holding one
+    open across requests -- aiomqtt.Client binds to the event loop it's constructed on
+    (`asyncio.get_running_loop()` in its own `__init__`), which rules out building one
+    eagerly at import time the way app.repositories.memory.InMemoryRepository is (see
+    app.interfaces.dependency.build_event_sink_provider). QoS 1 here only guarantees
+    this publish reaches the broker at least once; the "no missed events across a
+    disconnect" guarantee (docs/adrs/0015-mqtt-for-crud-events.md) comes from the
+    broker's own persistent-session queuing on the *subscribe* side (MQTTEventSource
+    below), not from anything this class does.
+    """
+
+    hostname: str
+    port: int
+    resource: str
+    keepalive: int
+
+    async def publish(
+        self, *, resource: str, record_id: int, action: str, snapshot: dict[str, Any]
+    ) -> None:
+        """Publish one event to `crud-events/<resource>` at QoS 1."""
+        envelope = _event_envelope(
+            resource=resource, record_id=record_id, action=action, snapshot=snapshot
+        )
+        async with aiomqtt.Client(
+            hostname=self.hostname, port=self.port, keepalive=self.keepalive
+        ) as client:
+            await client.publish(f"crud-events/{resource}", json.dumps(envelope), qos=1)
+
+
+@dataclass(frozen=True)
+class MQTTEventSource:
+    """EventSource subscribing to a real MQTT broker via a persistent session at QoS 1.
+
+    `subscribe()` derives the MQTT client id from `subscriber_id` (issuing a new
+    `uuid4` if the caller has none yet) and connects with `clean_session=False` --
+    the broker then keeps a queue of QoS-1 messages published to `crud-events/
+    <resource>` while this client id is disconnected (bounded by
+    `.devcontainer/stack/mqtt/mosquitto.conf`'s `max_queued_messages`/
+    `message_expiry_interval`, see docs/adrs/0015-mqtt-for-crud-events.md) and
+    delivers them once the same client id reconnects. The connection is held open
+    for as long as the returned iterator is consumed (typically the lifetime of one
+    SSE stream, see app.controllers.crud_router's `GET <prefix>/events`) via the
+    `async with` inside `_events`, not by this method itself.
+    """
+
+    hostname: str
+    port: int
+    resource: str
+    keepalive: int
+
+    async def subscribe(
+        self, subscriber_id: str | None
+    ) -> tuple[str, AsyncIterator[dict[str, Any]]]:
+        """Resolve subscriber_id and return it with an async iterator of event envelopes."""
+        resolved = subscriber_id or str(uuid.uuid4())
+        return resolved, self._events(resolved)
+
+    async def _events(self, subscriber_id: str) -> AsyncIterator[dict[str, Any]]:
+        """Open the persistent-session connection and yield decoded event envelopes."""
+        async with aiomqtt.Client(
+            hostname=self.hostname,
+            port=self.port,
+            identifier=f"crud-events-{self.resource}-{subscriber_id}",
+            clean_session=False,
+            keepalive=self.keepalive,
+        ) as client:
+            await client.subscribe(f"crud-events/{self.resource}", qos=1)
+            async for message in client.messages:
+                yield json.loads(message.payload)
+
+
+class InMemoryEventSink:
+    """EventSink *and* EventSource for MODE=mock, an asyncio.Queue fan-out per resource.
+
+    One instance is built once and shared (see app.interfaces.dependency.
+    build_event_sink_provider/build_event_source_provider), matching how
+    app.repositories.memory.InMemoryRepository is built once and shared -- a
+    single instance satisfies both EventSink (`publish`) and EventSource
+    (`subscribe`) structurally, since under MODE=mock there's no broker to keep the
+    two sides independent through: a `publish()` call needs to reach every
+    currently-subscribed queue directly.
+
+    This is necessarily best-effort, with **no delivery guarantee**: there's no
+    broker, no persistent session, and no queued replay for a subscriber that's
+    briefly disconnected -- a dropped SSE connection under MODE=mock simply misses
+    whatever was published while it was down. The delivery guarantee in
+    docs/adrs/0015-mqtt-for-crud-events.md only applies to the real
+    MQTTEventSink/MQTTEventSource-backed path.
+    """
+
+    def __init__(self) -> None:
+        """Start with no subscribers."""
+        self._queues: dict[str, asyncio.Queue[dict[str, Any]]] = {}
+
+    async def publish(
+        self, *, resource: str, record_id: int, action: str, snapshot: dict[str, Any]
+    ) -> None:
+        """Push one event onto every currently-subscribed queue for `resource`."""
+        envelope = _event_envelope(
+            resource=resource, record_id=record_id, action=action, snapshot=snapshot
+        )
+        for queue in list(self._queues.values()):
+            queue.put_nowait(envelope)
+
+    async def subscribe(
+        self, subscriber_id: str | None
+    ) -> tuple[str, AsyncIterator[dict[str, Any]]]:
+        """Register a new queue under `subscriber_id` (issuing one if None) and return it."""
+        resolved = subscriber_id or str(uuid.uuid4())
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._queues[resolved] = queue
+        return resolved, self._events(queue)
+
+    async def _events(self, queue: asyncio.Queue[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
+        """Yield events as they're published, forever -- caller stops iterating on disconnect."""
+        while True:
+            yield await queue.get()
 
 
 @dataclass(frozen=True)
@@ -177,6 +370,7 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
         *,
         owner: OwnerScope | None = None,
         revisions: RevisionSink | None = None,
+        events: EventSink | None = None,
         resource: str | None = None,
         actor: str = "unknown",
     ) -> None:
@@ -191,11 +385,18 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
         `owner`. `resource` (e.g. "hero") and `actor` (typically the caller's
         `claims["sub"]`, resolved once per request the same way `owner`'s `value`
         is) are only meaningful when `revisions` is set.
+
+        `events`, if given, is called once per successful create/update/update_many/
+        delete/delete_many **and** restore/restore_many -- broader than `revisions`
+        above, see EventSink's own docstring for why. `events=None` (the default)
+        changes nothing, the same opt-in shape as `owner`/`revisions`. `resource` is
+        shared with `revisions` above; `events` doesn't use `actor`.
         """
         self._schema = schema
         self._repository = repository
         self._owner = owner
         self._revisions = revisions
+        self._events = events
         self._resource = resource
         self._actor = actor
 
@@ -209,6 +410,22 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
             action=action,
             snapshot=snapshot.model_dump(mode="json"),
             actor=self._actor,
+        )
+
+    async def _publish_event(self, *, record_id: int, action: str, snapshot: SchemaT) -> None:
+        """Call the configured EventSink, if any, with a JSON-safe snapshot.
+
+        Called alongside `_record_revision` for create/update/update_many/delete/
+        delete_many, and additionally for restore/restore_many -- see EventSink's
+        own docstring for why this is broader than `_record_revision`'s scope.
+        """
+        if self._events is None:
+            return  # pragma: no cover -- see module docstring
+        await self._events.publish(
+            resource=self._resource or "",
+            record_id=record_id,
+            action=action,
+            snapshot=snapshot.model_dump(mode="json"),
         )
 
     def _scoped(self, filters: Sequence[FilterClause]) -> Sequence[FilterClause]:
@@ -322,6 +539,11 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
             action="create",
             snapshot=result,
         )
+        await self._publish_event(
+            record_id=instance.id,  # type: ignore[attr-defined]
+            action="create",
+            snapshot=result,
+        )
         return result
 
     async def update(self, record_id: int, data: BaseModel) -> SchemaT | None:
@@ -340,12 +562,15 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
                 return None
             result = self._schema.model_validate(updated[0])
         await self._record_revision(record_id=record_id, action="update", snapshot=result)
+        await self._publish_event(record_id=record_id, action="update", snapshot=result)
         return result
 
     async def delete(self, record_id: int) -> bool:
         """Delete the record with the given id; return whether it existed."""
         snapshot = (
-            await self._pre_delete_snapshot(record_id) if self._revisions is not None else None
+            await self._pre_delete_snapshot(record_id)
+            if self._revisions is not None or self._events is not None
+            else None
         )
         if self._owner is None:  # pragma: no cover -- see module docstring
             deleted = await self._repository.delete(record_id)
@@ -356,10 +581,11 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
             deleted = bool(deleted_records)
         if deleted and snapshot is not None:
             await self._record_revision(record_id=record_id, action="delete", snapshot=snapshot)
+            await self._publish_event(record_id=record_id, action="delete", snapshot=snapshot)
         return deleted
 
     async def _pre_delete_snapshot(self, record_id: int) -> SchemaT | None:
-        """Return a view of the record before it's deleted, for the revision log."""
+        """Return a view of the record before it's deleted, for the revision log/event stream."""
         instance = await self._repository.get(
             record_id, include_archived=True, include_unpublished=True
         )
@@ -375,6 +601,7 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
         results = [self._schema.model_validate(instance) for instance in instances]
         for result in results:
             await self._record_revision(record_id=result.id, action="update", snapshot=result)  # type: ignore[attr-defined]
+            await self._publish_event(record_id=result.id, action="update", snapshot=result)  # type: ignore[attr-defined]
         return results
 
     async def delete_many(self, *, filters: Sequence[FilterClause]) -> Sequence[SchemaT]:
@@ -383,20 +610,36 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
         results = [self._schema.model_validate(instance) for instance in instances]
         for result in results:
             await self._record_revision(record_id=result.id, action="delete", snapshot=result)  # type: ignore[attr-defined]
+            await self._publish_event(record_id=result.id, action="delete", snapshot=result)  # type: ignore[attr-defined]
         return results
 
     async def restore(self, record_id: int) -> SchemaT | None:
-        """Clear `archived_at` on the record with the given id; return it, or None."""
+        """Clear `archived_at` on the record with the given id; return it, or None.
+
+        Unlike delete/update, restore has no `revisions` counterpart (see
+        RevisionSink's own docstring) but does fire `events` -- a subscriber
+        watching visibility changes cares about a record becoming visible again,
+        see EventSink's own docstring.
+        """
         if self._owner is None:  # pragma: no cover -- see module docstring
             instance = await self._repository.restore(record_id)
-            return self._schema.model_validate(instance) if instance is not None else None
-        restored = await self._repository.restore_many(filters=self._scoped(_id_filter(record_id)))
-        return self._schema.model_validate(restored[0]) if restored else None
+            result = self._schema.model_validate(instance) if instance is not None else None
+        else:
+            restored = await self._repository.restore_many(
+                filters=self._scoped(_id_filter(record_id))
+            )
+            result = self._schema.model_validate(restored[0]) if restored else None
+        if result is not None:
+            await self._publish_event(record_id=record_id, action="restore", snapshot=result)
+        return result
 
     async def restore_many(self, *, filters: Sequence[FilterClause]) -> Sequence[SchemaT]:
         """Clear `archived_at` on every record matching the filters; return them."""
         instances = await self._repository.restore_many(filters=self._scoped(filters))
-        return [self._schema.model_validate(instance) for instance in instances]
+        results = [self._schema.model_validate(instance) for instance in instances]
+        for result in results:
+            await self._publish_event(record_id=result.id, action="restore", snapshot=result)  # type: ignore[attr-defined]
+        return results
 
 
 def _id_filter(record_id: int) -> tuple[FilterClause]:

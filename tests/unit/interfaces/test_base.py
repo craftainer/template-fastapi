@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from app.interfaces.base import CRUDInterface, OwnerScope
+from app.interfaces.base import CRUDInterface, EventSink, InMemoryEventSink, OwnerScope
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
 
 
@@ -467,3 +467,228 @@ async def test_read_scoped_false_still_blocks_delete_of_another_owners_record(
     alices = await alice_open_reads_crud.create(_WidgetCreate(label="apple"))
     assert await bob_open_reads_crud.delete(alices.id) is False
     assert await alice_open_reads_crud.get(alices.id) == alices
+
+
+# --- EventSink: opt-in real-time event publishing -----------------------------
+#
+# Mirrors the RevisionSink tests' shape (a fake recording every call), but
+# EventSink is fired for restore/restore_many too, unlike RevisionSink -- see
+# EventSink's own docstring for why.
+
+
+class _FakeEventSink:
+    """EventSink recording every publish() call, for assertions."""
+
+    def __init__(self) -> None:
+        """Start with no recorded calls."""
+        self.calls: list[dict[str, Any]] = []
+
+    async def publish(
+        self, *, resource: str, record_id: int, action: str, snapshot: dict[str, Any]
+    ) -> None:
+        """Record this call's arguments."""
+        self.calls.append(
+            {"resource": resource, "record_id": record_id, "action": action, "snapshot": snapshot}
+        )
+
+
+@pytest.fixture
+def event_sink() -> _FakeEventSink:
+    """Return a fresh fake EventSink."""
+    return _FakeEventSink()
+
+
+@pytest.fixture
+def event_crud(event_sink: EventSink) -> CRUDInterface[_Widget, _WidgetRecord]:
+    """Return a CRUDInterface with `events` set, backed by a fresh in-memory repository."""
+    return CRUDInterface(
+        schema=_Widget, repository=_FakeWidgetRepository(), events=event_sink, resource="widget"
+    )
+
+
+async def test_events_fired_on_create(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """create() publishes one "create" event with the created record's snapshot."""
+    created = await event_crud.create(_WidgetCreate(label="a"))
+    assert event_sink.calls == [
+        {
+            "resource": "widget",
+            "record_id": created.id,
+            "action": "create",
+            "snapshot": created.model_dump(mode="json"),
+        }
+    ]
+
+
+async def test_events_fired_on_update(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """update() publishes one "update" event with the updated record's snapshot."""
+    created = await event_crud.create(_WidgetCreate(label="a"))
+    event_sink.calls.clear()
+    updated = await event_crud.update(created.id, _WidgetUpdate(label="b"))
+    assert updated is not None
+    assert event_sink.calls == [
+        {
+            "resource": "widget",
+            "record_id": created.id,
+            "action": "update",
+            "snapshot": updated.model_dump(mode="json"),
+        }
+    ]
+
+
+async def test_events_not_fired_on_missing_update(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """update() publishes nothing for an id that doesn't exist."""
+    assert await event_crud.update(999, _WidgetUpdate(label="b")) is None
+    assert event_sink.calls == []
+
+
+async def test_events_fired_on_delete(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """delete() publishes one "delete" event with the pre-delete snapshot."""
+    created = await event_crud.create(_WidgetCreate(label="a"))
+    event_sink.calls.clear()
+    assert await event_crud.delete(created.id) is True
+    assert event_sink.calls == [
+        {
+            "resource": "widget",
+            "record_id": created.id,
+            "action": "delete",
+            "snapshot": created.model_dump(mode="json"),
+        }
+    ]
+
+
+async def test_events_not_fired_on_missing_delete(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """delete() publishes nothing for an id that doesn't exist."""
+    assert await event_crud.delete(999) is False
+    assert event_sink.calls == []
+
+
+async def test_events_fired_on_update_many(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """update_many() publishes one "update" event per matched record."""
+    await event_crud.create(_WidgetCreate(label="apple"))
+    await event_crud.create(_WidgetCreate(label="apricot"))
+    event_sink.calls.clear()
+    updated = await event_crud.update_many(
+        filters=[FilterClause("label", FilterOp.ICONTAINS, "ap")], data=_WidgetUpdate(label="new")
+    )
+    assert [call["action"] for call in event_sink.calls] == ["update", "update"]
+    assert {call["record_id"] for call in event_sink.calls} == {w.id for w in updated}
+
+
+async def test_events_fired_on_delete_many(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """delete_many() publishes one "delete" event per deleted record."""
+    await event_crud.create(_WidgetCreate(label="apple"))
+    await event_crud.create(_WidgetCreate(label="apricot"))
+    event_sink.calls.clear()
+    deleted = await event_crud.delete_many(
+        filters=[FilterClause("label", FilterOp.ICONTAINS, "ap")]
+    )
+    assert [call["action"] for call in event_sink.calls] == ["delete", "delete"]
+    assert {call["record_id"] for call in event_sink.calls} == {w.id for w in deleted}
+
+
+async def test_events_fired_on_restore(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """restore() publishes one "restore" event -- unlike RevisionSink, which never fires here."""
+    created = await event_crud.create(_WidgetCreate(label="a"))
+    event_sink.calls.clear()
+    restored = await event_crud.restore(created.id)
+    assert restored is not None
+    assert event_sink.calls == [
+        {
+            "resource": "widget",
+            "record_id": created.id,
+            "action": "restore",
+            "snapshot": restored.model_dump(mode="json"),
+        }
+    ]
+
+
+async def test_events_not_fired_on_missing_restore(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """restore() publishes nothing for an id the repository can't find."""
+    assert await event_crud.restore(999) is None
+    assert event_sink.calls == []
+
+
+async def test_events_fired_on_restore_many(
+    event_crud: CRUDInterface[_Widget, _WidgetRecord], event_sink: _FakeEventSink
+) -> None:
+    """restore_many() publishes one "restore" event per restored record."""
+    await event_crud.create(_WidgetCreate(label="apple"))
+    await event_crud.create(_WidgetCreate(label="apricot"))
+    event_sink.calls.clear()
+    restored = await event_crud.restore_many(
+        filters=[FilterClause("label", FilterOp.ICONTAINS, "ap")]
+    )
+    assert [call["action"] for call in event_sink.calls] == ["restore", "restore"]
+    assert {call["record_id"] for call in event_sink.calls} == {w.id for w in restored}
+
+
+async def test_no_events_published_when_events_not_configured(
+    crud: CRUDInterface[_Widget, _WidgetRecord],
+) -> None:
+    """A CRUDInterface built with events=None (the default) never touches any sink."""
+    created = await crud.create(_WidgetCreate(label="a"))
+    assert await crud.update(created.id, _WidgetUpdate(label="b")) is not None
+    assert await crud.restore(created.id) is not None
+    assert await crud.delete(created.id) is True
+
+
+# --- InMemoryEventSink: the MODE=mock EventSink/EventSource, tested directly --
+
+
+async def test_in_memory_event_sink_delivers_to_a_subscribed_queue() -> None:
+    """subscribe() then publish() delivers the event to that subscriber's iterator."""
+    sink = InMemoryEventSink()
+    subscriber_id, events = await sink.subscribe(None)
+    assert subscriber_id  # a fresh id was issued
+
+    await sink.publish(resource="hero", record_id=1, action="create", snapshot={"id": 1})
+
+    event = await events.__anext__()
+    assert event["resource"] == "hero"
+    assert event["record_id"] == 1
+    assert event["action"] == "create"
+    assert event["snapshot"] == {"id": 1}
+    assert "timestamp" in event
+
+
+async def test_in_memory_event_sink_reuses_a_given_subscriber_id() -> None:
+    """subscribe() with an explicit subscriber_id echoes it back rather than issuing a new one."""
+    sink = InMemoryEventSink()
+    subscriber_id, _ = await sink.subscribe("known-id")
+    assert subscriber_id == "known-id"
+
+
+async def test_in_memory_event_sink_fans_out_to_every_subscriber() -> None:
+    """A single publish() reaches every currently-subscribed queue, not just the first."""
+    sink = InMemoryEventSink()
+    _, first_events = await sink.subscribe(None)
+    _, second_events = await sink.subscribe(None)
+
+    await sink.publish(resource="hero", record_id=1, action="create", snapshot={"id": 1})
+
+    assert (await first_events.__anext__())["record_id"] == 1
+    assert (await second_events.__anext__())["record_id"] == 1
+
+
+async def test_in_memory_event_sink_publish_with_no_subscribers_is_a_no_op() -> None:
+    """publish() with nothing subscribed yet doesn't raise."""
+    sink: EventSink = InMemoryEventSink()
+    await sink.publish(resource="hero", record_id=1, action="create", snapshot={"id": 1})

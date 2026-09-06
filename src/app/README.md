@@ -69,7 +69,10 @@ that) since nothing else in `app/` imports it back (it's invoked externally,
 `crud_1` sits between `controllers` and `main` specifically because a
 resource package imports `controllers.crud_router`'s factories to build
 its own routers, and `main` imports the finished combined router from
-`crud_1` rather than reaching into `controllers` for it.
+`crud_1` rather than reaching into `controllers` for it. `interfaces`
+now imports `aiomqtt` directly (`MQTTEventSink`/`MQTTEventSource`, see
+"Example CRUD resource: Hero" below) — a third-party dependency, not
+another `app/` module, so it doesn't change this layer order itself.
 
 ```mermaid
 graph LR
@@ -384,6 +387,17 @@ capability):
   is logged to the shared `revisions` table (`app.models.revision.
   Revision`). `GET /revisions?id=` returns a record's history, newest
   first.
+- **Real-time event stream**: `get_hero_crud` passes
+  `events=build_event_sink_provider("hero")(...)` to `CRUDInterface`;
+  every create/update/update_many/delete/delete_many **and**
+  restore/restore_many publishes an event. `GET /events` (added via
+  `event_source_dependency=`) streams them back over Server-Sent Events,
+  backed by MQTT (`.devcontainer/stack/mqtt/`) in dev/production or an
+  in-memory fan-out under `MODE=mock` — see `interfaces/README.md`'s
+  `EventSink`/`EventSource` paragraph and
+  `docs/adrs/0015-mqtt-for-crud-events.md` for the delivery-guarantee
+  design (a subscriber that preserves its `subscriber_id` doesn't miss
+  events across a brief disconnect).
 
 ## Do
 

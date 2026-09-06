@@ -5,19 +5,21 @@ pair, not tied to Hero -- mirrors how tests/unit/interfaces/test_compat.py tests
 CompatCRUD generically.
 """
 
+import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict
 
 from app.controllers import crud_actions
+from app.controllers import crud_router as crud_router_module
 from app.controllers.crud_router import build_json_router, build_web_router, build_xml_router
-from app.interfaces.base import CRUDInterface
+from app.interfaces.base import CRUDInterface, EventSource, InMemoryEventSink
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
 
 
@@ -572,6 +574,174 @@ def test_web_router_components_js_defines_custom_elements() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/javascript")
     assert "customElements.define" in response.text
+
+
+# --- `/events` SSE route: opt-in via event_source_dependency ------------------
+
+
+def _require_viewer_header(x_role: str | None = Header(default=None)) -> None:
+    """403 unless `X-Role: viewer` is present -- a tiny stand-in for app.oidc.require_roles,
+    just enough to prove `/events` is gated by the same dependency object the plain `GET`
+    list route already uses.
+    """
+    if x_role != "viewer":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+
+
+_events_event_sink = InMemoryEventSink()
+_EventsReadRoles = Depends(_require_viewer_header)
+
+
+def get_gadget_event_source() -> EventSource:
+    """Return the shared InMemoryEventSink for this test app's events-enabled router."""
+    return _events_event_sink
+
+
+GadgetEventSource = Annotated[EventSource, Depends(get_gadget_event_source)]
+
+events_app = FastAPI()
+events_app.include_router(
+    build_json_router(
+        prefix="",
+        tags=["gadgets"],
+        resource_label="Gadget",
+        schema=_Gadget,
+        create_schema=_GadgetCreate,
+        update_schema=_GadgetUpdate,
+        crud_dependency=GadgetCRUD,
+        read_roles=_EventsReadRoles,
+        write_roles=NoAuth,
+        delete_roles=NoAuth,
+        event_source_dependency=GadgetEventSource,
+    ),
+    prefix="/gadgets",
+)
+events_client = TestClient(events_app)
+events_app.dependency_overrides[get_gadget_crud] = lambda: CRUDInterface(
+    schema=_Gadget, repository=_FakeGadgetRepository()
+)
+
+
+async def _no_events_ever() -> AsyncIterator[dict[str, Any]]:
+    """An EventSource iterator that ends immediately, yielding nothing.
+
+    Both TestClient (a portal that runs the whole request to completion before
+    returning anything, see starlette.testclient._TestClientTransport) and
+    httpx.ASGITransport (which likewise awaits the whole ASGI app call before
+    returning a Response, see httpx._transports.asgi.ASGITransport.
+    handle_async_request) fully drain a streaming response's body before handing
+    back anything at all -- neither actually streams incrementally the way a real
+    socket connection (tests/integration's real Mosquitto-backed case) does. An
+    EventSource backed by InMemoryEventSink._events's `while True: yield await
+    queue.get()` never reaches `more_body=False`, so a request against it through
+    either transport hangs forever rather than 200ing with a small buffered body.
+    Route-wiring tests below use this finite stand-in instead, so the request
+    actually completes; InMemoryEventSink's own publish()/subscribe() fan-out
+    behavior is covered directly, with no HTTP layer at all, by
+    tests/unit/interfaces/test_base.py's `test_in_memory_event_sink_*` tests, and
+    genuine concurrent delivery over a live SSE connection is covered by
+    tests/integration/crud_1/heroes/test_heroes_v2_events.py against the real
+    Mosquitto service.
+    """
+    for _ in ():  # pragma: no cover -- makes this a generator; the loop body never runs
+        yield _
+
+
+@dataclass(frozen=True)
+class _FiniteEventSource:
+    """EventSource whose subscription ends immediately -- see _no_events_ever's docstring."""
+
+    async def subscribe(
+        self, subscriber_id: str | None
+    ) -> tuple[str, AsyncIterator[dict[str, Any]]]:
+        """Resolve subscriber_id and return it with an iterator that yields nothing."""
+        return subscriber_id or "stub-subscriber", _no_events_ever()
+
+
+def test_json_router_events_route_exists() -> None:
+    """GET <prefix>/events exists and streams text/event-stream, given the read role."""
+    events_app.dependency_overrides[get_gadget_event_source] = _FiniteEventSource
+    try:
+        response = events_client.get("/gadgets/events", headers={"X-Role": "viewer"})
+    finally:
+        del events_app.dependency_overrides[get_gadget_event_source]
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.text.startswith("id: 0")
+
+
+def test_json_router_events_route_requires_the_same_role_as_get() -> None:
+    """GET <prefix>/events 403s without the role GET <prefix> itself requires."""
+    list_response = events_client.get("/gadgets")
+    assert list_response.status_code == 403
+
+    events_response = events_client.get("/gadgets/events")
+    assert events_response.status_code == 403
+
+
+# --- _sse_events: exercised directly, for deterministic control over timing/disconnect --
+
+
+class _StubRequest:
+    """Stand-in for fastapi.Request, controlling exactly when is_disconnected() flips True."""
+
+    def __init__(self, *, disconnect_after_calls: int | None) -> None:
+        """`disconnect_after_calls=N` means the Nth call onward reports disconnected;
+        None means never.
+        """
+        self._calls = 0
+        self._disconnect_after_calls = disconnect_after_calls
+
+    async def is_disconnected(self) -> bool:
+        """Report disconnected once this has been called `disconnect_after_calls` times."""
+        self._calls += 1
+        return (
+            self._disconnect_after_calls is not None and self._calls > self._disconnect_after_calls
+        )
+
+
+async def _no_events_forthcoming() -> AsyncIterator[dict[str, Any]]:
+    """An EventSource iterator that never yields -- forces _sse_events into a keep-alive wait."""
+    for _ in ():  # pragma: no cover -- makes this a generator; the loop body never runs
+        yield _
+    await asyncio.Event().wait()
+
+
+async def _one_event(event: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    """An EventSource iterator yielding exactly one event, then ending."""
+    yield event
+
+
+async def test_sse_events_yields_subscriber_id_frame_then_each_event() -> None:
+    """The first frame carries subscriber_id; each subsequent event gets its own id: line."""
+    request = cast(Request, _StubRequest(disconnect_after_calls=None))
+    frames = [
+        frame
+        async for frame in crud_router_module._sse_events(
+            request, "sub-1", _one_event({"resource": "gadget", "action": "create"})
+        )
+    ]
+    assert frames == [
+        'id: 0\ndata: {"subscriber_id": "sub-1"}\n\n',
+        'id: 1\ndata: {"resource": "gadget", "action": "create"}\n\n',
+    ]
+
+
+async def test_sse_events_yields_keep_alive_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A keep-alive comment is yielded once no event arrives within sse_keepalive_seconds."""
+    monkeypatch.setattr(crud_router_module.settings, "sse_keepalive_seconds", 0.01)
+    request = cast(Request, _StubRequest(disconnect_after_calls=1))  # disconnect after keep-alive
+    events = _no_events_forthcoming()
+    frames = [frame async for frame in crud_router_module._sse_events(request, "sub-1", events)]
+    assert frames == ['id: 0\ndata: {"subscriber_id": "sub-1"}\n\n', ": keep-alive\n\n"]
+
+
+async def test_sse_events_ends_on_client_disconnect() -> None:
+    """The stream ends as soon as request.is_disconnected() reports the client is gone."""
+    request = cast(Request, _StubRequest(disconnect_after_calls=0))  # disconnected immediately
+    events = _no_events_forthcoming()
+    frames = [frame async for frame in crud_router_module._sse_events(request, "sub-1", events)]
+    assert frames == ['id: 0\ndata: {"subscriber_id": "sub-1"}\n\n']
 
 
 def test_json_router_filters_metadata_describes_every_filterable_field() -> None:
