@@ -7,8 +7,9 @@
   GitHub Actions, every Dockerfile/compose image tag repo-wide (scanned
   recursively, unlike Dependabot), and the `# renovate:` comment-annotated
   version pins in the Dockerfile and `.claude/mcp/playwright_selenium_bridge.py`.
-  Patch/minor updates (prod and dev deps) automerge once required checks
-  pass; major updates always open a PR for manual review.
+  All patch/minor updates are grouped into a single weekly PR that
+  automerges once required checks pass; all major updates are grouped
+  into a separate PR for manual review.
 - `ISSUE_TEMPLATE/` — issue forms (bug report, feature request) shown
   when opening a new issue.
 - `PULL_REQUEST_TEMPLATE.md` — prefills the description box for new PRs.

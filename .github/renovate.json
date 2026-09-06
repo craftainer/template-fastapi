@@ -5,8 +5,12 @@
   "packageRules": [
     {
       "matchUpdateTypes": ["patch", "minor"],
-      "matchDepTypes": ["dependencies", "devDependencies"],
+      "groupName": "patch and minor updates",
       "automerge": true
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "groupName": "major updates"
     }
   ],
   "customManagers": [
