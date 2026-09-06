@@ -15,7 +15,7 @@ dependencies = [
     "asyncpg==0.31.0",
     "alembic==1.19.1",
     "redis==8.1.0",
-    "boto3==1.43.88",
+    "boto3==1.43.89",
     "debugpy==1.8.21",
     "opentelemetry-sdk==1.44.0",
     "opentelemetry-exporter-otlp-proto-http==1.44.0",
