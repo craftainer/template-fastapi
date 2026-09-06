@@ -79,6 +79,12 @@ Practices below are distilled from Anthropic's own Claude Code guidance
 - **Course-correct early.** If the same correction has to be made
   twice on one approach, stop and reconsider the approach itself
   rather than trying a third variation.
+- **Resolve test coverage gaps in parallel.** When closing multiple
+  test coverage gaps, first plan out which gaps are independent (touch
+  disjoint files/modules with no shared state or ordering dependency),
+  then dispatch one subagent per independent gap to write/fix its tests
+  concurrently rather than working through the list serially. Gaps that
+  share a file or depend on each other's changes stay sequential.
 - **Use the devcontainer's own services, don't spin up your own.**
   Check `.devcontainer/compose.yml`'s `include:` and `.devcontainer/stack/`
   for which backing services (databases, object storage, auth, browsers,
