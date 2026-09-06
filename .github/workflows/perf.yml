@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   perf:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1

@@ -104,11 +104,14 @@ hooks (see the comment in `.pre-commit-config.yaml`); the only way to
 check it is to actually commit.
 
 CI (`.github/workflows/checks.yml`) runs the same `--hook-stage manual`
-command, inside the devcontainer itself, on every push and pull request.
+command, inside the devcontainer itself, on every push and pull request
+— as an `amd64`/`arm64` matrix, both legs native (no QEMU). `smoke.yml`
+runs the same matrix against the built `runner` image itself.
 `.github/workflows/release.yml` is triggered manually to cut an
-alpha/beta/rc/full release with an auto-generated changelog and the
-built image attached (and optionally pushed to an OCI registry) —
-see `.github/workflows/README.md`. `.github/workflows/perf.yml` runs
+alpha/beta/rc/full release with an auto-generated changelog and both
+arch's built images attached (and optionally pushed to an OCI registry
+as one multi-arch manifest) — see `.github/workflows/README.md`.
+`.github/workflows/perf.yml` runs
 the `tests/perf/` Locust load test against the `runner` image on
 `workflow_dispatch` and a weekly schedule (not per-PR — see
 `docs/adrs/0010-locust-for-load-testing.md`).

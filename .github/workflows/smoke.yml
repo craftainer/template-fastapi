@@ -14,7 +14,15 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ${{ vars.CI_RUNNER_AMD64 || 'ubuntu-24.04' }}
+          - arch: arm64
+            runner: ${{ vars.CI_RUNNER_ARM64 || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1

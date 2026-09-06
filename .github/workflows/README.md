@@ -4,27 +4,38 @@
   (`--hook-stage manual`, so both the fast and extensive ones) on push,
   on pull requests, and on demand — inside the actual devcontainer (via
   [`devcontainers/ci`](https://github.com/devcontainers/ci)), under a
-  per-run `COMPOSE_PROJECT_NAME` that a final step tears down.
+  per-run `COMPOSE_PROJECT_NAME` that a final step tears down. Runs as a
+  two-leg `amd64`/`arm64` matrix (see "Architecture matrix" below).
 - `smoke.yml` — builds the `runner` stage of the root `Dockerfile` via
   the root `compose.yml`, starts it against the real Postgres, RustFS,
   Redis, and Keycloak backing services, and confirms `/health/live` and
   `/health/ready` both return 200 -- on push, on pull requests, and on
-  demand.
+  demand. Runs as the same two-leg `amd64`/`arm64` matrix as
+  `checks.yml` — this is the check that would actually catch an
+  arch-specific runtime break (e.g. a C-extension dependency missing an
+  arm64 wheel), since `checks.yml`'s `pytest` run uses `MODE=mock`
+  in-process fakes for some paths rather than the built image.
 - `release.yml` — manually triggered. Takes a release channel
   (`alpha`/`beta`/`rc`/`full`) and a SemVer 2 bump
   (`major`/`minor`/`patch`/`none`), computes the next tag via
   `../scripts/compute_next_version.py`, builds the `runner` stage of the
-  root `Dockerfile`, and creates a GitHub release with auto-generated
-  notes and that image attached as an OCI tarball, an SPDX-JSON SBOM
-  (via `anchore/sbom-action`/Syft), and a `coverage.xml` report from
-  running the test suite against the released commit. The built image
-  (both the tarball and, if configured, the registry push) carries
+  root `Dockerfile` natively for both `amd64` and `arm64` (no QEMU —
+  see "Architecture matrix" below), and creates a GitHub release with
+  auto-generated notes and both images attached as arch-suffixed OCI
+  tarballs (`template-fastapi-<version>-amd64.tar` /
+  `-arm64.tar`), one SPDX-JSON SBOM per arch (via
+  `anchore/sbom-action`/Syft), and a single `coverage.xml` report from
+  running the test suite against the released commit. Each built image
+  (both tarballs and, if configured, the registry push) carries
   standard `org.opencontainers.image.*` labels via
   `docker/metadata-action`, plus two custom
-  `io.github.<repository_owner>.*` labels pointing at the SBOM and
-  coverage-report release assets, so the image is self-describing.
-  Also pushes the image to an OCI registry if one is configured (see
-  "OCI registry" below).
+  `io.github.<repository_owner>.*` labels pointing at that arch's SBOM
+  and the shared coverage-report release asset, so the image is
+  self-describing. If an OCI registry is configured (see "OCI registry"
+  below), each arch is pushed under its own `<version>-<arch>` tag and
+  then combined into one real multi-arch manifest list at the plain
+  `<version>` tag via `docker buildx imagetools create`, so `docker pull
+  template-fastapi:<version>` resolves to the right arch automatically.
 - `template-sync.yml` — runs in an *instance* of this template, not
   here (see the root `docs/TEMPLATE.md`'s "Template sync" section and
   `../template-sync-manifest.yml`'s header for the full design). On a
@@ -32,9 +43,36 @@
   template's latest tagged release per the manifest's tiers and opens a
   PR — never a direct push, never auto-merged.
 
-Every workflow's `runs-on` defaults to `ubuntu-latest` but can be
+Every workflow's `runs-on` defaults to `ubuntu-24.04` but can be
 overridden with the `CI_RUNNER` repository/organization variable —
 e.g. to point at self-hosted runners.
+
+## Architecture matrix
+
+`checks.yml`, `smoke.yml`, and `release.yml`'s `build` job each run as a
+two-leg matrix over `amd64`/`arm64`, both legs building/testing natively
+— `ubuntu-24.04-arm` is a real (non-emulated) GitHub-hosted Linux arm64
+runner, free on this public repo and billed as ordinary Actions minutes
+on a private one. No QEMU is involved anywhere in this repo's CI; QEMU
+would only be needed to cross-build one arch on a runner that doesn't
+natively support it, which none of these jobs do.
+
+Each matrix leg can be overridden independently with
+`CI_RUNNER_AMD64` / `CI_RUNNER_ARM64` repository/organization variables
+(each defaulting to the matching `ubuntu-24.04`/`ubuntu-24.04-arm`
+label) — e.g. to point either arch at a self-hosted runner instead of
+GitHub's. This is separate from the plain `CI_RUNNER` variable, which
+still overrides the single-runner jobs (`perf.yml`, `template-sync.yml`,
+and `release.yml`'s `version`/`manifest`/`release` jobs) that aren't
+matrixed by arch.
+
+The devcontainer used for local development (`Dockerfile`'s `develop`
+stage) is deliberately *not* pinned to a single platform — plain
+`docker build`/`docker compose build` already targets whichever
+architecture the host is on, so an arm64 contributor gets a native
+arm64 devcontainer with no QEMU emulation in their inner loop. Only CI
+needs to prove cross-arch correctness continuously; this was manually
+verified end-to-end on arm64 hardware on 2026-09-06.
 
 ## Template sync
 
