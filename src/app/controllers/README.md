@@ -17,6 +17,10 @@ but only `crud_1`/`main` may import from here (see `../README.md`'s
 - `crud_actions.py` / `crud_query.py` — the shared id/filter/bulk
   decision logic and the `field__op=value`/`sort=` query-string parser
   `crud_router.py`'s factories wrap; see their own module docstrings.
+- `crud_stats.py` — the shared `/stats`/`/predict` query parsing,
+  numeric/categorical field classification, and OLS forecast math
+  `crud_router.py`'s factories wrap; see "Generic CRUD router factories"
+  below and its own module docstring.
 
 ## RBAC
 
@@ -91,8 +95,12 @@ serves `GET <prefix>/filters`, the same per-field-type introspection
 (`app.web_components`) fetches this once to render filter/sort/bulk controls
 generically, without either side hardcoding a resource's fields.
 
-**Record-lifecycle routes** (`build_json_router` only — JSON-only for now,
-XML/web keep their original list/create/get/update/delete shape):
+**Record-lifecycle routes** (`build_json_router`/`build_xml_router`/
+`build_web_router` alike — `build_resource_router` forwards every opt-in
+param below to all three factories identically, so a resource passing
+`archivable=True`/`draft_schema=`/`revision_repository_dependency=`/
+`event_source_dependency=`/`stats_enabled=True` gets the matching routes in
+JSON, XML, and (client-side, via generated JS) the web UI, not JSON-only):
 `?include_archived=true`/`?include_unpublished=true` on the existing `GET`
 override the default Archivable/Schedulable exclusion (see
 `../repositories/README.md`). `POST <prefix>/clone?id=` is always added
@@ -128,6 +136,66 @@ underlying event generator on every single keep-alive interval; see
 of the above wired up on Hero, `app/README.md`'s "Record-lifecycle
 mixins" section, and `docs/adrs/0015-mqtt-for-crud-events.md` for the
 event stream's transport and delivery-guarantee design.
+
+`stats_enabled=True` adds `GET <prefix>/stats` (count, per-numeric-field
+min/max/avg/sum, per-categorical-field (bool/enum) value distribution, an
+optional `?bucket=day|week|month` time-bucketed count series over
+`created_at`, and — for a resource carrying a `../models/mixins.py`
+mixin — a lifecycle breakdown) and `GET <prefix>/predict` (a naive
+ordinary-least-squares linear-regression forecast over that same
+time-bucketed series, projecting `?periods=` future buckets; `?field=`
+targets a specific numeric field's per-bucket sum instead of record
+count). Both are gated by the same `read_roles` dependency as the plain
+`GET` list route. `app.controllers.crud_stats` holds the shared query
+parsing/field-classification/forecast logic both `build_json_router` and
+`build_xml_router` wrap (reusing `crud_query.field_specs`'s own
+`FieldKind` classification, narrowed to plain int/float fields for
+numeric aggregates — see its own module docstring for why date/datetime
+fields, also `FieldKind.NUMBER` for filtering purposes, are excluded).
+`/predict`'s response always names its method `"linear_regression"`
+explicitly, so a client can't mistake it for a trained model — see
+`app.views.stats.PredictionView`.
+
+**XML parity** (`build_xml_router`): every record-lifecycle/stats/predict
+route above has an XML-flavored sibling, following the same rendering
+pattern the original list/create/get/update/delete XML routes already
+use — `POST <prefix>/restore` is body-less (id-or-filters via query
+params only, same as `DELETE`); `POST <prefix>/draft` parses an XML body
+against `draft_schema` the same way `create_record_xml` parses one
+against `create_schema`; `POST <prefix>/publish` takes `id` as a query
+param, no body; `GET <prefix>/revisions?id=` renders `<revisions>`
+wrapping repeated `<revision>` elements, the same pattern
+`list_records_xml` already uses for a list of records. `GET
+<prefix>/stats`/`GET <prefix>/predict` are **hand-assembled** nested XML,
+not a single `to_xml` call — `app.xml_codec.to_xml` only supports a flat
+model (see its own module docstring), and stats/predictions are naturally
+nested (per-field aggregates, a distribution, a time series). The route
+renders each numeric-field/categorical-value/time-bucket/prediction-point
+row as its own flat model via `to_xml`, then concatenates those inside
+hand-written wrapping tags (`<numeric-fields>`, `<time-buckets>`, etc.) —
+`crud_router.py`'s private `_stats_to_xml`/`_prediction_to_xml`. No
+change to `xml_codec.py`'s own flat-model constraint. `GET
+<prefix>/events` stays a **JSON-payload** SSE stream even under the XML
+router — SSE's `data:` line is a transport envelope, not a resource
+representation (see `app.interfaces.base.EventSink`/`EventSource`'s own
+docstrings), so encoding it as XML would be new scope with no existing
+precedent.
+
+**Web UI parity** (`build_web_router`): the web router itself gains no
+new FastAPI routes for any of this — its generated JS
+(`app.web_components.render_crud_component_js`) already talks directly to
+the sibling JSON router for every action, so covering the routes above
+here just means the generated `<{resource}-list>`/`<{resource}-form>`
+elements grow more UI, gated by the same opt-in params: an Archive/Restore
+row action (`archivable=True`), a Save-as-draft/Publish pair
+(`draft_schema` given), a per-row expandable History panel fetching `GET
+<prefix>/revisions?id=` (`revision_repository_dependency` given), a live
+`EventSource` subscription to `GET <prefix>/events` that refreshes the
+list on every event (`event_source_dependency` given), and a Stats panel
+(a plain `<table>` of numeric/categorical rows plus a small inline-SVG bar
+chart of the time series) with a Predict control (pick a field + periods,
+show the projected values) (`stats_enabled=True`). Plain HTML/JS/inline
+SVG only, no charting dependency.
 
 The generated route functions' `crud`/`record` parameters are annotated
 with a TypeVar-bound runtime value (e.g. `create_schema`, a `type[CreateT]`

@@ -43,7 +43,7 @@ import logging
 import re
 import signal
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import inspect as sa_inspect
@@ -51,6 +51,13 @@ from sqlalchemy import inspect as sa_inspect
 from app.models.base import IdentifiedBase
 from app.repositories.base import RecordLockedError
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
+from app.repositories.stats import (
+    LifecycleStats,
+    NumericFieldStats,
+    ResourceStats,
+    TimeBucket,
+    TimeBucketCount,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +110,20 @@ def _regex_matches(pattern: str, value: str) -> bool:
 def _now() -> datetime:
     """Return the current time as naive UTC, matching how Postgres stores timestamps."""
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _bucket_start(bucket: TimeBucket, value: datetime) -> datetime:
+    """Truncate `value` to the start of its UTC calendar bucket, matching Postgres's date_trunc.
+
+    WEEK truncates to the Monday of that ISO week, matching Postgres's own
+    `date_trunc('week', ...)` convention (weeks start Monday).
+    """
+    day_start = value.replace(hour=0, minute=0, second=0, microsecond=0)
+    if bucket is TimeBucket.DAY:
+        return day_start
+    if bucket is TimeBucket.WEEK:
+        return day_start - timedelta(days=day_start.weekday())
+    return day_start.replace(day=1)
 
 
 def _with_scalar_defaults(model: type[Any], data: dict[str, Any]) -> dict[str, Any]:
@@ -385,3 +406,107 @@ class InMemoryRepository[ModelT: IdentifiedBase]:
         for instance in instances:
             instance.archived_at = None
         return instances
+
+    async def stats(
+        self,
+        *,
+        numeric_fields: Sequence[str],
+        categorical_fields: Sequence[str],
+        filters: Sequence[FilterClause] = (),
+        bucket: TimeBucket | None = None,
+        include_archived: bool = False,
+        include_unpublished: bool = False,
+    ) -> ResourceStats:
+        """Return aggregate statistics for records matching the given filters."""
+        matching = [
+            instance
+            for instance in self._matching(filters)
+            if _is_visible(
+                instance, include_archived=include_archived, include_unpublished=include_unpublished
+            )
+        ]
+        total = len(matching)
+
+        numeric: dict[str, NumericFieldStats] = {}
+        for field in numeric_fields:
+            values = [
+                v for instance in matching if (v := getattr(instance, field, None)) is not None
+            ]
+            numbers = [float(v) for v in values]
+            numeric[field] = NumericFieldStats(
+                field=field,
+                count=len(numbers),
+                minimum=min(numbers) if numbers else None,
+                maximum=max(numbers) if numbers else None,
+                average=(sum(numbers) / len(numbers)) if numbers else None,
+                total=sum(numbers) if numbers else None,
+            )
+
+        categorical: dict[str, dict[str, int]] = {}
+        for field in categorical_fields:
+            counts: dict[str, int] = {}
+            for instance in matching:
+                value = str(getattr(instance, field, None))
+                counts[value] = counts.get(value, 0) + 1
+            categorical[field] = counts
+
+        time_series: list[TimeBucketCount] | None = None
+        if bucket is not None:
+            bucket_counts: dict[datetime, int] = {}
+            for instance in matching:
+                start = _bucket_start(bucket, instance.created_at)
+                bucket_counts[start] = bucket_counts.get(start, 0) + 1
+            time_series = [
+                TimeBucketCount(bucket_start=start.isoformat(), count=count)
+                for start, count in sorted(bucket_counts.items())
+            ]
+
+        lifecycle: LifecycleStats | None = None
+        has_archivable = hasattr(self._model, "archived_at")
+        has_draftable = hasattr(self._model, "is_draft")
+        has_lockable = hasattr(self._model, "is_locked")
+        has_schedulable = hasattr(self._model, "publish_at")
+        if has_archivable or has_draftable or has_lockable or has_schedulable:
+            now = _now()
+            scheduled_pending = None
+            scheduled_expired = None
+            if has_schedulable:
+                scheduled_pending = sum(
+                    1
+                    for i in matching
+                    if (publish_at := getattr(i, "publish_at", None)) is not None
+                    and publish_at > now
+                )
+                scheduled_expired = sum(
+                    1
+                    for i in matching
+                    if (unpublish_at := getattr(i, "unpublish_at", None)) is not None
+                    and unpublish_at <= now
+                )
+            lifecycle = LifecycleStats(
+                archived=(
+                    sum(1 for i in matching if getattr(i, "archived_at", None) is not None)
+                    if has_archivable
+                    else None
+                ),
+                draft=(
+                    sum(1 for i in matching if getattr(i, "is_draft", False))
+                    if has_draftable
+                    else None
+                ),
+                locked=(
+                    sum(1 for i in matching if getattr(i, "is_locked", False))
+                    if has_lockable
+                    else None
+                ),
+                scheduled_pending=scheduled_pending,
+                scheduled_expired=scheduled_expired,
+            )
+
+        return ResourceStats(
+            total=total,
+            numeric=numeric,
+            categorical=categorical,
+            time_series=time_series,
+            lifecycle=lifecycle,
+        )

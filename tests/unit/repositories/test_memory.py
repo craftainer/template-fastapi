@@ -7,12 +7,16 @@ any IdentifiedBase subclass and Hero is already the example resource in this rep
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models.base import IdentifiedBase
 from app.models.hero import Hero
+from app.models.mixins import Lockable
 from app.repositories import memory
 from app.repositories.base import RecordLockedError
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
 from app.repositories.memory import InMemoryRepository
+from app.repositories.stats import TimeBucket
 
 
 @pytest.fixture
@@ -265,3 +269,126 @@ async def test_restore_clears_archived_at(repository: InMemoryRepository[Hero]) 
     assert restored is not None
     assert restored.archived_at is None
     assert await repository.get(batman.id) is not None
+
+
+# --- stats(): numeric/categorical/time-series/lifecycle aggregates ------------
+
+
+async def test_stats_reports_total_numeric_and_categorical(
+    repository: InMemoryRepository[Hero],
+) -> None:
+    """stats() reports the total count, per-numeric-field aggregates, and a categorical
+    field's value distribution.
+    """
+    result = await repository.stats(numeric_fields=["id"], categorical_fields=["is_draft"])
+    assert result.total == 3
+    assert result.numeric["id"].count == 3
+    assert result.numeric["id"].minimum is not None
+    assert result.numeric["id"].maximum is not None
+    assert result.numeric["id"].average is not None
+    assert result.numeric["id"].total is not None
+    # Hero's is_draft defaults to True (see app.models.mixins.Draftable) -- every
+    # seeded hero here was created via the plain create() path, so all 3 land in
+    # the same "True" bucket.
+    assert result.categorical["is_draft"] == {"True": 3}
+    assert result.time_series is None
+
+
+async def test_stats_time_series_buckets_by_created_at(
+    repository: InMemoryRepository[Hero],
+) -> None:
+    """stats(bucket=...) groups records into UTC calendar buckets of the given width."""
+    heroes = await repository.list()
+    now = datetime.now(UTC).replace(tzinfo=None, hour=12, minute=0, second=0, microsecond=0)
+    for offset, hero in enumerate(heroes):
+        repository._records[hero.id].created_at = now - timedelta(days=offset)
+
+    daily = await repository.stats(numeric_fields=[], categorical_fields=[], bucket=TimeBucket.DAY)
+    assert daily.time_series is not None
+    assert len(daily.time_series) == 3
+    assert sum(bucket.count for bucket in daily.time_series) == 3
+
+    monthly = await repository.stats(
+        numeric_fields=[], categorical_fields=[], bucket=TimeBucket.MONTH
+    )
+    assert monthly.time_series is not None
+    assert len(monthly.time_series) == 1
+    assert monthly.time_series[0].count == 3
+
+    weekly = await repository.stats(
+        numeric_fields=[], categorical_fields=[], bucket=TimeBucket.WEEK
+    )
+    assert weekly.time_series is not None
+    assert sum(bucket.count for bucket in weekly.time_series) == 3
+
+
+async def test_stats_lifecycle_breakdown(repository: InMemoryRepository[Hero]) -> None:
+    """stats() reports an archived/draft/locked/scheduled breakdown for a Hero-shaped model."""
+    heroes = await repository.list()
+    batman = next(hero for hero in heroes if hero.name == "Batman")
+    batgirl = next(hero for hero in heroes if hero.name == "Batgirl")
+    await repository.delete(batman.id)
+    await repository.update(batgirl.id, {"is_locked": True})
+
+    result = await repository.stats(numeric_fields=[], categorical_fields=[])
+    assert result.lifecycle is not None
+    # delete() on an Archivable model soft-deletes -- stats' default (include_archived=
+    # False) excludes it from `total`, but the lifecycle breakdown itself is computed
+    # over the same default-visible set, so the archived record isn't counted there
+    # either; include_archived=True reaches it.
+    assert result.lifecycle.archived == 0
+    assert result.lifecycle.locked == 1
+
+    with_archived = await repository.stats(
+        numeric_fields=[], categorical_fields=[], include_archived=True
+    )
+    assert with_archived.lifecycle is not None
+    assert with_archived.lifecycle.archived == 1
+
+
+class _LockableOnlyRecord(IdentifiedBase, Lockable):
+    """A model carrying exactly one record-lifecycle mixin (Lockable), no others.
+
+    Only used to exercise stats()'s lifecycle branch for a model with *some* but
+    not *every* mixin present (unlike Hero, which always carries all four) --
+    specifically the `has_schedulable=False` path, which Hero-only testing above
+    can never reach.
+    """
+
+    __tablename__ = "stats_test_lockable_only_records"
+
+
+async def test_stats_lifecycle_with_only_one_mixin_present() -> None:
+    """A model carrying only Lockable reports `locked` but leaves the other
+    lifecycle fields None -- see LifecycleStats's own docstring.
+    """
+    repository: InMemoryRepository[_LockableOnlyRecord] = InMemoryRepository(_LockableOnlyRecord)
+    await repository.create({"is_locked": True})
+    result = await repository.stats(numeric_fields=[], categorical_fields=[])
+    assert result.lifecycle is not None
+    assert result.lifecycle.locked == 1
+    assert result.lifecycle.archived is None
+    assert result.lifecycle.draft is None
+    assert result.lifecycle.scheduled_pending is None
+    assert result.lifecycle.scheduled_expired is None
+
+
+class _PlainRecord(IdentifiedBase):
+    """A model with none of app.models.mixins' record-lifecycle mixins.
+
+    Only used to prove stats()'s `lifecycle=None` no-op case -- see
+    ../../../src/app/repositories/README.md's "Record-lifecycle mixins" section:
+    a model without a given mixin is completely unaffected.
+    """
+
+    __tablename__ = "stats_test_plain_records"
+
+    value: Mapped[int] = mapped_column(default=0)
+
+
+async def test_stats_lifecycle_is_none_without_any_mixin() -> None:
+    """A model carrying none of the record-lifecycle mixins gets `lifecycle=None`."""
+    repository: InMemoryRepository[_PlainRecord] = InMemoryRepository(_PlainRecord)
+    await repository.create({"value": 1})
+    result = await repository.stats(numeric_fields=["value"], categorical_fields=[])
+    assert result.lifecycle is None

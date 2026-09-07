@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import Depends
@@ -238,10 +239,35 @@ def test_caller_cannot_publish_another_owners_draft(authed: None) -> None:
                 "/crud/v1/heroes/v2/json/publish", params={"id": alices_draft["id"]}
             )
             assert response.status_code == 404
+    finally:
+        del app.dependency_overrides[get_hero_crud]
 
-        still_draft = client.get(
-            "/crud/v1/heroes/v2/json", params={"id": alices_draft["id"]}
-        ).json()
+
+def test_xml_caller_cannot_publish_another_owners_draft(authed: None) -> None:
+    """The same 404-not-500 guard (test_caller_cannot_publish_another_owners_draft)
+    also applies through the XML router's publish_record_xml.
+    """
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        create_response = client.post(
+            "/crud/v1/heroes/v2/xml/draft",
+            content="<hero><name>Nightwing</name></hero>",
+            headers={"Content-Type": "application/xml"},
+        )
+        hero_id = create_response.text.split("<id>")[1].split("</id>")[0]
+        client.patch(
+            "/crud/v1/heroes/v2/xml",
+            params={"id": hero_id},
+            content="<hero><powers>Acrobatics</powers></hero>",
+            headers={"Content-Type": "application/xml"},
+        )
+
+        with _authed_as("bob"):
+            response = client.post("/crud/v1/heroes/v2/xml/publish", params={"id": hero_id})
+            assert response.status_code == 404
+
+        still_draft = client.get("/crud/v1/heroes/v2/json", params={"id": hero_id}).json()
         assert still_draft["is_draft"] is True
     finally:
         del app.dependency_overrides[get_hero_crud]
@@ -503,3 +529,234 @@ def test_hero_bulk_restore_with_no_filters_and_no_id_rejected(authed: None) -> N
     finally:
         del app.dependency_overrides[get_hero_crud]
     assert response.status_code == 422
+
+
+# --- XML parity: restore/draft/publish/revisions/clone -----------------------
+
+
+def test_hero_xml_router_lifecycle_parity(authed: None) -> None:
+    """The same draft -> publish -> archive -> restore -> clone -> /revisions sequence
+    the JSON router demonstrates (test_hero_record_lifecycle_draft_through_revisions)
+    also works through the XML router, added for parity by this plan.
+    """
+    repository = InMemoryRepository(HeroModel)
+    revision_repository = InMemoryRepository(Revision)
+    app.dependency_overrides[get_hero_crud] = _override_crud_with_revisions(
+        repository, revision_repository
+    )
+    app.dependency_overrides[get_hero_revision_repository] = lambda: revision_repository
+    try:
+        draft_response = client.post(
+            "/crud/v1/heroes/v2/xml/draft",
+            content="<hero><name>Batgirl</name></hero>",
+            headers={"Content-Type": "application/xml"},
+        )
+        assert draft_response.status_code == 201
+        assert "<is_draft>True</is_draft>" in draft_response.text
+        hero_id = draft_response.text.split("<id>")[1].split("</id>")[0]
+
+        incomplete_publish = client.post("/crud/v1/heroes/v2/xml/publish", params={"id": hero_id})
+        assert incomplete_publish.status_code == 422
+
+        client.patch(
+            "/crud/v1/heroes/v2/xml",
+            params={"id": hero_id},
+            content="<hero><powers>Acrobatics</powers></hero>",
+            headers={"Content-Type": "application/xml"},
+        )
+
+        publish_response = client.post("/crud/v1/heroes/v2/xml/publish", params={"id": hero_id})
+        assert publish_response.status_code == 200
+        assert "<is_draft>False</is_draft>" in publish_response.text
+
+        archive_response = client.delete("/crud/v1/heroes/v2/xml", params={"id": hero_id})
+        assert archive_response.status_code == 204
+
+        restore_response = client.post("/crud/v1/heroes/v2/xml/restore", params={"id": hero_id})
+        assert restore_response.status_code == 200
+        assert "<archived_at>None</archived_at>" in restore_response.text
+
+        clone_response = client.post("/crud/v1/heroes/v2/xml/clone", params={"id": hero_id})
+        assert clone_response.status_code == 201
+        assert "<name>Batgirl</name>" in clone_response.text
+
+        revisions_response = client.get("/crud/v1/heroes/v2/xml/revisions", params={"id": hero_id})
+        assert revisions_response.status_code == 200
+        assert revisions_response.headers["content-type"] == "application/xml"
+        assert "<revisions>" in revisions_response.text
+        assert revisions_response.text.count("<revision>") >= 2
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+        del app.dependency_overrides[get_hero_revision_repository]
+
+
+def test_hero_xml_bulk_restore_with_no_filters_and_no_id_rejected(authed: None) -> None:
+    """POST /crud/v1/heroes/v2/xml/restore with neither id nor filters is rejected (422)."""
+    app.dependency_overrides[get_hero_crud] = _override_crud(InMemoryRepository(HeroModel))
+    try:
+        response = client.post("/crud/v1/heroes/v2/xml/restore")
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+    assert response.status_code == 422
+
+
+# --- Statistics/predictions: JSON + XML ---------------------------------------
+
+
+async def _seed_heroes_across_three_days(repository: InMemoryRepository[HeroModel]) -> list[int]:
+    """Create 3 heroes and backdate `created_at` onto 3 distinct UTC calendar days.
+
+    InMemoryRepository.create always stamps `created_at`/`updated_at` itself (see
+    its own module docstring), so a caller can't set it through the normal create
+    path -- this reaches into the fake repository's storage directly afterwards,
+    same as InMemoryRepository's own internal `_records` dict, purely to make
+    `/stats?bucket=day`'s time series and `/predict`'s forecast deterministic
+    instead of depending on wall-clock timing.
+    """
+    ids = []
+    for index in range(3):
+        hero = await repository.create(
+            {
+                "name": f"Hero {index}",
+                "powers": ["A"],
+                "owner_id": "tester",
+            }
+        )
+        base = datetime.now(UTC).replace(tzinfo=None, hour=12, minute=0, second=0, microsecond=0)
+        repository._records[hero.id].created_at = base - timedelta(days=2 - index)
+        ids.append(hero.id)
+    return ids
+
+
+async def test_hero_stats_json(authed: None) -> None:
+    """GET /crud/v1/heroes/v2/json/stats reports count/numeric/categorical/time-series/lifecycle."""
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        await _seed_heroes_across_three_days(repository)
+        response = client.get("/crud/v1/heroes/v2/json/stats", params={"bucket": "day"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 3
+        numeric_fields = {item["field"] for item in body["numeric"]}
+        assert "id" in numeric_fields
+        categorical_fields = {item["field"] for item in body["categorical"]}
+        assert {"is_draft", "is_locked"}.issubset(categorical_fields)
+        assert len(body["time_series"]) == 3
+        assert body["lifecycle"]["archived"] == 0
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+
+
+async def test_hero_stats_without_bucket_omits_time_series(authed: None) -> None:
+    """GET /stats with no `?bucket=` omits the time series entirely."""
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        await _seed_heroes_across_three_days(repository)
+        response = client.get("/crud/v1/heroes/v2/json/stats")
+        assert response.status_code == 200
+        assert response.json()["time_series"] is None
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+
+
+async def test_hero_predict_record_count_json(authed: None) -> None:
+    """GET /crud/v1/heroes/v2/json/predict forecasts future buckets via linear regression."""
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        await _seed_heroes_across_three_days(repository)
+        response = client.get(
+            "/crud/v1/heroes/v2/json/predict", params={"periods": 2, "bucket": "day"}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["field"] is None
+        assert body["method"] == "linear_regression"
+        assert body["bucket"] == "day"
+        assert len(body["predictions"]) == 2
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+
+
+async def test_hero_predict_numeric_field_json(authed: None) -> None:
+    """GET /predict?field=id forecasts that numeric field's per-bucket sum instead of count."""
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        await _seed_heroes_across_three_days(repository)
+        response = client.get(
+            "/crud/v1/heroes/v2/json/predict", params={"field": "id", "periods": 1, "bucket": "day"}
+        )
+        assert response.status_code == 200
+        assert response.json()["field"] == "id"
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+
+
+async def test_hero_predict_unrecognized_field_returns_422(authed: None) -> None:
+    """GET /predict?field= for a non-numeric (or unknown) field is rejected (422)."""
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        await _seed_heroes_across_three_days(repository)
+        response = client.get(
+            "/crud/v1/heroes/v2/json/predict", params={"field": "name", "bucket": "day"}
+        )
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+    assert response.status_code == 422
+
+
+def test_hero_predict_insufficient_history_returns_422(authed: None) -> None:
+    """GET /predict with fewer than 2 time buckets of history is rejected (422)."""
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        client.post("/crud/v1/heroes/v2/json", json={"name": "Solo", "powers": ["A"]})
+        response = client.get("/crud/v1/heroes/v2/json/predict", params={"bucket": "day"})
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+    assert response.status_code == 422
+
+
+def test_hero_predict_invalid_bucket_returns_422(authed: None) -> None:
+    """GET /predict?bucket=<invalid> is rejected (422), not a 500."""
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        response = client.get("/crud/v1/heroes/v2/json/predict", params={"bucket": "fortnight"})
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+    assert response.status_code == 422
+
+
+async def test_hero_stats_and_predict_xml(authed: None) -> None:
+    """GET /crud/v1/heroes/v2/xml/stats and /predict hand-assemble the same data as nested XML."""
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        await _seed_heroes_across_three_days(repository)
+
+        stats_response = client.get("/crud/v1/heroes/v2/xml/stats", params={"bucket": "day"})
+        assert stats_response.status_code == 200
+        assert stats_response.headers["content-type"] == "application/xml"
+        assert "<stats>" in stats_response.text
+        assert "<total>3</total>" in stats_response.text
+        assert "<numeric-fields>" in stats_response.text
+        assert "<categorical-values>" in stats_response.text
+        assert "<time-buckets>" in stats_response.text
+        assert "<lifecycle>" in stats_response.text
+
+        predict_response = client.get(
+            "/crud/v1/heroes/v2/xml/predict", params={"periods": 2, "bucket": "day"}
+        )
+        assert predict_response.status_code == 200
+        assert predict_response.headers["content-type"] == "application/xml"
+        assert "<prediction>" in predict_response.text
+        assert "<meta>" in predict_response.text
+        assert "<method>linear_regression</method>" in predict_response.text
+        assert predict_response.text.count("<prediction-point>") == 2
+    finally:
+        del app.dependency_overrides[get_hero_crud]

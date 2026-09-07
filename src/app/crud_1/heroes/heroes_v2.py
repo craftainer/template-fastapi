@@ -126,4 +126,5 @@ router = build_resource_router(
     archivable=True,
     revision_repository_dependency=HeroRevisionRepository,
     event_source_dependency=HeroEventSource,
+    stats_enabled=True,
 )

@@ -103,3 +103,83 @@ def test_hero_list_filter_and_bulk_delete_through_the_rendered_ui(
             headers=headers,
             fail_on_status_code=False,
         )
+
+
+def test_hero_archive_restore_and_history_through_the_rendered_ui(
+    page: Page, base_url: str, access_token: Callable[[str], str]
+) -> None:
+    """The rendered <hero-list>'s Archive(Delete)/Restore row actions and History panel
+    (new for this plan's archivable=True/revisions UI) work end to end -- Hero is
+    Archivable, so its own row-level "Delete" button already archives rather than
+    hard-deleting (see app.models.mixins.Archivable), and the generated JS adds a
+    "Restore"/"History" action once a row is archived (see
+    app.web_components.render_crud_component_js).
+    """
+    headers = {"Authorization": f"Bearer {access_token('maintainer')}"}
+    page.set_extra_http_headers(headers)
+    hero = page.request.post(
+        f"{base_url}/crud/v1/heroes/v2/json",
+        data={"name": "Web UI Archive Test", "powers": ["Resilience"]},
+        headers=headers,
+    ).json()
+
+    try:
+        page.goto(f"{base_url}/crud/v1/heroes/v2/web/form")
+        page.wait_for_selector("hero-list table")
+
+        filter_input = page.locator('input[data-field="name"][data-op="icontains"]')
+        filter_input.fill("Web UI Archive Test")
+        page.locator("button.apply").click()
+
+        row = page.locator("hero-list table tr:has(input[data-id])")
+        expect(row).to_have_count(1)
+
+        row.locator("button.delete-row").click()
+        expect(row).to_have_count(0)  # archived -- excluded from the default (unfiltered) list
+
+        page.locator('hero-list input[type="checkbox"].include-archived').check()
+        page.locator("button.apply").click()
+        expect(row).to_have_count(1)
+
+        row.locator("button.history-row").click()
+        history_panel = row.locator(".history-panel")
+        expect(history_panel).not_to_be_hidden()
+        expect(history_panel.locator("li")).to_have_count(2)  # this hero's create + delete
+
+        row.locator("button.restore-row").click()
+        page.locator('hero-list input[type="checkbox"].include-archived').uncheck()
+        page.locator("button.apply").click()
+        expect(row).to_have_count(1)
+    finally:
+        page.request.delete(
+            f"{base_url}/crud/v1/heroes/v2/json",
+            params={"id": hero["id"]},
+            headers=headers,
+            fail_on_status_code=False,
+        )
+
+
+def test_hero_stats_and_predict_panel_through_the_rendered_ui(
+    page: Page, base_url: str, access_token: Callable[[str], str]
+) -> None:
+    """The rendered stats/predict panel (new for this plan's stats_enabled=True UI)
+    fetches and displays real data from `/stats`/`/predict` -- a plain table plus a
+    small inline SVG bar chart, no charting dependency (see render_crud_component_js's
+    own docstring).
+    """
+    headers = {"Authorization": f"Bearer {access_token('viewer')}"}
+    page.set_extra_http_headers(headers)
+
+    page.goto(f"{base_url}/crud/v1/heroes/v2/web/form")
+    page.wait_for_selector("hero-list .stats-panel")
+
+    stats_body = page.locator("hero-list .stats-body")
+    expect(stats_body).to_contain_text("Total:")
+
+    page.locator("hero-list button.predict-run").click()
+    predict_body = page.locator("hero-list .predict-body")
+    # Whether the live dataset happens to span >=2 time buckets today or not, clicking
+    # Predict always reaches the server and renders *something* -- either the
+    # projected values or the "unavailable" fallback (see loadPrediction's own
+    # insufficient-history handling) -- proving the round trip works either way.
+    expect(predict_body).not_to_have_text("")

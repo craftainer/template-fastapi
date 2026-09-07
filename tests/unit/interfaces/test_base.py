@@ -23,6 +23,7 @@ from app.interfaces.base import (
     _mqtt_connection_kwargs,
 )
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
+from app.repositories.stats import ResourceStats, TimeBucket
 
 
 @dataclass
@@ -62,6 +63,7 @@ class _FakeWidgetRepository:
         """Start with no records and the first id to hand out."""
         self._records: dict[int, _WidgetRecord] = {}
         self._next_id = 1
+        self.last_stats_filters: Sequence[FilterClause] = ()
 
     def _matching(self, filters: Sequence[FilterClause]) -> list[_WidgetRecord]:
         def matches(record: _WidgetRecord, clause: FilterClause) -> bool:
@@ -161,6 +163,30 @@ class _FakeWidgetRepository:
             del self._records[record.id]
         return matching
 
+    async def stats(
+        self,
+        *,
+        numeric_fields: Sequence[str],
+        categorical_fields: Sequence[str],
+        filters: Sequence[FilterClause] = (),
+        bucket: TimeBucket | None = None,
+        include_archived: bool = False,
+        include_unpublished: bool = False,
+    ) -> ResourceStats:
+        """Record the filters it was called with (via `self.last_stats_filters`) and
+        return a minimal ResourceStats -- enough to prove CRUDInterface.stats is a
+        thin, correctly-scoped pass-through, without duplicating the real
+        aggregation logic app.repositories.memory/app.repositories.sqlalchemy own.
+        """
+        self.last_stats_filters = filters
+        return ResourceStats(
+            total=len(self._matching(filters)),
+            numeric={},
+            categorical={},
+            time_series=None,
+            lifecycle=None,
+        )
+
 
 @pytest.fixture
 def crud() -> CRUDInterface[_Widget, _WidgetRecord]:
@@ -211,6 +237,14 @@ async def test_count_matches_filters(crud: CRUDInterface[_Widget, _WidgetRecord]
     await crud.create(_WidgetCreate(label="b"))
     assert await crud.count() == 2
     assert await crud.count(filters=[FilterClause("label", FilterOp.EQ, "a")]) == 1
+
+
+async def test_stats_is_a_thin_pass_through(crud: CRUDInterface[_Widget, _WidgetRecord]) -> None:
+    """stats() forwards straight to the repository and returns its ResourceStats unchanged."""
+    await crud.create(_WidgetCreate(label="a"))
+    await crud.create(_WidgetCreate(label="b"))
+    result = await crud.stats(numeric_fields=(), categorical_fields=())
+    assert result.total == 2
 
 
 async def test_update_applies_only_set_fields(
@@ -327,6 +361,19 @@ async def test_owner_get_cannot_reach_another_owners_record(
     alices = await alice_crud.create(_WidgetCreate(label="a"))
     assert await bob_crud.get(alices.id) is None
     assert await alice_crud.get(alices.id) == alices
+
+
+async def test_owner_stats_only_counts_own_records(
+    alice_crud: CRUDInterface[_Widget, _WidgetRecord],
+    bob_crud: CRUDInterface[_Widget, _WidgetRecord],
+    repository: _FakeWidgetRepository,
+) -> None:
+    """stats() applies the owner's read-scoping filter (read_scoped=True, the default)."""
+    await alice_crud.create(_WidgetCreate(label="apple"))
+    await bob_crud.create(_WidgetCreate(label="banana"))
+    result = await alice_crud.stats(numeric_fields=(), categorical_fields=())
+    assert result.total == 1
+    assert FilterClause("owner_id", FilterOp.EQ, "alice") in repository.last_stats_filters
 
 
 async def test_owner_list_only_returns_own_records(

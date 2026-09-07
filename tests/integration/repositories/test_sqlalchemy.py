@@ -1,14 +1,36 @@
 """Integration test: SQLAlchemyRepository against the real Postgres stack service."""
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
+from sqlalchemy import Integer, Table
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import async_session_factory
+from app.models.base import IdentifiedBase, async_session_factory, engine
 from app.models.hero import Hero
 from app.repositories.base import RecordLockedError
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
 from app.repositories.sqlalchemy import SQLAlchemyRepository
+from app.repositories.stats import TimeBucket
+
+
+class _PlainRecord(IdentifiedBase):
+    """A model with none of app.models.mixins' record-lifecycle mixins.
+
+    Only used by test_stats_lifecycle_is_none_without_any_mixin below, to exercise
+    SQLAlchemyRepository._lifecycle_stats's "no mixin present at all" branch
+    (`return None`) against a real query -- Hero, this module's only other bound
+    model, always carries every mixin. The table is created/dropped around that
+    one test so it leaves nothing behind in the shared Postgres service.
+    """
+
+    __tablename__ = "stats_test_plain_records_integration"
+
+    value: Mapped[int] = mapped_column(Integer, default=0)
+
+
+_plain_record_table = cast(Table, _PlainRecord.__table__)
 
 
 async def test_crud_roundtrip_against_real_postgres() -> None:
@@ -283,3 +305,81 @@ async def test_restore_single_record_clears_archived_at() -> None:
         assert restored is not None
         assert restored.archived_at is None
         assert await repository.get(created.id) is not None
+
+
+async def test_stats_against_real_postgres() -> None:
+    """stats() computes count/numeric/categorical/time-series/lifecycle via real SQL.
+
+    Runs inside one uncommitted session, same isolation as the tests above. Scoped
+    to this test's own ids throughout (via an id__in filter), the same defensive
+    pattern test_every_filter_op_against_real_postgres already uses, so a
+    concurrently-running test's own uncommitted rows can never affect the count.
+    """
+    async with async_session_factory() as session:
+        repository = SQLAlchemyRepository(session, Hero)
+        batman = await repository.create(
+            {"name": "Stats Batman", "powers": ["A"], "owner_id": "tester"}
+        )
+        batgirl = await repository.create(
+            {
+                "name": "Stats Batgirl",
+                "powers": ["A"],
+                "owner_id": "tester",
+                "is_locked": True,
+            }
+        )
+        ids = [batman.id, batgirl.id]
+        id_filter = [FilterClause("id", FilterOp.IN, ids)]
+
+        result = await repository.stats(
+            numeric_fields=["id"], categorical_fields=["is_draft", "is_locked"], filters=id_filter
+        )
+        assert result.total == 2
+        assert result.numeric["id"].count == 2
+        assert result.numeric["id"].minimum == float(min(ids))
+        assert result.numeric["id"].maximum == float(max(ids))
+        assert result.categorical["is_locked"] == {"False": 1, "True": 1}
+        assert result.time_series is None
+        assert result.lifecycle is not None
+        assert result.lifecycle.locked == 1
+        assert result.lifecycle.archived == 0
+
+        with_bucket = await repository.stats(
+            numeric_fields=[], categorical_fields=[], filters=id_filter, bucket=TimeBucket.DAY
+        )
+        assert with_bucket.time_series is not None
+        assert sum(bucket.count for bucket in with_bucket.time_series) == 2
+
+        await repository.delete(batman.id)
+        after_delete = await repository.stats(
+            numeric_fields=[], categorical_fields=[], filters=id_filter
+        )
+        assert after_delete.total == 1
+        assert after_delete.lifecycle is not None
+        assert after_delete.lifecycle.archived == 0  # excluded by default, same as list/count
+
+        including_archived = await repository.stats(
+            numeric_fields=[], categorical_fields=[], filters=id_filter, include_archived=True
+        )
+        assert including_archived.total == 2
+        assert including_archived.lifecycle is not None
+        assert including_archived.lifecycle.archived == 1
+
+
+async def test_stats_lifecycle_is_none_without_any_mixin_against_real_postgres() -> None:
+    """stats() returns `lifecycle=None` for a model with none of the record-lifecycle
+    mixins, against a real (throwaway) Postgres table -- see _PlainRecord's own docstring.
+    """
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: _plain_record_table.create(sync_conn, checkfirst=True)
+        )
+    try:
+        async with async_session_factory() as session:
+            repository = SQLAlchemyRepository(session, _PlainRecord)
+            await repository.create({"value": 1})
+            result = await repository.stats(numeric_fields=["value"], categorical_fields=[])
+            assert result.lifecycle is None
+    finally:
+        async with engine.begin() as conn:
+            await conn.run_sync(_plain_record_table.drop)

@@ -46,6 +46,7 @@ coverage gate.
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, func, or_, select, text
@@ -55,6 +56,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.base import IdentifiedBase
 from app.repositories.base import RecordLockedError
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
+from app.repositories.stats import (
+    LifecycleStats,
+    NumericFieldStats,
+    ResourceStats,
+    TimeBucket,
+    TimeBucketCount,
+)
+
+
+def _as_float(value: int | float | Decimal | None) -> float | None:
+    """Coerce a SQL aggregate result (int/float/Decimal/None) to a plain float."""
+    return None if value is None else float(value)
 
 
 def _now() -> datetime:
@@ -374,3 +387,130 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
         for instance in instances:
             await self._session.refresh(instance)
         return instances
+
+    async def _numeric_stats(
+        self, fields: Sequence[str], where: Sequence[ColumnElement[bool]]
+    ) -> dict[str, NumericFieldStats]:
+        """One query computing count/min/max/avg/sum for every numeric field at once."""
+        if not fields:
+            return {}
+        columns = []
+        for field in fields:
+            column = self._column(field)
+            columns.extend(
+                [
+                    func.count(column),
+                    func.min(column),
+                    func.max(column),
+                    func.avg(column),
+                    func.sum(column),
+                ]
+            )
+        statement = select(*columns).select_from(self._model).where(*where)
+        result = await self._session.execute(statement)
+        row = result.one()
+        stats: dict[str, NumericFieldStats] = {}
+        for index, field in enumerate(fields):
+            count, minimum, maximum, average, total = row[index * 5 : index * 5 + 5]
+            stats[field] = NumericFieldStats(
+                field=field,
+                count=count,
+                minimum=_as_float(minimum),
+                maximum=_as_float(maximum),
+                average=_as_float(average),
+                total=_as_float(total),
+            )
+        return stats
+
+    async def _categorical_stats(
+        self, fields: Sequence[str], where: Sequence[ColumnElement[bool]]
+    ) -> dict[str, dict[str, int]]:
+        """One GROUP BY query per categorical field, giving that field's value distribution."""
+        stats: dict[str, dict[str, int]] = {}
+        for field in fields:
+            column = self._column(field)
+            statement = (
+                select(column, func.count()).select_from(self._model).where(*where).group_by(column)
+            )
+            result = await self._session.execute(statement)
+            stats[field] = {str(value): count for value, count in result.all()}
+        return stats
+
+    async def _time_series(
+        self, bucket: TimeBucket, where: Sequence[ColumnElement[bool]]
+    ) -> Sequence[TimeBucketCount]:
+        """One GROUP BY date_trunc(bucket, created_at) query, ordered oldest-first."""
+        created_at = self._model.created_at
+        bucket_start = func.date_trunc(bucket.value, created_at)
+        statement = (
+            select(bucket_start, func.count())
+            .select_from(self._model)
+            .where(*where)
+            .group_by(bucket_start)
+            .order_by(bucket_start)
+        )
+        result = await self._session.execute(statement)
+        return [
+            TimeBucketCount(bucket_start=start.isoformat(), count=count)
+            for start, count in result.all()
+        ]
+
+    async def _lifecycle_stats(self, where: Sequence[ColumnElement[bool]]) -> LifecycleStats | None:
+        """One query with a COUNT(...) FILTER(WHERE ...) per record-lifecycle mixin present."""
+        columns: dict[str, ColumnElement[Any]] = {}
+        if hasattr(self._model, "archived_at"):
+            archived_at = self._model.archived_at  # type: ignore[attr-defined]
+            columns["archived"] = func.count().filter(archived_at.is_not(None))
+        if hasattr(self._model, "is_draft"):
+            is_draft = self._model.is_draft  # type: ignore[attr-defined]
+            columns["draft"] = func.count().filter(is_draft.is_(True))
+        if hasattr(self._model, "is_locked"):
+            is_locked = self._model.is_locked  # type: ignore[attr-defined]
+            columns["locked"] = func.count().filter(is_locked.is_(True))
+        if hasattr(self._model, "publish_at"):
+            now = _now()
+            publish_at = self._model.publish_at  # type: ignore[attr-defined]
+            unpublish_at = self._model.unpublish_at  # type: ignore[attr-defined]
+            columns["scheduled_pending"] = func.count().filter(publish_at > now)
+            columns["scheduled_expired"] = func.count().filter(
+                unpublish_at.is_not(None), unpublish_at <= now
+            )
+        if not columns:
+            return None
+        statement = select(*columns.values()).select_from(self._model).where(*where)
+        result = await self._session.execute(statement)
+        row = result.one()
+        values = dict(zip(columns.keys(), row, strict=True))
+        return LifecycleStats(**values)
+
+    async def stats(
+        self,
+        *,
+        numeric_fields: Sequence[str],
+        categorical_fields: Sequence[str],
+        filters: Sequence[FilterClause] = (),
+        bucket: TimeBucket | None = None,
+        include_archived: bool = False,
+        include_unpublished: bool = False,
+    ) -> ResourceStats:
+        """Return aggregate statistics for records matching the given filters."""
+        await self._guard_regex_timeout(filters)
+        where = [
+            *self._where_clauses(filters),
+            *self._visibility_clauses(
+                include_archived=include_archived, include_unpublished=include_unpublished
+            ),
+        ]
+        total_statement = select(func.count()).select_from(self._model).where(*where)
+        total = (await self._session.execute(total_statement)).scalar_one()
+        numeric = await self._numeric_stats(numeric_fields, where)
+        categorical = await self._categorical_stats(categorical_fields, where)
+        time_series = await self._time_series(bucket, where) if bucket is not None else None
+        lifecycle = await self._lifecycle_stats(where)
+        return ResourceStats(
+            total=total,
+            numeric=numeric,
+            categorical=categorical,
+            time_series=time_series,
+            lifecycle=lifecycle,
+        )

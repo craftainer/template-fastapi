@@ -21,15 +21,23 @@ from app.controllers import crud_router as crud_router_module
 from app.controllers.crud_router import build_json_router, build_web_router, build_xml_router
 from app.interfaces.base import CRUDInterface, EventSource, InMemoryEventSink
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
+from app.repositories.stats import NumericFieldStats, ResourceStats, TimeBucket, TimeBucketCount
 
 
 @dataclass
 class _GadgetRecord:
-    """Stand-in for a persisted record, independent of any ORM."""
+    """Stand-in for a persisted record, independent of any ORM.
+
+    `created_at`/`bucket` are only used by `_FakeGadgetRepository.stats`'s
+    time-bucketed series -- unlike a real IdentifiedBase model, this stand-in
+    lets a test set `bucket` directly rather than computing a real UTC calendar
+    bucket from a timestamp, keeping the stats/predict tests below deterministic.
+    """
 
     id: int
     name: str
     tags: list[str]
+    bucket: str = "2024-01-01T00:00:00"
 
 
 class _Gadget(BaseModel):
@@ -156,6 +164,47 @@ class _FakeGadgetRepository:
             del self._records[record.id]
         return matching
 
+    async def stats(
+        self,
+        *,
+        numeric_fields: Sequence[str],
+        categorical_fields: Sequence[str],
+        filters: Sequence[FilterClause] = (),
+        bucket: TimeBucket | None = None,
+        include_archived: bool = False,
+        include_unpublished: bool = False,
+    ) -> ResourceStats:
+        """Minimal stand-in for Repository.stats -- no lifecycle mixin on _GadgetRecord."""
+        matching = self._matching(filters)
+        numeric: dict[str, NumericFieldStats] = {}
+        for field in numeric_fields:
+            values = [float(getattr(r, field)) for r in matching]
+            numeric[field] = NumericFieldStats(
+                field=field,
+                count=len(values),
+                minimum=min(values) if values else None,
+                maximum=max(values) if values else None,
+                average=(sum(values) / len(values)) if values else None,
+                total=sum(values) if values else None,
+            )
+        categorical: dict[str, dict[str, int]] = {field: {} for field in categorical_fields}
+        time_series = None
+        if bucket is not None:
+            counts: dict[str, int] = {}
+            for record in matching:
+                counts[record.bucket] = counts.get(record.bucket, 0) + 1
+            time_series = [
+                TimeBucketCount(bucket_start=start, count=count)
+                for start, count in sorted(counts.items())
+            ]
+        return ResourceStats(
+            total=len(matching),
+            numeric=numeric,
+            categorical=categorical,
+            time_series=time_series,
+            lifecycle=None,
+        )
+
 
 def get_gadget_crud() -> CRUDInterface[_Gadget, _GadgetRecord]:
     """Build a CRUD interface for Gadget (always overridden per test, never called as-is)."""
@@ -181,6 +230,7 @@ app.include_router(
         read_roles=NoAuth,
         write_roles=NoAuth,
         delete_roles=NoAuth,
+        stats_enabled=True,
     ),
     prefix="/gadgets",
 )
@@ -198,6 +248,7 @@ app.include_router(
         read_roles=NoAuth,
         write_roles=NoAuth,
         delete_roles=NoAuth,
+        stats_enabled=True,
     ),
     prefix="/gadgets/xml",
 )
@@ -616,6 +667,30 @@ events_app.include_router(
     ),
     prefix="/gadgets",
 )
+# Also mounts archivable/draft_schema/event_source_dependency on the XML router, to
+# exercise build_xml_router's own restore/draft/publish/events parity routes (see
+# tests below) -- a separate app from `app`/`client` above so it doesn't affect
+# their own baseline (no archivable/draft/events there).
+events_app.include_router(
+    build_xml_router(
+        prefix="",
+        tags=["gadgets"],
+        resource_label="Gadget",
+        item_tag="gadget",
+        list_tag="gadgets",
+        schema=_Gadget,
+        create_schema=_GadgetCreate,
+        update_schema=_GadgetUpdate,
+        crud_dependency=GadgetCRUD,
+        read_roles=_EventsReadRoles,
+        write_roles=NoAuth,
+        delete_roles=NoAuth,
+        archivable=True,
+        draft_schema=_GadgetUpdate,
+        event_source_dependency=GadgetEventSource,
+    ),
+    prefix="/gadgets/xml",
+)
 events_client = TestClient(events_app)
 events_app.dependency_overrides[get_gadget_crud] = lambda: CRUDInterface(
     schema=_Gadget, repository=_FakeGadgetRepository()
@@ -677,6 +752,56 @@ def test_json_router_events_route_requires_the_same_role_as_get() -> None:
 
     events_response = events_client.get("/gadgets/events")
     assert events_response.status_code == 403
+
+
+# --- XML parity: clone/publish 404s, bulk restore, and /events ---------------
+
+
+def test_xml_router_clone_missing_returns_404() -> None:
+    """POST /gadgets/xml/clone?id=<missing> 404s, same as the JSON router's clone_record."""
+    response = events_client.post(
+        "/gadgets/xml/clone", params={"id": 999}, headers={"X-Role": "viewer"}
+    )
+    assert response.status_code == 404
+
+
+def test_xml_router_publish_missing_returns_404() -> None:
+    """POST /gadgets/xml/publish?id=<missing> 404s, same as the JSON router's publish_record."""
+    response = events_client.post(
+        "/gadgets/xml/publish", params={"id": 999}, headers={"X-Role": "viewer"}
+    )
+    assert response.status_code == 404
+
+
+def test_xml_router_bulk_restore_via_filters_renders_bulk_update_result() -> None:
+    """POST /gadgets/xml/restore with no id renders a `<bulk-update-result>` body."""
+    response = events_client.post(
+        "/gadgets/xml/restore",
+        params={"name__icontains": "widget"},
+        headers={"X-Role": "viewer"},
+    )
+    assert response.status_code == 200
+    assert "<bulk-update-result>" in response.text
+    assert "<matched>0</matched>" in response.text
+
+
+def test_xml_router_events_route_exists() -> None:
+    """GET /gadgets/xml/events exists and streams text/event-stream, given the read role."""
+    events_app.dependency_overrides[get_gadget_event_source] = _FiniteEventSource
+    try:
+        response = events_client.get("/gadgets/xml/events", headers={"X-Role": "viewer"})
+    finally:
+        del events_app.dependency_overrides[get_gadget_event_source]
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.text.startswith("id: 0")
+
+
+def test_xml_router_stats_without_bucket_omits_time_buckets() -> None:
+    """GET /gadgets/xml/stats with no `?bucket=` omits the `<time-buckets>` element entirely."""
+    response = client.get("/gadgets/xml/stats")
+    assert response.status_code == 200
+    assert "<time-buckets>" not in response.text
 
 
 # --- _sse_events: exercised directly, for deterministic control over timing/disconnect --
@@ -796,5 +921,124 @@ def test_web_component_bulk_ui_reaches_the_json_router() -> None:
 
         remaining = client.get("/gadgets").json()
         assert [g["name"] for g in remaining] == ["banana"]
+    finally:
+        del app.dependency_overrides[get_gadget_crud]
+
+
+# --- `/stats`/`/predict`: opt-in via stats_enabled ----------------------------
+
+
+def test_json_router_stats_reports_total_and_numeric_field() -> None:
+    """GET /gadgets/stats reports the total count and the numeric ("id") field's stats."""
+    repository = _FakeGadgetRepository()
+    app.dependency_overrides[get_gadget_crud] = lambda: CRUDInterface(
+        schema=_Gadget, repository=repository
+    )
+    try:
+        client.post("/gadgets", json={"name": "apple", "tags": []})
+        client.post("/gadgets", json={"name": "banana", "tags": []})
+        response = client.get("/gadgets/stats")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 2
+        assert body["time_series"] is None
+        assert body["lifecycle"] is None
+        numeric_by_field = {item["field"]: item for item in body["numeric"]}
+        assert numeric_by_field["id"]["count"] == 2
+    finally:
+        del app.dependency_overrides[get_gadget_crud]
+
+
+def test_json_router_stats_with_bucket_returns_time_series() -> None:
+    """GET /gadgets/stats?bucket=day includes a time-bucketed count series."""
+    repository = _FakeGadgetRepository()
+    app.dependency_overrides[get_gadget_crud] = lambda: CRUDInterface(
+        schema=_Gadget, repository=repository
+    )
+    try:
+        first_id = client.post("/gadgets", json={"name": "apple", "tags": []}).json()["id"]
+        second_id = client.post("/gadgets", json={"name": "banana", "tags": []}).json()["id"]
+        repository._records[first_id].bucket = "2024-01-01T00:00:00"
+        repository._records[second_id].bucket = "2024-01-02T00:00:00"
+        response = client.get("/gadgets/stats", params={"bucket": "day"})
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["time_series"]) == 2
+    finally:
+        del app.dependency_overrides[get_gadget_crud]
+
+
+def test_json_router_stats_rejects_invalid_bucket() -> None:
+    """GET /gadgets/stats?bucket=<invalid> is rejected (422), not a 500."""
+    response = client.get("/gadgets/stats", params={"bucket": "fortnight"})
+    assert response.status_code == 422
+
+
+def test_json_router_predict_rejects_unrecognized_field() -> None:
+    """GET /gadgets/predict?field=<non-numeric> is rejected (422)."""
+    response = client.get("/gadgets/predict", params={"field": "name"})
+    assert response.status_code == 422
+
+
+def test_json_router_predict_rejects_insufficient_history() -> None:
+    """GET /gadgets/predict with fewer than 2 time buckets of history is rejected (422)."""
+    repository = _FakeGadgetRepository()
+    app.dependency_overrides[get_gadget_crud] = lambda: CRUDInterface(
+        schema=_Gadget, repository=repository
+    )
+    try:
+        client.post("/gadgets", json={"name": "apple", "tags": []})
+        response = client.get("/gadgets/predict")
+    finally:
+        del app.dependency_overrides[get_gadget_crud]
+    assert response.status_code == 422
+
+
+def test_json_router_predict_projects_future_buckets() -> None:
+    """GET /gadgets/predict forecasts `periods` future buckets from a real time series."""
+    repository = _FakeGadgetRepository()
+    app.dependency_overrides[get_gadget_crud] = lambda: CRUDInterface(
+        schema=_Gadget, repository=repository
+    )
+    try:
+        for day, name in enumerate(["apple", "banana", "cherry"], start=1):
+            gadget_id = client.post("/gadgets", json={"name": name, "tags": []}).json()["id"]
+            repository._records[gadget_id].bucket = f"2024-01-0{day}T00:00:00"
+        response = client.get("/gadgets/predict", params={"periods": 3, "bucket": "day"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["method"] == "linear_regression"
+        assert body["field"] is None
+        assert len(body["predictions"]) == 3
+    finally:
+        del app.dependency_overrides[get_gadget_crud]
+
+
+def test_xml_router_stats_and_predict_render_nested_xml() -> None:
+    """GET /gadgets/xml/stats and /predict hand-assemble the same data as nested XML."""
+    repository = _FakeGadgetRepository()
+    app.dependency_overrides[get_gadget_crud] = lambda: CRUDInterface(
+        schema=_Gadget, repository=repository
+    )
+    try:
+        for day, name in enumerate(["apple", "banana"], start=1):
+            gadget_id = client.post("/gadgets", json={"name": name, "tags": []}).json()["id"]
+            repository._records[gadget_id].bucket = f"2024-01-0{day}T00:00:00"
+
+        stats_response = client.get("/gadgets/xml/stats", params={"bucket": "day"})
+        assert stats_response.status_code == 200
+        assert stats_response.headers["content-type"] == "application/xml"
+        assert "<stats>" in stats_response.text
+        assert "<total>2</total>" in stats_response.text
+        assert "<time-buckets>" in stats_response.text
+
+        predict_response = client.get(
+            "/gadgets/xml/predict", params={"periods": 1, "bucket": "day"}
+        )
+        assert predict_response.status_code == 200
+        assert predict_response.headers["content-type"] == "application/xml"
+        assert "<prediction>" in predict_response.text
+        assert "<meta>" in predict_response.text
+        assert predict_response.text.count("<prediction-point>") == 1
     finally:
         del app.dependency_overrides[get_gadget_crud]

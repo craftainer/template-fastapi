@@ -89,8 +89,19 @@ known-first-party = ["app"]
 # crud_router.py's factories take one named parameter per route-building option
 # (prefix/roles/schemas/etc, PLR0913) and pass FastAPI Depends(...)/role objects
 # through untyped (ANN401) -- both are inherent to genericizing route wiring
-# itself, not accidental complexity; see the module docstring.
-"src/app/controllers/crud_router.py" = ["ANN401", "PLR0913", "PLR0917"]
+# itself, not accidental complexity; see the module docstring. build_xml_router
+# (PLR0915) is one long, linear "one `if opt_in_param: @router.get/post(...)`
+# block per record-lifecycle route" sequence, mirroring build_json_router's own
+# shape one-for-one -- splitting it up would hide that direct correspondence,
+# which is the point (see "Generic CRUD router factories" in
+# controllers/README.md).
+"src/app/controllers/crud_router.py" = ["ANN401", "PLR0913", "PLR0915", "PLR0917"]
+# render_crud_component_js takes one named parameter per opt-in UI capability
+# it renders (archivable/draftable/has_revisions/has_events/stats_enabled),
+# mirroring crud_router.py's build_json_router's own opt-in param shape --
+# inherent to keeping this generic across every resource, not accidental
+# complexity.
+"src/app/web_components.py" = ["PLR0913"]
 # crud_actions.py's resolve_* helpers take one named parameter per piece of
 # per-route context (crud/schema/request/id/not_found/etc, PLR0913) and return
 # a schema instance or a bulk-result view depending on the id/filter branch

@@ -34,6 +34,7 @@ from pydantic import BaseModel
 
 from app.repositories.base import Repository
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
+from app.repositories.stats import ResourceStats, TimeBucket
 
 logger = logging.getLogger(__name__)
 
@@ -473,6 +474,19 @@ class CRUDLike[SchemaT: BaseModel](Protocol):
         """Delete every record matching the filters; return the records that were deleted."""
         ...
 
+    async def stats(
+        self,
+        *,
+        numeric_fields: Sequence[str],
+        categorical_fields: Sequence[str],
+        filters: Sequence[FilterClause] = (),
+        bucket: TimeBucket | None = None,
+        include_archived: bool = False,
+        include_unpublished: bool = False,
+    ) -> ResourceStats:
+        """Return aggregate statistics for records matching the given filters."""
+        ...
+
 
 class CRUDInterface[SchemaT: BaseModel, ModelT]:
     """CRUD operations for one resource, parameterized by its view and repository."""
@@ -754,6 +768,33 @@ class CRUDInterface[SchemaT: BaseModel, ModelT]:
         for result in results:
             await self._publish_event(record_id=result.id, action="restore", snapshot=result)  # type: ignore[attr-defined]
         return results
+
+    async def stats(
+        self,
+        *,
+        numeric_fields: Sequence[str],
+        categorical_fields: Sequence[str],
+        filters: Sequence[FilterClause] = (),
+        bucket: TimeBucket | None = None,
+        include_archived: bool = False,
+        include_unpublished: bool = False,
+    ) -> ResourceStats:
+        """Return aggregate statistics for records matching the given filters.
+
+        A thin pass-through to the repository, applying the same owner-scoped
+        read restriction (`_read_scoped`) `get`/`list`/`count` already apply --
+        `stats` is a generic, read-only operation like `count`, not
+        resource-specific, so it belongs here rather than in a resource's own
+        controller (see ../interfaces/README.md's "Do"/"Don't").
+        """
+        return await self._repository.stats(
+            numeric_fields=numeric_fields,
+            categorical_fields=categorical_fields,
+            filters=self._read_scoped(filters),
+            bucket=bucket,
+            include_archived=include_archived,
+            include_unpublished=include_unpublished,
+        )
 
 
 def _id_filter(record_id: int) -> tuple[FilterClause]:

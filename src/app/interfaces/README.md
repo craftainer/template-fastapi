@@ -42,6 +42,19 @@ CRUD class, only a model, a view, and a router that wires the two through
   passed straight through to the repository — see `../repositories/
   README.md`'s "Record-lifecycle mixins".
 
+  `CRUDInterface.stats(*, numeric_fields, categorical_fields, filters=,
+  bucket=, include_archived=, include_unpublished=)` is a thin
+  pass-through to `self._repository.stats(...)` alongside `count` —
+  applying the same `_read_scoped` owner restriction `get`/`list`/`count`
+  already apply (a no-op when `owner` isn't set, or when `owner.
+  read_scoped` is `False`). A generic, read-only operation like `count`,
+  not resource-specific, so it lives on `CRUDInterface` itself rather than
+  in a resource's own controller — see this section's "Do"/"Don't" below.
+  See `../repositories/README.md`'s "Statistics" section for what it
+  returns and `../controllers/README.md`'s "Generic CRUD router factories"
+  for the `GET <prefix>/stats`/`GET <prefix>/predict` routes built on top
+  of it.
+
   `base.py` also has `RevisionSink`, a small `Protocol`
   (`record(*, resource, record_id, action, snapshot, actor)`) and
   `RepositoryRevisionSink`, the concrete adapter every resource that opts

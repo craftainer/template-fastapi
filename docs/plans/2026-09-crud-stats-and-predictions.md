@@ -2,7 +2,13 @@
 
 ## Status
 
-Draft
+Done — implemented per this plan (repository/interface/controller/view
+layers, XML/web parity, Hero wiring, tests, docs). Per `docs/plans/
+README.md`, this file should be folded into an ADR (the linear-regression-
+vs-real-ML tradeoff and the XML-events-stay-JSON-payload decision, both
+flagged as ADR-worthy in the "Docs" section below) and then removed — left
+in place for now since writing that ADR was explicitly scoped out of the
+implementation pass as a follow-up.
 
 ## Goal
 

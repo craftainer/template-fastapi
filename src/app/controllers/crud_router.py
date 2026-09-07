@@ -20,6 +20,7 @@ given filters" logic each factory's routes wrap in their own response format.
 import asyncio
 import json
 from collections.abc import AsyncIterator, Sequence
+from datetime import datetime
 from typing import Annotated, Any
 
 from defusedxml.common import DefusedXmlException
@@ -29,17 +30,33 @@ from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
+from app.controllers import crud_stats
 from app.controllers.crud_actions import (
     resolve_delete,
     resolve_list_or_get,
     resolve_restore,
     resolve_update,
 )
-from app.controllers.crud_query import FieldFilterInfo, describe_fields
+from app.controllers.crud_query import (
+    FieldFilterInfo,
+    describe_fields,
+    parse_include_archived,
+    parse_include_unpublished,
+)
 from app.rate_limit import limiter
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
+from app.repositories.stats import TimeBucket
 from app.views.bulk import BulkDeleteResult, BulkUpdateResult
 from app.views.revision import RevisionView
+from app.views.stats import (
+    CategoricalValueCountView,
+    LifecycleStatsView,
+    NumericFieldStatView,
+    PredictionView,
+    ResourceStatsView,
+    SeriesPointView,
+    TimeBucketCountView,
+)
 from app.web_components import render_crud_component_js, render_crud_form
 from app.xml_codec import from_xml, is_list_annotation, to_xml
 
@@ -86,6 +103,164 @@ def _with_dependency_headers[ResponseT: Response](
     return built
 
 
+class _PredictionMetaXML(BaseModel):
+    """Flat scalar sub-model for build_xml_router's hand-assembled `/predict` body.
+
+    `field`/`bucket`/`method` are the only scalar (non-nested) fields of
+    app.views.stats.PredictionView -- rendered as their own flat model via
+    app.xml_codec.to_xml the same way a numeric-field/categorical-value/
+    time-bucket row is (see build_xml_router's `/stats`/`/predict` routes).
+    """
+
+    field: str | None
+    bucket: str
+    method: str
+
+
+def _validate_publish_ready(record: BaseModel, create_schema: type[BaseModel]) -> None:
+    """Re-validate `record` against `create_schema`, raising 422 naming any field still missing.
+
+    Shared by build_json_router's and build_xml_router's own `/publish` routes --
+    see build_json_router's docstring for what this guards against.
+    """
+    required_fields = {field: getattr(record, field) for field in create_schema.model_fields}
+    try:
+        create_schema.model_validate(required_fields)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+
+async def _resolve_stats(crud: Any, schema: type[BaseModel], request: Request) -> ResourceStatsView:
+    """Parse `/stats`'s query params, call CRUDLike.stats, and build its response view.
+
+    Shared by build_json_router's and build_xml_router's own `/stats` routes --
+    only the rendering (a plain view vs. hand-assembled XML) differs between them.
+    """
+    bucket = crud_stats.parse_bucket(request.query_params.get("bucket"))
+    include_archived = parse_include_archived(request.query_params)
+    include_unpublished = parse_include_unpublished(request.query_params)
+    result = await crud.stats(
+        numeric_fields=crud_stats.numeric_fields(schema),
+        categorical_fields=crud_stats.categorical_fields(schema),
+        bucket=bucket,
+        include_archived=include_archived,
+        include_unpublished=include_unpublished,
+    )
+    return ResourceStatsView(
+        total=result.total,
+        numeric=[
+            NumericFieldStatView(
+                field=field,
+                count=field_stats.count,
+                minimum=field_stats.minimum,
+                maximum=field_stats.maximum,
+                average=field_stats.average,
+                total=field_stats.total,
+            )
+            for field, field_stats in result.numeric.items()
+        ],
+        categorical=[
+            CategoricalValueCountView(field=field, value=value, count=count)
+            for field, distribution in result.categorical.items()
+            for value, count in distribution.items()
+        ],
+        time_series=(
+            None
+            if result.time_series is None
+            else [
+                TimeBucketCountView(
+                    bucket_start=datetime.fromisoformat(item.bucket_start), count=item.count
+                )
+                for item in result.time_series
+            ]
+        ),
+        lifecycle=(
+            None
+            if result.lifecycle is None
+            else LifecycleStatsView(
+                archived=result.lifecycle.archived,
+                draft=result.lifecycle.draft,
+                locked=result.lifecycle.locked,
+                scheduled_pending=result.lifecycle.scheduled_pending,
+                scheduled_expired=result.lifecycle.scheduled_expired,
+            )
+        ),
+    )
+
+
+async def _resolve_predict(
+    crud: Any,
+    schema: type[BaseModel],
+    *,
+    field: str | None,
+    periods: int,
+    bucket_raw: str,
+) -> PredictionView:
+    """Parse `/predict`'s query params, forecast a trend, and build its response view.
+
+    Shared by build_json_router's and build_xml_router's own `/predict` routes --
+    only the rendering differs between them. Raises RequestValidationError (422)
+    for an unrecognized `field`/`bucket` or fewer than 2 buckets of history --
+    see app.controllers.crud_stats.forecast's own docstring for the latter.
+    """
+    bucket = crud_stats.parse_bucket(bucket_raw) or TimeBucket.DAY
+    validated_field = crud_stats.parse_predict_field(schema, field)
+    if validated_field is None:
+        result = await crud.stats(numeric_fields=(), categorical_fields=(), bucket=bucket)
+        series = crud_stats.count_series_as_values(result.time_series or [])
+    else:
+        records = await crud.list(
+            limit=crud_stats.MAX_HISTORY_RECORDS, sort=[SortClause("created_at")]
+        )
+        series = crud_stats.bucket_field_sums(records, validated_field, bucket)
+    try:
+        predictions = crud_stats.forecast(series, periods, bucket)
+    except crud_stats.InsufficientHistoryError as exc:
+        errors = [{"loc": ("query",), "msg": str(exc), "type": "value_error"}]
+        raise RequestValidationError(errors) from exc
+    last_known = series[-1]
+    return PredictionView(
+        field=validated_field,
+        bucket=bucket.value,
+        last_known=SeriesPointView(
+            bucket_start=datetime.fromisoformat(last_known.bucket_start), value=last_known.value
+        ),
+        predictions=[
+            SeriesPointView(bucket_start=datetime.fromisoformat(p.bucket_start), value=p.value)
+            for p in predictions
+        ],
+    )
+
+
+def _stats_to_xml(view: ResourceStatsView) -> str:
+    """Hand-assemble `ResourceStatsView` as nested XML -- see build_xml_router's `/stats` route."""
+    numeric_xml = "".join(to_xml(item, "numeric-field") for item in view.numeric)
+    categorical_xml = "".join(to_xml(item, "categorical-value") for item in view.categorical)
+    body = (
+        f"<total>{view.total}</total>"
+        f"<numeric-fields>{numeric_xml}</numeric-fields>"
+        f"<categorical-values>{categorical_xml}</categorical-values>"
+    )
+    if view.time_series is not None:
+        time_series_xml = "".join(to_xml(item, "time-bucket") for item in view.time_series)
+        body += f"<time-buckets>{time_series_xml}</time-buckets>"
+    if view.lifecycle is not None:
+        body += to_xml(view.lifecycle, "lifecycle")
+    return f"<stats>{body}</stats>"
+
+
+def _prediction_to_xml(view: PredictionView) -> str:
+    """Hand-assemble `PredictionView` as nested XML -- see build_xml_router's `/predict` route."""
+    meta = _PredictionMetaXML(field=view.field, bucket=view.bucket, method=view.method)
+    predictions_xml = "".join(to_xml(item, "prediction-point") for item in view.predictions)
+    body = (
+        to_xml(meta, "meta")
+        + to_xml(view.last_known, "last-known")
+        + f"<predictions>{predictions_xml}</predictions>"
+    )
+    return f"<prediction>{body}</prediction>"
+
+
 def _parse_xml_body[ModelT: BaseModel](body: bytes, schema: type[ModelT]) -> ModelT:
     """Parse a request body with from_xml, rejecting a malicious payload with 400.
 
@@ -118,6 +293,7 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
     revision_repository_dependency: Any = None,  # Annotated[Repository[Revision], Depends(...)]
     resource: str | None = None,
     event_source_dependency: Any = None,  # Annotated[EventSource, Depends(...)]
+    stats_enabled: bool = False,
 ) -> APIRouter:
     """Build the standard list/create/get/update/delete JSON router for one resource.
 
@@ -155,8 +331,15 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
     delete/delete_many/restore/restore_many activity (see
     app.interfaces.base.EventSink/EventSource and
     docs/adrs/0015-mqtt-for-crud-events.md). Gated by the same `read_roles`
-    dependency as the plain `GET` list route above, JSON-only for now like the
-    other record-lifecycle routes.
+    dependency as the plain `GET` list route above.
+
+    `stats_enabled=True` adds `GET <prefix>/stats` (count/numeric/categorical/
+    time-series/lifecycle aggregates, see app.controllers.crud_stats and
+    app.views.stats.ResourceStatsView) and `GET <prefix>/predict` (an
+    ordinary-least-squares trend forecast over the same time-bucketed series,
+    see app.controllers.crud_stats.forecast and app.views.stats.PredictionView)
+    -- both gated by the same `read_roles` dependency as the plain `GET` list
+    route.
     """
     router = APIRouter(prefix=prefix, tags=list(tags), dependencies=list(router_dependencies))
     not_found = f"{resource_label} not found"
@@ -221,13 +404,7 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
             record = await crud.get(id)
             if record is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
-            required_fields = {
-                field: getattr(record, field) for field in create_schema.model_fields
-            }
-            try:
-                create_schema.model_validate(required_fields)
-            except ValidationError as exc:
-                raise RequestValidationError(exc.errors()) from exc
+            _validate_publish_ready(record, create_schema)
             # `crud.get` above is unscoped for a resource using owner=OwnerScope(...,
             # read_scoped=False) (see app.interfaces.base.OwnerScope), but `crud.update`
             # always applies the owner filter -- so a caller who can see someone else's
@@ -280,6 +457,25 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
             resolved_id, events = await source.subscribe(resolved_subscriber_id)
             return StreamingResponse(
                 _sse_events(request, resolved_id, events), media_type="text/event-stream"
+            )
+
+    if stats_enabled:
+
+        @router.get("/stats", dependencies=[read_roles])
+        async def get_stats(crud: crud_dependency, request: Request) -> ResourceStatsView:
+            return await _resolve_stats(crud, schema, request)
+
+        @router.get("/predict", dependencies=[read_roles])
+        async def get_prediction(
+            crud: crud_dependency,
+            field: str | None = None,
+            periods: Annotated[
+                int, Query(ge=crud_stats.MIN_PERIODS, le=crud_stats.MAX_PERIODS)
+            ] = crud_stats.DEFAULT_PERIODS,
+            bucket: str = "day",
+        ) -> PredictionView:
+            return await _resolve_predict(
+                crud, schema, field=field, periods=periods, bucket_raw=bucket
             )
 
     return router
@@ -370,8 +566,27 @@ def build_xml_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel]
     write_roles: Any,
     delete_roles: Any,
     router_dependencies: Sequence[Any] = (),
+    draft_schema: Any = None,  # type[BaseModel] | None -- see build_json_router
+    archivable: bool = False,
+    revision_repository_dependency: Any = None,  # Annotated[Repository[Revision], Depends(...)]
+    resource: str | None = None,
+    event_source_dependency: Any = None,  # Annotated[EventSource, Depends(...)]
+    stats_enabled: bool = False,
 ) -> APIRouter:
-    """Build the XML-flavored sibling of build_json_router's routes, id/filter/bulk included."""
+    """Build the XML-flavored sibling of build_json_router's routes.
+
+    Full parity with build_json_router: id/filter/bulk actions, plus (via the
+    same opt-in params) restore/draft/publish/revisions/events/stats/predict.
+    `GET <prefix>/stats`/`GET <prefix>/predict` are hand-assembled nested XML
+    (see `_stats_to_xml`/`_prediction_to_xml`) rather than a single `to_xml`
+    call -- app.xml_codec.to_xml only supports a flat model (see its own module
+    docstring), and stats/predictions are naturally nested (per-field
+    aggregates, a distribution, a time series). `GET <prefix>/events` stays a
+    JSON-payload SSE stream even here -- SSE's `data:` line is a transport
+    envelope, not a resource representation (see app.interfaces.base.
+    EventSink/EventSource's own docstrings), so it's exempt from this router's
+    otherwise-XML rendering.
+    """
     router = APIRouter(prefix=prefix, tags=list(tags), dependencies=list(router_dependencies))
     not_found = f"{resource_label} not found"
     xml_media_type = "application/xml"
@@ -444,6 +659,145 @@ def build_xml_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel]
             )
         return _with_dependency_headers(response, built)
 
+    @router.post("/clone", status_code=status.HTTP_201_CREATED, dependencies=[write_roles])
+    async def clone_record_xml(
+        id: int,  # noqa: A002
+        crud: crud_dependency,
+        response: Response,
+    ) -> Response:
+        record = await crud.get(id)
+        if record is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
+        clone_fields = {field: getattr(record, field) for field in create_schema.model_fields}
+        clone_data = create_schema.model_validate(clone_fields)
+        created = await crud.create(clone_data)
+        return _with_dependency_headers(
+            response,
+            Response(
+                content=to_xml(created, item_tag),
+                media_type=xml_media_type,
+                status_code=status.HTTP_201_CREATED,
+            ),
+        )
+
+    if draft_schema is not None:
+
+        @router.post("/draft", status_code=status.HTTP_201_CREATED, dependencies=[write_roles])
+        async def create_draft_xml(
+            request: Request, crud: crud_dependency, response: Response
+        ) -> Response:
+            record = _parse_xml_body(await request.body(), draft_schema)
+            created = await crud.create(record)
+            return _with_dependency_headers(
+                response,
+                Response(
+                    content=to_xml(created, item_tag),
+                    media_type=xml_media_type,
+                    status_code=status.HTTP_201_CREATED,
+                ),
+            )
+
+        @router.post("/publish", dependencies=[write_roles])
+        async def publish_record_xml(
+            id: int,  # noqa: A002
+            crud: crud_dependency,
+            response: Response,
+        ) -> Response:
+            record = await crud.get(id)
+            if record is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
+            _validate_publish_ready(record, create_schema)
+            published = await crud.update(id, _PublishFlip(is_draft=False))
+            if published is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
+            return _with_dependency_headers(
+                response, Response(content=to_xml(published, item_tag), media_type=xml_media_type)
+            )
+
+    if archivable:
+
+        @router.post("/restore", dependencies=[write_roles])
+        @limiter.limit(settings.rate_limit_bulk_action)
+        async def restore_records_xml(
+            crud: crud_dependency,
+            request: Request,
+            response: Response,
+            id: int | None = None,  # noqa: A002
+        ) -> Response:
+            result = await resolve_restore(crud, schema, request, id=id, not_found=not_found)
+            if isinstance(result, BulkUpdateResult):
+                body = to_xml(result, "bulk-update-result")
+            else:
+                body = to_xml(result, item_tag)
+            return _with_dependency_headers(
+                response, Response(content=body, media_type=xml_media_type)
+            )
+
+    if revision_repository_dependency is not None and resource is not None:
+
+        @router.get("/revisions", dependencies=[read_roles])
+        async def list_revisions_xml(
+            repository: revision_repository_dependency,
+            response: Response,
+            id: int,  # noqa: A002
+        ) -> Response:
+            records = await repository.list(
+                filters=[
+                    FilterClause("resource", FilterOp.EQ, resource),
+                    FilterClause("record_id", FilterOp.EQ, id),
+                ],
+                sort=[SortClause("created_at", descending=True)],
+                limit=_MAX_LIMIT,
+            )
+            revisions = [RevisionView.model_validate(record) for record in records]
+            revisions_xml = "".join(to_xml(r, "revision") for r in revisions)
+            body = f"<revisions>{revisions_xml}</revisions>"
+            return _with_dependency_headers(
+                response, Response(content=body, media_type=xml_media_type)
+            )
+
+    if event_source_dependency is not None:
+
+        @router.get("/events", dependencies=[read_roles])
+        async def stream_events_xml(
+            source: event_source_dependency,
+            request: Request,
+            subscriber_id: str | None = None,
+        ) -> StreamingResponse:
+            resolved_subscriber_id = subscriber_id or request.headers.get("last-event-id")
+            resolved_id, events = await source.subscribe(resolved_subscriber_id)
+            return StreamingResponse(
+                _sse_events(request, resolved_id, events), media_type="text/event-stream"
+            )
+
+    if stats_enabled:
+
+        @router.get("/stats", dependencies=[read_roles])
+        async def get_stats_xml(
+            crud: crud_dependency, request: Request, response: Response
+        ) -> Response:
+            view = await _resolve_stats(crud, schema, request)
+            return _with_dependency_headers(
+                response, Response(content=_stats_to_xml(view), media_type=xml_media_type)
+            )
+
+        @router.get("/predict", dependencies=[read_roles])
+        async def get_prediction_xml(
+            crud: crud_dependency,
+            response: Response,
+            field: str | None = None,
+            periods: Annotated[
+                int, Query(ge=crud_stats.MIN_PERIODS, le=crud_stats.MAX_PERIODS)
+            ] = crud_stats.DEFAULT_PERIODS,
+            bucket: str = "day",
+        ) -> Response:
+            view = await _resolve_predict(
+                crud, schema, field=field, periods=periods, bucket_raw=bucket
+            )
+            return _with_dependency_headers(
+                response, Response(content=_prediction_to_xml(view), media_type=xml_media_type)
+            )
+
     return router
 
 
@@ -459,8 +813,23 @@ def build_web_router[CreateT: BaseModel](
     read_roles: Any,
     write_roles: Any,
     router_dependencies: Sequence[Any] = (),
+    draft_schema: Any = None,  # type[BaseModel] | None -- see build_json_router
+    archivable: bool = False,
+    revision_repository_dependency: Any = None,  # Annotated[Repository[Revision], Depends(...)]
+    event_source_dependency: Any = None,  # Annotated[EventSource, Depends(...)]
+    stats_enabled: bool = False,
 ) -> APIRouter:
     """Build the zero-JS-form + web-component-JS sibling router for one resource.
+
+    `draft_schema`/`archivable`/`revision_repository_dependency`/
+    `event_source_dependency`/`stats_enabled` mirror build_json_router's own
+    same-named params -- this router adds no new FastAPI routes for them (the
+    sibling JSON router already serves `/restore`/`/draft`/`/publish`/
+    `/revisions`/`/events`/`/stats`/`/predict`, see build_json_router); they're
+    only used here to decide which UI app.web_components.render_crud_component_js
+    generates (an Archive/Restore action, a Save-as-draft/Publish pair, a History
+    panel, a live-events subscription, a Stats/Predict panel), calling those
+    JSON routes directly, same as every other action already does.
 
     `list_fields` (which of `fields` are arrays, for comma-split parsing and
     ", "-joined display) is derived from `create_schema`'s own annotations via
@@ -547,7 +916,15 @@ def build_web_router[CreateT: BaseModel](
             response,
             Response(
                 content=render_crud_component_js(
-                    resource, api_base, fields, list_fields=list_fields
+                    resource,
+                    api_base,
+                    fields,
+                    list_fields=list_fields,
+                    archivable=archivable,
+                    draftable=draft_schema is not None,
+                    has_revisions=revision_repository_dependency is not None,
+                    has_events=event_source_dependency is not None,
+                    stats_enabled=stats_enabled,
                 ),
                 media_type="application/javascript",
             ),
@@ -578,6 +955,7 @@ def build_resource_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseM
     archivable: bool = False,
     revision_repository_dependency: Any = None,  # Annotated[Repository[Revision], Depends(...)]
     event_source_dependency: Any = None,  # Annotated[EventSource, Depends(...)]
+    stats_enabled: bool = False,
 ) -> APIRouter:
     """Compose build_json_router/build_xml_router/build_web_router into one resource-version router.
 
@@ -600,10 +978,10 @@ def build_resource_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseM
     alike, rather than each per-format factory call repeating it.
 
     `draft_schema`/`archivable`/`revision_repository_dependency`/
-    `event_source_dependency` are forwarded to `build_json_router` only --
-    draft/publish/restore/revisions/events are JSON-only for now (see
-    build_json_router's own docstring); XML/web keep their existing
-    list/create/get/update/delete shape unchanged.
+    `event_source_dependency`/`stats_enabled` are forwarded to all three
+    factories identically -- draft/publish/restore/revisions/events/stats/
+    predict are first-class across JSON/XML/web, not JSON-only (see
+    build_json_router's/build_xml_router's/build_web_router's own docstrings).
     """
     full_prefix = prefix if api_prefix is None else api_prefix
     router = APIRouter(prefix=prefix, tags=list(tags), dependencies=list(router_dependencies))
@@ -624,6 +1002,7 @@ def build_resource_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseM
             revision_repository_dependency=revision_repository_dependency,
             resource=resource,
             event_source_dependency=event_source_dependency,
+            stats_enabled=stats_enabled,
         ),
         prefix="/json",
     )
@@ -641,6 +1020,12 @@ def build_resource_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseM
             read_roles=read_roles,
             write_roles=write_roles,
             delete_roles=delete_roles,
+            draft_schema=draft_schema,
+            archivable=archivable,
+            revision_repository_dependency=revision_repository_dependency,
+            resource=resource,
+            event_source_dependency=event_source_dependency,
+            stats_enabled=stats_enabled,
         ),
         prefix="/xml",
     )
@@ -655,6 +1040,11 @@ def build_resource_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseM
             crud_dependency=crud_dependency,
             read_roles=read_roles,
             write_roles=write_roles,
+            draft_schema=draft_schema,
+            archivable=archivable,
+            revision_repository_dependency=revision_repository_dependency,
+            event_source_dependency=event_source_dependency,
+            stats_enabled=stats_enabled,
         ),
         prefix="/web",
     )

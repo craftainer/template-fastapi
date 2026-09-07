@@ -5,8 +5,8 @@ to, parameterized by a model type rather than one class per resource.
 
 - `base.py` — `Repository[ModelT]`, the `Protocol` `app.interfaces.base.
   CRUDInterface` is written against: `get`/`list`/`create`/`update`/
-  `delete`/`count`/`update_many`/`delete_many`/`restore`/`restore_many`,
-  all storage-agnostic. `list`/`update_many`/`delete_many` take
+  `delete`/`count`/`update_many`/`delete_many`/`restore`/`restore_many`/
+  `stats`, all storage-agnostic. `list`/`update_many`/`delete_many` take
   `filters`/`sort` sequences from `filtering.py`. Also `RecordLockedError`,
   raised by `update`/`update_many`/`delete`/`delete_many` for a
   `Lockable` (see `../models/README.md`'s `mixins.py`) record whose
@@ -37,6 +37,11 @@ to, parameterized by a model type rather than one class per resource.
   filter compares correctly against either backend. Translates
   `FilterClause`/`SortClause` into plain Python predicates/`sorted()`
   instead.
+- `stats.py` — `TimeBucket` (`DAY`/`WEEK`/`MONTH`) and the
+  `ResourceStats`/`NumericFieldStats`/`TimeBucketCount`/`LifecycleStats`
+  frozen dataclasses `Repository.stats` returns; plain value objects, same
+  style as `filtering.py`'s `FilterClause`/`SortClause` — see
+  "Statistics" below.
 
 ## Record-lifecycle mixins
 
@@ -66,6 +71,44 @@ present:
 
 A model without a given mixin is completely unaffected by all of the
 above — no behavior change for a resource that doesn't opt in.
+
+## Statistics
+
+`Repository.stats(*, numeric_fields, categorical_fields, filters=,
+bucket=, include_archived=, include_unpublished=)` returns a
+`stats.py`-defined `ResourceStats`: the total matching-record count,
+per-numeric-field `NumericFieldStats` (count/min/max/avg/sum),
+per-categorical-field value-distribution dicts, an optional
+`bucket`-width (`stats.TimeBucket.DAY`/`WEEK`/`MONTH`) time-bucketed
+`TimeBucketCount` series over `created_at` (omitted, `None`, when `bucket`
+isn't given), and — for a model carrying one of the mixins above — a
+`LifecycleStats` breakdown (archived/draft/locked/scheduled-pending/
+scheduled-expired counts, each `None` if the matching mixin isn't
+present; `lifecycle=None` entirely for a model with none of them).
+`numeric_fields`/`categorical_fields` are caller-supplied (see
+`app.controllers.crud_stats` for how a resource's own schema derives
+them) — this method has no opinion on which fields "should" be
+aggregated, only how to aggregate the ones it's given.
+
+- `SQLAlchemyRepository.stats`: one query computing count/min/max/avg/sum
+  across every numeric field at once (`sqlalchemy.func`), one `GROUP BY`
+  query per categorical field, one `GROUP BY date_trunc(bucket,
+  created_at)` query for the time series (only if `bucket` is given), and
+  one query with a `COUNT(...) FILTER(WHERE ...)` per present
+  lifecycle-mixin column for the breakdown — reusing `_where_clauses`/
+  `_visibility_clauses` for filter/archived/unpublished handling exactly
+  like `list`/`count` already do.
+- `InMemoryRepository.stats`: the equivalent computed in Python over the
+  same in-memory dict + existing filter-predicate helpers, matching how it
+  already parallels `SQLAlchemyRepository.list`/`count`. Its own
+  `_bucket_start` helper truncates a `created_at` value to its UTC
+  calendar bucket the same way Postgres's `date_trunc` does (a WEEK bucket
+  starts Monday).
+
+Both implementations detect lifecycle mixins via the same `hasattr`
+pattern used everywhere else in this module — a model without a given
+mixin just gets that field of `LifecycleStats` left `None`, and a model
+with none of them gets `lifecycle=None` entirely.
 
 ## Do
 

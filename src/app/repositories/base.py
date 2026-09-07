@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import Any, Protocol
 
 from app.repositories.filtering import FilterClause, SortClause
+from app.repositories.stats import ResourceStats, TimeBucket
 
 
 class RecordLockedError(Exception):
@@ -107,4 +108,28 @@ class Repository[ModelT](Protocol):
 
     async def restore_many(self, *, filters: Sequence[FilterClause]) -> Sequence[ModelT]:
         """Clear `archived_at` on every record matching the filters; return them."""
+        ...
+
+    async def stats(
+        self,
+        *,
+        numeric_fields: Sequence[str],
+        categorical_fields: Sequence[str],
+        filters: Sequence[FilterClause] = (),
+        bucket: TimeBucket | None = None,
+        include_archived: bool = False,
+        include_unpublished: bool = False,
+    ) -> ResourceStats:
+        """Return aggregate statistics for records matching the given filters.
+
+        `numeric_fields`/`categorical_fields` name which columns to compute
+        min/max/avg/sum and value-distribution counts for, respectively (see
+        app.controllers.crud_stats for how these are derived from a resource's
+        schema). `bucket`, if given, additionally computes a time-bucketed count
+        series over `created_at`. A model carrying one of app.models.mixins'
+        record-lifecycle mixins (detected via `hasattr`, same as `list`/`get`/
+        `count`) also gets a lifecycle breakdown; a model with none of them gets
+        `lifecycle=None`. See `get`'s docstring for `include_archived`/
+        `include_unpublished`.
+        """
         ...

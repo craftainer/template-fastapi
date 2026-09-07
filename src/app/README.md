@@ -350,9 +350,12 @@ the mechanism a new per-user/per-tenant resource opts into the same way.
 ### Record-lifecycle mixins
 
 Hero also demonstrates every opt-in record-lifecycle mixin from
-`models/mixins.py`, on `/crud/v1/heroes/v2/json` only (not the deprecated
-`v1` sibling, matching how bulk actions were rolled out as a v2-only
-capability):
+`models/mixins.py`, on `/crud/v1/heroes/v2` only (not the deprecated `v1`
+sibling, matching how bulk actions were rolled out as a v2-only
+capability) — across all three of its `/json`, `/xml`, and `/web`
+sibling routers, not JSON-only (see `controllers/README.md`'s "Generic
+CRUD router factories" for the XML hand-assembled-nesting/web
+generated-JS shape each takes):
 
 - **Archive** (`Archivable`): `DELETE` sets `archived_at` instead of
   removing the row; excluded from `GET` by default, included with
@@ -398,6 +401,19 @@ capability):
   `docs/adrs/0015-mqtt-for-crud-events.md` for the delivery-guarantee
   design (a subscriber that preserves its `subscriber_id` doesn't miss
   events across a brief disconnect).
+- **Statistics/predictions**: `stats_enabled=True` adds `GET /stats`
+  (count, per-numeric-field min/max/avg/sum, per-categorical-field (bool/
+  enum) value distribution, an optional `?bucket=day|week|month`
+  time-bucketed count series over `created_at`, and Hero's own lifecycle
+  breakdown from every mixin above) and `GET /predict` (a naive
+  ordinary-least-squares linear-regression forecast over that same
+  time-bucketed series, `?periods=` future buckets, `?field=` to target a
+  numeric field's per-bucket sum instead of record count — always named
+  `"linear_regression"` in the response, never mistaken for a trained
+  model). See `controllers/README.md`'s "Generic CRUD router factories"
+  for the full shape, `repositories/README.md`'s "Statistics" section for
+  what the repository layer computes, and
+  `docs/plans/2026-09-crud-stats-and-predictions.md` for the design.
 
 ## Do
 
