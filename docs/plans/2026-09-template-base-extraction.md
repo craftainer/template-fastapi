@@ -46,7 +46,7 @@ pre-existing repo, see `template-sync.yml`'s "Bootstrap state file"
 step). Concretely:
 
 - `template-fastapi` gets a `.github/template-sync-state.json` pointing
-  `template_repo` at `crazyracer98/template-base`. Its
+  `template_repo` at `craftainer/template-base`. Its
   `template-sync.yml` (unchanged file, already fully generic) then pulls
   updates to base-owned paths from `template-base`'s tagged releases,
   same as any instance does today.
@@ -58,7 +58,7 @@ step). Concretely:
   the manifest from whichever repo is being synced *from*
   (`/tmp/template-new/.github/template-sync-manifest.yml`), never the
   instance's own copy. Downstream repos of `template-fastapi` keep
-  pointing at `crazyracer98/template-fastapi` and keep working exactly
+  pointing at `craftainer/template-fastapi` and keep working exactly
   as they do today — nothing about their state file, manifest, or
   workflow changes.
 - The net effect is a two-hop chain: improvements to generic scaffolding
@@ -205,7 +205,7 @@ most infra repos, simply doesn't have these workflows at all).
 
 ### 3. Build `template-base`
 
-1. Create the new repo (`crazyracer98/template-base`).
+1. Create the new repo (`craftainer/template-base`).
 2. Seed it from a clone of `template-fastapi`, then delete everything in
    the "stays fastapi-only" list above and trim the "needs
    restructuring" items down to their generic subset per §2.
@@ -221,7 +221,7 @@ most infra repos, simply doesn't have these workflows at all).
 ### 4. Bootstrap `template-fastapi` onto `template-base`
 
 1. In `template-fastapi`, run `template-sync.yml` manually with
-   `template_repo: crazyracer98/template-base` and
+   `template_repo: craftainer/template-base` and
    `initial_sync_tag: v0.1.0` — this writes
    `.github/template-sync-state.json` without touching any files (per
    the workflow's "Bootstrap state file" step).
@@ -241,7 +241,7 @@ most infra repos, simply doesn't have these workflows at all).
   template-sync and confirm the PR picks it up.
 - **Fastapi → its downstream instances:** pick (or create) one existing
   instance of `template-fastapi`, run its template-sync unmodified, and
-  confirm it still syncs against `crazyracer98/template-fastapi` exactly
+  confirm it still syncs against `craftainer/template-fastapi` exactly
   as before — this is the regression check that this extraction must not
   break.
 - **Base standalone:** instantiate two throwaway repos directly from
