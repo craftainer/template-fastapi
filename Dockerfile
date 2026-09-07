@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.27
 # Three-stage build for the app: develop (devcontainer), builder, runner.
 
+# renovate: datasource=python-version depName=python
 ARG PYTHON_VERSION=3.14.0
 ARG DEBIAN_VERSION=trixie
 
@@ -19,6 +20,14 @@ ARG SNIP_VERSION=0.25.1
 # renovate: datasource=github-releases depName=rustfs/cli
 ARG RUSTFS_CLI_VERSION=0.1.32
 
+# Node.js is infrastructure tooling only (npx, for the clear-thought MCP
+# server in .mcp.json), not part of this app's own runtime -- installed
+# directly from nodejs.org's release tarballs in develop.sh rather than a
+# devcontainer feature, so it's pinned the same way, in the same place, as
+# every other tool in the develop stage.
+# renovate: datasource=node-version depName=node
+ARG NODE_VERSION=24.20.0
+
 ARG APP_UID=1000
 
 ARG SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
@@ -36,6 +45,7 @@ ARG CLAUDE_CODE_VERSION
 ARG PYRIGHT_VERSION
 ARG SNIP_VERSION
 ARG RUSTFS_CLI_VERSION
+ARG NODE_VERSION
 ARG SSL_CERT_FILE
 ARG SSL_CERT_DIR
 
@@ -56,7 +66,7 @@ ENV PYTHONUNBUFFERED=1 \
     CURL_CA_BUNDLE=${SSL_CERT_FILE}
 
 COPY scripts/develop.sh /tmp/develop.sh
-RUN bash /tmp/develop.sh "$PYTHON_VERSION" "$UV_VERSION" "$CLAUDE_CODE_VERSION" "$PYRIGHT_VERSION" "$SNIP_VERSION" "$RUSTFS_CLI_VERSION"
+RUN bash /tmp/develop.sh "$PYTHON_VERSION" "$UV_VERSION" "$CLAUDE_CODE_VERSION" "$PYRIGHT_VERSION" "$SNIP_VERSION" "$RUSTFS_CLI_VERSION" "$NODE_VERSION"
 
 USER vscode
 WORKDIR /workspace

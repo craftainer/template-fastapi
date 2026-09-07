@@ -156,10 +156,16 @@ duplicates or re-pins it elsewhere:
   development-related; if a future group needs another group's packages,
   reference it as a self-referential extra (e.g. `"template-fastapi[dev]"`,
   per PEP 621) instead of re-pinning the same package a second time.
-- Everything else pinned (base images, Actions, hook revisions): pinned
-  once, at its single point of use, to an exact patch version — never a
-  floating range or `latest` — so Renovate can bump them one at a time and
-  the diff shows exactly what changed.
+- Everything else pinned (base images, Actions, hook revisions, Node.js):
+  pinned once, at its single point of use, to an exact patch version —
+  never a floating range or `latest` — so Renovate can bump them one at a
+  time and the diff shows exactly what changed. Node.js (`NODE_VERSION`
+  in the `Dockerfile`) is infrastructure tooling only — `npx`, for the
+  `clear-thought` MCP server in `.mcp.json` — not part of this app's own
+  runtime; `scripts/develop.sh` installs it directly from nodejs.org's
+  release tarballs, checksum-verified, rather than a devcontainer
+  feature, so it's pinned the same way as everything else in the
+  `develop` stage.
 
 `ruff`, `mypy`, and `pytest` all point their cache dirs at
 `/home/vscode/.cache/<tool>` (set once each, in `pyproject.toml`'s

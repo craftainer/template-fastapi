@@ -54,8 +54,8 @@ this directory).
     local stdio MCP server exposing structured reasoning/mental-model
     tools, launched via `npx`. `npx` needs Node.js, which isn't
     otherwise a dependency of this Python template — that's the only
-    reason `../devcontainer.json` adds the pinned `node` feature;
-    Claude Code itself doesn't need it.
+    reason `scripts/develop.sh` installs it (pinned via the Dockerfile's
+    `NODE_VERSION` ARG) — Claude Code itself doesn't need it.
   - `postgres` (`postgres-mcp`, aka Postgres MCP Pro) — query/schema
     access to the `postgres` stack service, run `unrestricted` (full
     read/write against the local dev DB) via `uvx`. Anthropic's own
@@ -116,8 +116,8 @@ this directory).
 - **context7** / **security-guidance**: delete the plugin's
   `enabledPlugins` entry in `settings.json`.
 - **clear-thought**: delete its entry from `../.mcp.json`; if nothing
-  else needs Node.js, also remove the `node` feature from
-  `../devcontainer.json` and its entry from `../devcontainer-lock.json`.
+  else needs Node.js, also remove its install block (and `NODE_VERSION`
+  ARG) from `../Dockerfile`/`scripts/develop.sh`.
 - **postgres** / **redis**: delete the entry from `../.mcp.json`.
 - **s3-mcp**: delete its entry from `../.mcp.json` and its six
   `permissions.deny` entries from `settings.json`.

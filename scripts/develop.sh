@@ -11,6 +11,7 @@ claude_code_version=$3
 pyright_version=$4
 snip_version=$5
 rustfs_cli_version=$6
+node_version=$7
 
 apt-get update
 # postgresql-client/redis-tools give psql/redis-cli for connecting to the
@@ -20,8 +21,8 @@ apt-get update
 # as libpq-dev below, there's no exact-version pin available via apt; a
 # newer client talking to an older server is standard practice for both
 # tools. RustFS's own CLI (rc) isn't an apt package, so it's installed
-# separately below.
-apt-get install -y --no-install-recommends libpq-dev postgresql-client redis-tools
+# separately below. xz-utils: Node's own release tarballs are .tar.xz.
+apt-get install -y --no-install-recommends libpq-dev postgresql-client redis-tools xz-utils
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
@@ -77,6 +78,35 @@ curl -LsSf -o "${rustfs_cli_tmpdir}/SHA256SUMS" \
 (cd "$rustfs_cli_tmpdir" && grep " ${rustfs_cli_asset}\$" SHA256SUMS | sha256sum -c -)
 apt-get install -y --no-install-recommends "${rustfs_cli_tmpdir}/${rustfs_cli_asset}"
 rm -rf "$rustfs_cli_tmpdir"
+
+# Node.js, infrastructure tooling only: the clear-thought MCP server in
+# ../.mcp.json is the only thing that needs npx. Installed directly from
+# nodejs.org's own release tarballs (checksum-verified against that
+# release's published SHASUMS256.txt) rather than a devcontainer feature,
+# so it's pinned the same way, in the same place, as every other tool in
+# this stage -- see the Dockerfile's NODE_VERSION ARG.
+node_dpkg_arch="$(dpkg --print-architecture)"
+case "$node_dpkg_arch" in
+    amd64) node_arch=x64 ;;
+    arm64) node_arch=arm64 ;;
+    *)
+        echo "unsupported architecture for Node.js install: $node_dpkg_arch" >&2
+        exit 1
+        ;;
+esac
+node_asset="node-v${node_version}-linux-${node_arch}"
+node_tmpdir="$(mktemp -d)"
+curl -LsSf -o "${node_tmpdir}/${node_asset}.tar.xz" \
+    "https://nodejs.org/dist/v${node_version}/${node_asset}.tar.xz"
+curl -LsSf -o "${node_tmpdir}/SHASUMS256.txt" \
+    "https://nodejs.org/dist/v${node_version}/SHASUMS256.txt"
+(cd "$node_tmpdir" && grep " ${node_asset}.tar.xz\$" SHASUMS256.txt | sha256sum -c -)
+mkdir -p /usr/local/lib/nodejs
+tar -xJf "${node_tmpdir}/${node_asset}.tar.xz" -C /usr/local/lib/nodejs
+rm -rf "$node_tmpdir"
+ln -s "/usr/local/lib/nodejs/${node_asset}/bin/node" /usr/local/bin/node
+ln -s "/usr/local/lib/nodejs/${node_asset}/bin/npm" /usr/local/bin/npm
+ln -s "/usr/local/lib/nodejs/${node_asset}/bin/npx" /usr/local/bin/npx
 
 # `kcadm` reaches the sibling `keycloak` container's Admin REST API from
 # the devcontainer -- see .devcontainer/stack/keycloak/README.md. A thin

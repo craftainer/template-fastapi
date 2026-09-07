@@ -10,9 +10,6 @@
     "ghcr.io/devcontainers/features/docker-in-docker:4.1.0": {
       "moby": false,
       "dockerDashComposeVersion": "v2"
-    },
-    "ghcr.io/devcontainers/features/node:2.1.0": {
-      "version": "24.20.0"
     }
   },
   "forwardPorts": [8000, 5678, "keycloak:8080"],
