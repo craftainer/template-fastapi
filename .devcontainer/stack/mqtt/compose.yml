@@ -5,7 +5,7 @@
 # this file's own directory (see ../README.md's "Devcontainer stack pattern").
 services:
   mqtt:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.22
     restart: unless-stopped
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
