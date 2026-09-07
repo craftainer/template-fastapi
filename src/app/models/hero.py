@@ -14,11 +14,16 @@ class Hero(IdentifiedBase, Archivable, Draftable, Schedulable, Lockable):
     Worked example of every record-lifecycle mixin (see app.models.mixins) --
     `name`/`powers` are nullable (rather than the original `nullable=False`) so a
     draft can be created with either or both omitted; see app/README.md's "Example
-    CRUD resource: Hero".
+    CRUD resource: Hero". `power_level` is Hero's one numeric field -- the worked
+    example for app.controllers.crud_stats's numeric-field aggregates/forecast
+    (`GET <prefix>/stats`'s `numeric` breakdown, `GET <prefix>/predict?field=`);
+    every other Hero field is a string or a record-lifecycle flag, so without it
+    that field-targeted forecast path would have nothing to exercise end to end.
     """
 
     __tablename__ = "heroes"
 
     name: Mapped[str | None] = mapped_column(nullable=True)
     powers: Mapped[list[str] | None] = mapped_column(postgresql.ARRAY(String), nullable=True)
+    power_level: Mapped[int | None] = mapped_column(nullable=True)
     owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)

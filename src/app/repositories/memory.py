@@ -17,7 +17,7 @@ how `created_at`/`updated_at` are already special-cased here.
 tests/unit exercises every method below directly; tests/e2e's MODE=mock leg
 exercises them too through the real HTTP stack.
 
-A few branches below are `# pragma: no cover`, for two different reasons:
+A few branches below are `# pragma: no cover`, for three different reasons:
 
 - Hero is the only model this app binds to this repository, and Hero always
   carries Archivable (see app.models.hero) -- delete()/delete_many()'s
@@ -37,6 +37,14 @@ A few branches below are `# pragma: no cover`, for two different reasons:
   directly, which is what actually covers them for the primary (`pytest`, i.e.
   tests/unit + tests/integration) coverage gate; the pragma only affects what's
   counted toward the separate `pytest tests/e2e` coverage gate.
+- `stats()`'s own lifecycle-mixin detection (`has_archivable`/`has_draftable`/
+  `has_lockable`/`has_schedulable`) is generic over which mixins the underlying
+  model has *any* of -- but Hero (again, the only model reaching this repository
+  through tests/e2e) carries every one, so each detection's "doesn't have this
+  mixin" branch, and the "has none of them at all" branch wrapping all four,
+  can never actually be False through the real HTTP stack. Same
+  tests/unit/repositories/test_memory.py-covers-it-for-`pytest`-instead
+  reasoning as the previous bullet.
 """
 
 import logging
@@ -466,11 +474,13 @@ class InMemoryRepository[ModelT: IdentifiedBase]:
         has_draftable = hasattr(self._model, "is_draft")
         has_lockable = hasattr(self._model, "is_locked")
         has_schedulable = hasattr(self._model, "publish_at")
-        if has_archivable or has_draftable or has_lockable or has_schedulable:
+        if (  # pragma: no cover -- see module docstring
+            has_archivable or has_draftable or has_lockable or has_schedulable
+        ):
             now = _now()
             scheduled_pending = None
             scheduled_expired = None
-            if has_schedulable:
+            if has_schedulable:  # pragma: no cover -- see module docstring
                 scheduled_pending = sum(
                     1
                     for i in matching

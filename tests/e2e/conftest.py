@@ -9,8 +9,10 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from collections.abc import Callable, Generator
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -169,6 +171,53 @@ def _running_app(app_mode: str, base_url: str, _reset_dev_database: None) -> Gen
     finally:
         process.terminate()
         process.wait(timeout=5)
+
+
+@pytest.fixture(scope="session")
+def backdate_hero(app_mode: str) -> Callable[[int, datetime], None]:
+    """Return a function that sets an existing hero's `created_at` directly via SQL.
+
+    `app.controllers.crud_stats.forecast`'s success path (and its week/month
+    bucket-math branches) needs at least two distinct calendar buckets of history
+    -- unreachable by simply creating heroes through the API, since every e2e run
+    creates its own test data within one real day. This bypasses the API's
+    server-controlled `created_at` (see app.views.hero_v2.HeroV2's own docstring:
+    it's never client-settable) the same way `_reset_dev_database` above already
+    reaches Postgres directly, to fabricate the multi-bucket history those branches
+    need. `dev` only: MODE=mock's InMemoryRepository lives inside the running api
+    subprocess's own memory, unreachable from this test process -- a test using
+    this fixture under the `mock` leg should `pytest.skip` instead (its branches
+    still get covered once from the `dev` leg in the same session; coverage is
+    combined across both, not measured per-leg -- see pyproject.toml's
+    [tool.coverage.run]).
+    """
+    if app_mode != "dev":
+
+        def _unavailable(hero_id: int, when: datetime) -> None:
+            pytest.skip("backdating created_at needs direct DB access -- MODE=dev only")
+
+        return _unavailable
+
+    async def _backdate(hero_id: int, when: datetime) -> None:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("UPDATE heroes SET created_at = :when WHERE id = :id"),
+                {"when": when, "id": hero_id},
+            )
+
+    def _run(hero_id: int, when: datetime) -> None:
+        # Unlike _reset_dev_database (a session fixture, run before anything else
+        # starts an event loop), this runs from inside a test body -- Playwright's
+        # sync API already drives its own asyncio event loop in this thread by
+        # then, and asyncio.run() refuses to nest inside a loop that's already
+        # running. A dedicated thread has no loop of its own yet, so asyncio.run()
+        # there is safe; .join() still makes this call synchronous from the
+        # caller's point of view.
+        thread = threading.Thread(target=asyncio.run, args=(_backdate(hero_id, when),))
+        thread.start()
+        thread.join()
+
+    return _run
 
 
 @pytest.fixture(scope="session")

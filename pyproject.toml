@@ -118,11 +118,13 @@ known-first-party = ["app"]
 "src/app/repositories/sqlalchemy.py" = ["PLR0913"]
 "src/app/interfaces/base.py" = ["PLR0913"]
 "src/app/interfaces/compat.py" = ["PLR0913"]
-# test_hero_record_lifecycle_draft_through_revisions is deliberately one long,
+# test_hero_record_lifecycle_draft_through_revisions (and its XML e2e counterpart,
+# test_hero_xml_record_lifecycle_draft_through_revisions) is deliberately one long,
 # linear narrative (draft -> publish -> lock -> ... -> revisions, see the plan's
 # own "Tests" section) -- splitting it into several tests would hide that it's
 # one continuous record's lifecycle, which is the point of the test.
 "tests/unit/crud_1/heroes/test_heroes_v2.py" = ["PLR0915"]
+"tests/e2e/test_heroes_xml_e2e.py" = ["PLR0915"]
 
 [tool.importlinter]
 # Enforces src/app/CLAUDE.md's strict import order between app/'s directories: each

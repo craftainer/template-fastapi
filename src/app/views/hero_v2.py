@@ -14,6 +14,7 @@ class HeroV2Base(ORMView):
 
     name: str = Field(min_length=1, max_length=200)
     powers: Annotated[list[Power], Field(min_length=1)]
+    power_level: int | None = None
 
 
 class HeroV2Create(HeroV2Base):
@@ -38,6 +39,7 @@ class HeroV2Update(ORMView):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     powers: Annotated[list[Power], Field(min_length=1)] | None = None
+    power_level: int | None = None
     is_locked: bool | None = None
     publish_at: IXDTFDatetime | None = None
     unpublish_at: IXDTFDatetime | None = None
@@ -59,6 +61,7 @@ class HeroV2(ORMView):
     id: int
     name: str | None = Field(default=None, min_length=1, max_length=200)
     powers: Annotated[list[Power], Field(min_length=1)] | None = None
+    power_level: int | None = None
     owner_id: str
     is_draft: bool
     archived_at: IXDTFDatetime | None

@@ -28,6 +28,7 @@ import httpx
 
 _EVENTS_URL = "/crud/v1/heroes/v2/json/events"
 _HEROES_URL = "/crud/v1/heroes/v2/json"
+_XML_EVENTS_URL = "/crud/v1/heroes/v2/xml/events"
 
 
 def test_hero_events_stream_delivers_a_create_event(
@@ -77,3 +78,19 @@ def test_hero_events_stream_sends_keep_alive_when_idle(
         next(lines)  # the subscriber_id frame's data line
         next(lines)  # the blank line ending the subscriber_id frame
         assert next(lines) == ": keep-alive"
+
+
+def test_hero_xml_events_stream_opens(base_url: str, access_token: Callable[[str], str]) -> None:
+    """GET .../xml/events opens the same SSE stream as the JSON route -- closes the
+    coverage build_xml_router's own stream_events_xml route would otherwise leave on
+    crud_router.py (already proven in full, JSON-side, by the tests above).
+    """
+    headers = {"Authorization": f"Bearer {access_token('maintainer')}"}
+    with (
+        httpx.Client(base_url=base_url, headers=headers, timeout=30) as http,
+        http.stream("GET", _XML_EVENTS_URL) as response,
+    ):
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        lines = response.iter_lines()
+        assert next(lines) == "id: 0"

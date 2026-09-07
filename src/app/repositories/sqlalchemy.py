@@ -42,6 +42,14 @@ tests/e2e. tests/integration/repositories/test_sqlalchemy.py calls them
 directly, which is what actually covers them for the primary coverage gate;
 the pragma only affects what's counted toward the separate `pytest tests/e2e`
 coverage gate.
+
+`_lifecycle_stats`'s own `hasattr` checks are `# pragma: no cover` for the same
+reason: Hero (the only model tests/e2e reaches this repository through) always
+carries every one of Archivable/Draftable/Lockable/Schedulable, so each
+check's "doesn't have this mixin" branch, and the `if not columns: return None`
+below them, can never actually run through tests/e2e -- only through
+tests/integration/repositories/test_sqlalchemy.py's own `_PlainRecord` (no
+mixins at all), which is what covers them for the primary coverage gate.
 """
 
 from collections.abc import Sequence
@@ -458,16 +466,16 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
     async def _lifecycle_stats(self, where: Sequence[ColumnElement[bool]]) -> LifecycleStats | None:
         """One query with a COUNT(...) FILTER(WHERE ...) per record-lifecycle mixin present."""
         columns: dict[str, ColumnElement[Any]] = {}
-        if hasattr(self._model, "archived_at"):
+        if hasattr(self._model, "archived_at"):  # pragma: no cover -- see module docstring
             archived_at = self._model.archived_at  # type: ignore[attr-defined]
             columns["archived"] = func.count().filter(archived_at.is_not(None))
-        if hasattr(self._model, "is_draft"):
+        if hasattr(self._model, "is_draft"):  # pragma: no cover -- see module docstring
             is_draft = self._model.is_draft  # type: ignore[attr-defined]
             columns["draft"] = func.count().filter(is_draft.is_(True))
-        if hasattr(self._model, "is_locked"):
+        if hasattr(self._model, "is_locked"):  # pragma: no cover -- see module docstring
             is_locked = self._model.is_locked  # type: ignore[attr-defined]
             columns["locked"] = func.count().filter(is_locked.is_(True))
-        if hasattr(self._model, "publish_at"):
+        if hasattr(self._model, "publish_at"):  # pragma: no cover -- see module docstring
             now = _now()
             publish_at = self._model.publish_at  # type: ignore[attr-defined]
             unpublish_at = self._model.unpublish_at  # type: ignore[attr-defined]
@@ -475,7 +483,7 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
             columns["scheduled_expired"] = func.count().filter(
                 unpublish_at.is_not(None), unpublish_at <= now
             )
-        if not columns:
+        if not columns:  # pragma: no cover -- see module docstring
             return None
         statement = select(*columns.values()).select_from(self._model).where(*where)
         result = await self._session.execute(statement)

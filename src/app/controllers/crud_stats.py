@@ -134,9 +134,15 @@ def bucket_field_sums(
     """
     sums: dict[datetime, float] = {}
     for record in records:
+        value = getattr(record, field)
+        if value is None:
+            # A record with this numeric field left unset contributes nothing to
+            # its bucket's sum, the same way SQL's own SUM() skips NULL rows --
+            # `field` being nullable is normal (e.g. Hero's power_level defaults
+            # to None), not every historical record is guaranteed to carry it.
+            continue
         created_at: datetime = record.created_at  # type: ignore[attr-defined]
         start = _bucket_start(bucket, created_at)
-        value = getattr(record, field)
         sums[start] = sums.get(start, 0.0) + float(value)
     return [
         BucketValue(bucket_start=start.isoformat(), value=total)

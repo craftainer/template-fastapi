@@ -51,7 +51,7 @@ class _Point(BaseModel):
     """Minimal record shape for bucket_field_sums, carrying created_at + one numeric field."""
 
     created_at: datetime
-    amount: float
+    amount: float | None
 
 
 # --- Field classification -----------------------------------------------------
@@ -157,6 +157,20 @@ def test_bucket_field_sums_buckets_by_month() -> None:
     records = [_Point(created_at=datetime(2024, 1, 15), amount=1)]
     result = bucket_field_sums(records, "amount", TimeBucket.MONTH)
     assert result == [BucketValue(bucket_start="2024-01-01T00:00:00", value=1.0)]
+
+
+def test_bucket_field_sums_skips_records_with_the_field_unset() -> None:
+    """A None-valued field contributes nothing to its bucket, like SQL's SUM() skipping NULL --
+    real data is never guaranteed to have every historical record carry an optional field
+    (e.g. Hero's power_level).
+    """
+    day_one = datetime(2024, 1, 1)
+    records = [
+        _Point(created_at=day_one, amount=10),
+        _Point(created_at=day_one.replace(hour=12), amount=None),
+    ]
+    result = bucket_field_sums(records, "amount", TimeBucket.DAY)
+    assert result == [BucketValue(bucket_start="2024-01-01T00:00:00", value=10.0)]
 
 
 # --- forecast: OLS math -----------------------------------------------------------
