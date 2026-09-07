@@ -19,8 +19,10 @@ jobs:
       matrix:
         include:
           - arch: amd64
+            # renovate: datasource=github-runners depName=ubuntu
             runner: ${{ vars.CI_RUNNER_AMD64 || 'ubuntu-24.04' }}
           - arch: arm64
+            # renovate: datasource=github-runners depName=ubuntu
             runner: ${{ vars.CI_RUNNER_ARM64 || 'ubuntu-24.04-arm' }}
     runs-on: ${{ matrix.runner }}
     steps:

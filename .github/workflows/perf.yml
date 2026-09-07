@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   perf:
+    # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Check out repository

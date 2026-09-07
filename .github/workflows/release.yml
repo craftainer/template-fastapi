@@ -34,6 +34,7 @@ permissions:
 
 jobs:
   version:
+    # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -67,8 +68,10 @@ jobs:
       matrix:
         include:
           - arch: amd64
+            # renovate: datasource=github-runners depName=ubuntu
             runner: ${{ vars.CI_RUNNER_AMD64 || 'ubuntu-24.04' }}
           - arch: arm64
+            # renovate: datasource=github-runners depName=ubuntu
             runner: ${{ vars.CI_RUNNER_ARM64 || 'ubuntu-24.04-arm' }}
     runs-on: ${{ matrix.runner }}
     steps:
@@ -179,6 +182,7 @@ jobs:
   manifest:
     needs: [version, build]
     if: vars.OCI_REGISTRY != ''
+    # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Log in to OCI registry
@@ -207,6 +211,7 @@ jobs:
 
   release:
     needs: [version, build]
+    # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Check out repository
