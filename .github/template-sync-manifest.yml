@@ -73,6 +73,9 @@ replace:
   - tests/
 
 ignore:
+  # Each instance chooses its own license and copyright holder.
+  - LICENSE
+
   # Product/domain knowledge and working plans: instance-owned from the
   # moment it's instantiated.
   - docs/architecture.md
