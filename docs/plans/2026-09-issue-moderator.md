@@ -49,6 +49,47 @@ that branch/PR may already be gone via job 5's cleanup), so re-deriving
 a fresh repro/plan is more reliable than trying to validate and resume
 stale state.
 
+### Availability gate (AI moderation is optional)
+
+This whole pipeline is opt-in per repo/fork: it only activates if the
+`ANTHROPIC_API_KEY` repository secret is actually configured. A fork or
+a clone of this repo that hasn't set that secret (e.g. no dedicated
+Console workspace has been provisioned yet — see "Open questions") must
+not have issue-opening or issue-commenting start failing workflow runs;
+it should simply see no moderation happen, as if these workflows didn't
+exist.
+
+Jobs 1-4 (the two triage jobs and the two confirmation/fix/build jobs —
+every job that invokes Claude) each get a job-level
+`if: ${{ secrets.ANTHROPIC_API_KEY != '' && <trust condition> }}`,
+checked before the trust gate below so a missing key short-circuits
+before any checkout or secret-writing step runs. Job 5 (cleanup) does
+not invoke Claude at all, so it stays unconditional regardless of
+whether the key is set — cleanup of branches/PRs it created previously
+should still run even if the key is later removed.
+
+Labels (`bug`, `enhancement`, `claude:ok`, etc.) and the label-mutating
+steps in jobs 1-4 stay defined either way; they're just never applied
+if the key is absent, since the job that would apply them never runs.
+No separate "is AI moderation enabled" flag/label is needed — the
+secret's presence *is* the flag.
+
+Using a job-level `if:` (rather than, say, letting a step fail when the
+key is missing) matters for notification noise: a job whose `if:`
+evaluates false shows as **Skipped** in the Actions tab, and GitHub's
+default Actions email notifications fire on run *failure*, not on
+skips — so a repo/fork without the key configured gets no email spam
+from issues being opened or commented on. This is also why the
+availability check must be the first thing evaluated, before checkout
+or the "write Claude API key" step: any step that actually executes
+before the gate (e.g. one that chokes on an empty key file) would
+produce a real failure and a real email, not a silent skip. One
+caveat: a skipped job still shows up as a run in the Actions tab (just
+with a "Skipped" status) — that's UI noise, not email noise, and isn't
+avoidable from within the workflow; suppressing the run from appearing
+at all would require disabling the workflow file itself, a manual
+repo-level step.
+
 ### Trust gate (required before any of this runs)
 
 Both triage jobs and both confirmation jobs must skip unless the
@@ -62,6 +103,11 @@ repo secrets — an external reporter should not be able to get code
 executed or credentials touched purely by opening an issue with a
 crafted body. This mirrors the "IMPORTANT" prompt-injection caution
 already called out for this kind of dual-use automation.
+
+Both this trust gate and the availability gate above apply to the same
+jobs, combined with `&&` in one job-level `if:` — availability first,
+since there's no point evaluating trust for a pipeline that can't run
+anyway.
 
 ### Workflow files
 
@@ -289,7 +335,9 @@ spend:
 
 - Who owns creating/rotating the dedicated Anthropic Console workspace
   and API key, and storing it as the `ANTHROPIC_API_KEY` repository
-  secret.
+  secret — not a blocker for merging these workflows themselves, since
+  the availability gate above means they simply stay dormant until this
+  is done.
 - Confirm `--max-turns`, `--model`, and `--effort` are still the
   correct flag names (and check for any spend/budget-related flag added
   since — none exists as of this writing) against the CLI version
