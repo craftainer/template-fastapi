@@ -2,7 +2,7 @@
 # Three-stage build for the app: develop (devcontainer), builder, runner.
 
 # renovate: datasource=python-version depName=python
-ARG PYTHON_VERSION=3.14.0
+ARG PYTHON_VERSION=3.14.7
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=astral-sh/uv
@@ -18,7 +18,7 @@ ARG PYRIGHT_VERSION=1.1.411
 ARG SNIP_VERSION=0.25.1
 
 # renovate: datasource=github-releases depName=rustfs/cli
-ARG RUSTFS_CLI_VERSION=0.1.32
+ARG RUSTFS_CLI_VERSION=0.1.34
 
 # Node.js is infrastructure tooling only (npx, for the clear-thought MCP
 # server in .mcp.json), not part of this app's own runtime -- installed
