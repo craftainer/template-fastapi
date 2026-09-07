@@ -19,9 +19,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # secrets.* isn't readable from jobs.<job_id>.if (GitHub rejects the
+  # workflow as invalid), only from a step or jobs.<job_id>.env -- so the
+  # trust gate below reads this job's output instead. See
+  # ../workflows/README.md's "Issue moderation" section.
+  gate:
+    # renovate: datasource=github-runners depName=ubuntu
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    outputs:
+      has-key: ${{ steps.check.outputs.has-key }}
+    steps:
+      - id: check
+        run: echo "has-key=${{ secrets.ANTHROPIC_API_KEY != '' }}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: gate
     if: >-
-      ${{ secrets.ANTHROPIC_API_KEY != '' &&
+      ${{ needs.gate.outputs.has-key == 'true' &&
       contains(github.event.issue.labels.*.name, 'enhancement:plan-ready') &&
       (contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) ||
        contains(github.event.issue.labels.*.name, 'claude:ok')) &&

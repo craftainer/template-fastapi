@@ -114,10 +114,14 @@ than leaving the issue silently stuck. Run `moderate-setup.yml`
 (`workflow_dispatch`) once, any time after adding the secret below, to
 create these labels; it's idempotent, safe to re-run.
 
-**Dormant until configured.** All four Claude-invoking jobs (triage ×2,
-fix/build ×2) carry a job-level
-`if: secrets.ANTHROPIC_API_KEY != '' && <trust condition>`, checked
-before checkout — so a fork or clone that hasn't set the
+**Dormant until configured.** All four Claude-invoking workflows
+(triage ×2, fix/build ×2) run a tiny upstream `gate` job that checks
+`secrets.ANTHROPIC_API_KEY != ''` in a step and exposes it as a job
+output — `secrets` isn't readable from `jobs.<job_id>.if` directly
+(GitHub rejects the workflow as invalid if it is), only from a step or
+`jobs.<job_id>.env`. The real job then carries
+`if: needs.gate.outputs.has-key == 'true' && <trust condition>`,
+checked before checkout — so a fork or clone that hasn't set the
 `ANTHROPIC_API_KEY` repository secret sees every one of these jobs show
 **Skipped**, not **Failed**, and gets no failure-triggered email from
 GitHub's default Actions notifications. `moderate-cleanup.yml` has no
