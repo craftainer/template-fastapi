@@ -58,6 +58,9 @@ def test_docs_page_gets_a_relaxed_csp_that_allows_swagger_ui_assets() -> None:
     add_security_headers(app)
     response = TestClient(app).get("/docs")
     csp = response.headers["Content-Security-Policy"]
+    # codeql[py/incomplete-url-substring-sanitization] -- test assertion on the app's
+    # own hardcoded CSP string (see http_headers.py), not a security check on an
+    # untrusted URL.
     assert "cdn.jsdelivr.net" in csp
     assert "'unsafe-inline'" in csp
     assert "frame-ancestors 'none'" in csp

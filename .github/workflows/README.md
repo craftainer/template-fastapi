@@ -37,7 +37,8 @@
   `<version>` tag via `docker buildx imagetools create`, so `docker pull
   template-fastapi:<version>` resolves to the right arch automatically.
 - `moderate-bug-triage.yml` / `moderate-bug-fix.yml` /
-  `moderate-feature-triage.yml` / `moderate-feature-build.yml` /
+  `moderate-bug-fix-apply.yml` / `moderate-feature-triage.yml` /
+  `moderate-feature-build.yml` / `moderate-feature-build-apply.yml` /
   `moderate-cleanup.yml` / `moderate-setup.yml` — see "Issue moderation"
   below.
 - `template-sync.yml` — runs in an *instance* of this template, not
@@ -85,10 +86,38 @@ verified end-to-end on arm64 hardware on 2026-09-06.
 `moderate-cleanup.yml` run the `claude` CLI as an issue moderator: on a
 bug report, it verifies the report is actionable, reproduces it as a
 failing test on a branch, and asks the reporter to confirm before a
-second workflow fixes it and opens a PR; on a feature request, it
-verifies the request fits the project, drafts a plan on a branch, and
-asks for confirmation before a second workflow implements it and opens a
-PR.
+second stage fixes it and opens a PR; on a feature request, it verifies
+the request fits the project, drafts a plan on a branch, and asks for
+confirmation before a second stage implements it and opens a PR.
+
+**Fix/build is itself split in two, to keep Claude out of any job that
+can push/PR/relabel.** `moderate-bug-fix.yml` /
+`moderate-feature-build.yml` (`issue_comment`-triggered, `permissions:
+contents: read` only) check out the confirmed branch and run Claude
+against the issue's untrusted title/body/comments, but never hold
+write-scoped credentials -- Claude commits locally (or, if it can't
+converge, writes an explanation to `.moderation-outcome.md`) and the job
+packages that as a `moderation-result` artifact (`../scripts/
+moderate_package_result.sh`: a `git format-patch` diff plus a small JSON
+outcome record — data, nothing executable). `moderate-bug-fix-apply.yml`
+/ `moderate-feature-build-apply.yml` (`workflow_run`-triggered on that
+workflow's completion, `permissions: contents: write, issues: write,
+pull-requests: write`) download the artifact and do the actual
+`git am`/push/`gh pr create`/relabel (`../scripts/
+moderate_apply_result.sh`) — the only things this privileged half ever
+executes are `git`/`gh` calls with literal, fixed arguments (plus the
+patch's file contents, applied as a diff, never as a command). This is
+what a job combining Claude-on-untrusted-text with push/PR/label-write
+credentials would otherwise trip on CodeQL's
+`actions/untrusted-checkout`/`actions/untrusted-checkout-toctou`
+(GitHub's own "pwn requests" pattern, adapted here since there's no
+`pull_request`/`workflow_run` pair to lean on directly — the untrusted
+input is issue text, not a fork's commits). The apply workflow
+re-checks the issue's `*:*-ready` label before acting (a no-op, not an
+error, if it's already gone) since it isn't concurrency-grouped with the
+worker the way every other moderation workflow is -- `workflow_run`
+can't see the issue number to key a group on before the artifact is
+downloaded.
 
 Activating this in a given repo/fork takes two one-time steps, neither
 of which is itself a workflow: provisioning a dedicated Anthropic
@@ -158,10 +187,16 @@ spend cap lives in the Anthropic Console (a dedicated workspace/key with
 a monthly limit), since `claude` itself has no such flag.
 
 A single `moderate-issue-<number>` `concurrency:` group, shared across
-all five moderation workflows, serializes every stage against the same
-issue — a burst of comments can't launch overlapping fix/build jobs, a
-close landing mid-run doesn't race cleanup, and a rapid close-then-reopen
-runs cleanup before the reopened triage's reset step.
+the two triage workflows, the two worker (fix/build) workflows, and
+cleanup, serializes every stage against the same issue — a burst of
+comments can't launch overlapping fix/build jobs, a close landing
+mid-run doesn't race cleanup, and a rapid close-then-reopen runs cleanup
+before the reopened triage's reset step. The two apply workflows sit
+outside that group (see "Fix/build is itself split in two" above) — a
+worker run's own membership in the group is what serializes it against
+everything else, and by the time its artifact exists there's nothing
+left for apply to race except a duplicate apply of the *same* artifact,
+which the label re-check there already makes a no-op.
 
 ## Template sync
 

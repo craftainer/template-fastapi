@@ -103,6 +103,8 @@ def test_regex_matches_returns_false_and_logs_on_timeout(
     """
     monkeypatch.setattr(memory, "_REGEX_TIMEOUT_SECONDS", 0.05)
     with caplog.at_level("WARNING"):
+        # codeql[py/redos] -- catastrophic backtracking is the point of this test; it
+        # proves _regex_matches's SIGALRM timeout aborts it instead of hanging.
         assert memory._regex_matches("(a+)+$", "a" * 30 + "!") is False
     assert "exceeded" in caplog.text
 
