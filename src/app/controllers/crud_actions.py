@@ -130,6 +130,7 @@ async def resolve_update(
             raise HTTPException(status.HTTP_423_LOCKED, str(exc)) from exc
         if updated is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
+        logger.info("Update: actor=%s path=%s id=%r", _actor(request), request.url.path, id)
         return updated
     filters = parse_filters(schema, request.query_params)
     if not filters:
@@ -166,6 +167,7 @@ async def resolve_delete(
             raise HTTPException(status.HTTP_423_LOCKED, str(exc)) from exc
         if not deleted:
             raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
+        logger.info("Delete: actor=%s path=%s id=%r", _actor(request), request.url.path, id)
         return None
     filters = parse_filters(schema, request.query_params)
     if not filters:
@@ -202,6 +204,7 @@ async def resolve_restore(
         restored = await crud.restore(id)  # type: ignore[attr-defined]
         if restored is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
+        logger.info("Restore: actor=%s path=%s id=%r", _actor(request), request.url.path, id)
         return restored
     filters = parse_filters(schema, request.query_params)
     if not filters:

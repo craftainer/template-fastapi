@@ -4,10 +4,11 @@ Uses an in-memory fake Repository and a small standalone Pydantic view, not tied
 to Hero/SQLAlchemy at all, to prove the CRUD interface is genuinely generic.
 """
 
+import asyncio
 import ssl
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel, ConfigDict
@@ -16,7 +17,9 @@ from app.interfaces.base import (
     CRUDInterface,
     EventSink,
     InMemoryEventSink,
+    MQTTEventSource,
     OwnerScope,
+    _background_tasks,
     _mqtt_connection_kwargs,
 )
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
@@ -701,6 +704,25 @@ async def test_in_memory_event_sink_publish_with_no_subscribers_is_a_no_op() -> 
     await sink.publish(resource="hero", record_id=1, action="create", snapshot={"id": 1})
 
 
+async def test_in_memory_event_sink_drops_queue_when_subscriber_stops_consuming() -> None:
+    """A subscriber that stops iterating (SSE disconnect) has its queue removed.
+
+    Without this, every subscribe()/disconnect cycle would leave a queue behind
+    forever -- see InMemoryEventSink._events's own docstring.
+    """
+    sink = InMemoryEventSink()
+    subscriber_id, events = await sink.subscribe(None)
+    assert subscriber_id in sink._queues
+
+    # Start the generator (an unstarted one has no frame for aclose() to run
+    # `finally` against) without waiting forever on its empty queue.
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(events.__anext__(), timeout=0.01)
+    await cast("AsyncGenerator[dict[str, Any]]", events).aclose()
+
+    assert subscriber_id not in sink._queues
+
+
 def test_mqtt_connection_kwargs_without_tls_omits_tls_context() -> None:
     """No TLS: the returned kwargs carry only username/password, no tls_context."""
     kwargs = _mqtt_connection_kwargs(
@@ -721,3 +743,40 @@ def test_mqtt_connection_kwargs_with_tls_adds_a_default_ssl_context() -> None:
     assert kwargs["username"] == "u"
     assert kwargs["password"] == "p"  # noqa: S105 -- test fixture value, not a real secret
     assert isinstance(kwargs["tls_context"], ssl.SSLContext)
+
+
+class _FailingDisconnectMessages:
+    """An empty async message iterator, standing in for aiomqtt.Client.messages."""
+
+    def __aiter__(self) -> _FailingDisconnectMessages:
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        raise StopAsyncIteration
+
+
+class _FailingDisconnectClient:
+    """Stand-in for aiomqtt.Client whose disconnect (__aexit__) always fails."""
+
+    messages = _FailingDisconnectMessages()
+
+    async def __aexit__(self, *args: object) -> None:
+        raise RuntimeError("broker unreachable")
+
+
+async def test_mqtt_event_source_logs_a_failed_disconnect(caplog: pytest.LogCaptureFixture) -> None:
+    """A disconnect failure in MQTTEventSource._events's detached task is logged, not lost.
+
+    See app.interfaces.base._events's own docstring for why disconnecting is a
+    detached background task rather than a plain `await` in this generator's own
+    `finally` -- this asserts that detached task's own failure still leaves a trace.
+    """
+    source = MQTTEventSource(hostname="broker", port=1883, resource="hero", keepalive=60)
+    events = source._events(_FailingDisconnectClient())  # type: ignore[arg-type]
+
+    with caplog.at_level("DEBUG", logger="app.interfaces.base"):
+        assert [event async for event in events] == []
+        pending = list(_background_tasks)
+        await asyncio.gather(*pending)
+
+    assert "MQTT disconnect failed" in caplog.text

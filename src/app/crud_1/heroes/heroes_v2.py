@@ -83,6 +83,15 @@ def get_hero_crud(
     return CRUDInterface(
         schema=HeroV2,
         repository=_hero_repository(session),
+        # `claims["sub"]` (direct indexing, not `.get()`) is deliberate: `sub` is a
+        # mandatory OIDC claim (app.oidc.decode_bearer_token already requires it to
+        # resolve the caller at all), so ownership scoping has nothing sane to fall
+        # back to if it's ever missing -- a KeyError here fails loudly and immediately
+        # rather than silently scoping writes to a placeholder owner value. `actor`
+        # below uses `.get(..., "unknown")` instead because it's a best-effort label
+        # for the audit/revision log, not a security boundary -- a malformed or
+        # already-authenticated-some-other-way claims payload shouldn't block the
+        # underlying CRUD operation just to name who did it.
         owner=OwnerScope("owner_id", claims["sub"], read_scoped=False),
         revisions=RepositoryRevisionSink(_revision_repository(session)),
         events=_hero_event_sink(),

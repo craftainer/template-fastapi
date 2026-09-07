@@ -213,6 +213,40 @@ def test_caller_cannot_delete_another_owners_hero(authed: None) -> None:
         del app.dependency_overrides[get_hero_crud]
 
 
+def test_caller_cannot_publish_another_owners_draft(authed: None) -> None:
+    """Bob's POST /publish?id= 404s for a draft Alice created, rather than 500ing.
+
+    `crud.get` (unscoped, see OwnerScope's read_scoped=False) lets Bob see Alice's
+    draft exists, but `crud.update` (always owner-scoped) returns None since he
+    doesn't own it -- app.controllers.crud_router's publish_record must turn that
+    into a 404, not return None as its `-> schema` response.
+    """
+    repository = InMemoryRepository(HeroModel)
+    app.dependency_overrides[get_hero_crud] = _override_crud(repository)
+    try:
+        alices_draft = client.post(
+            "/crud/v1/heroes/v2/json/draft", json={"name": "Nightwing"}
+        ).json()
+        client.patch(
+            "/crud/v1/heroes/v2/json",
+            params={"id": alices_draft["id"]},
+            json={"powers": ["Acrobatics"]},
+        )
+
+        with _authed_as("bob"):
+            response = client.post(
+                "/crud/v1/heroes/v2/json/publish", params={"id": alices_draft["id"]}
+            )
+            assert response.status_code == 404
+
+        still_draft = client.get(
+            "/crud/v1/heroes/v2/json", params={"id": alices_draft["id"]}
+        ).json()
+        assert still_draft["is_draft"] is True
+    finally:
+        del app.dependency_overrides[get_hero_crud]
+
+
 def test_caller_bulk_update_and_delete_do_not_reach_another_owners_hero(authed: None) -> None:
     """Bob's bulk PATCH/DELETE, filtered broadly, matches none of Alice's heroes."""
     repository = InMemoryRepository(HeroModel)

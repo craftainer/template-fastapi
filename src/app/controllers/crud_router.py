@@ -228,7 +228,17 @@ def build_json_router[SchemaT: BaseModel, CreateT: BaseModel, UpdateT: BaseModel
                 create_schema.model_validate(required_fields)
             except ValidationError as exc:
                 raise RequestValidationError(exc.errors()) from exc
-            return await crud.update(id, _PublishFlip(is_draft=False))  # type: ignore[no-any-return]
+            # `crud.get` above is unscoped for a resource using owner=OwnerScope(...,
+            # read_scoped=False) (see app.interfaces.base.OwnerScope), but `crud.update`
+            # always applies the owner filter -- so a caller who can see someone else's
+            # record here can still get None back from update instead of the record
+            # itself. Without this check, that None would be returned as this route's
+            # `-> schema` response, which FastAPI's response validation rejects as a 500
+            # instead of the clean 404 a missing/inaccessible record should produce.
+            published = await crud.update(id, _PublishFlip(is_draft=False))
+            if published is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
+            return published  # type: ignore[no-any-return]
 
     if archivable:
 

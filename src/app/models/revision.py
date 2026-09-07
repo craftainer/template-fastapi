@@ -5,6 +5,15 @@ One table for every resource that opts into revision history (keyed by
 Draftable/etc.'s "purely additive, nothing resource-specific" shape. See
 app.interfaces.base.RevisionSink for the opt-in CRUDInterface hook that writes
 into this table.
+
+`snapshot` stores the *entire* record view verbatim, with no field-level
+redaction hook -- fine for Hero (no sensitive field), but a future resource
+that opts into revisions (see app.interfaces.base.RepositoryRevisionSink) and
+carries a sensitive field (a token, a password hash, etc.) would persist it
+here in plaintext, readable by anyone with read access to revision history
+even without access to the live record. Add redaction at that point (e.g. an
+excluded-fields set passed through CRUDInterface to RevisionSink.record), not
+speculatively now.
 """
 
 from sqlalchemy.dialects import postgresql

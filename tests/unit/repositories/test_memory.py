@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.models.hero import Hero
+from app.repositories import memory
 from app.repositories.base import RecordLockedError
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
 from app.repositories.memory import InMemoryRepository
@@ -75,6 +76,37 @@ async def test_filter_regex(repository: InMemoryRepository[Hero]) -> None:
     """REGEX matches records whose field value matches the given pattern."""
     matching = await repository.list(filters=[FilterClause("name", FilterOp.REGEX, "^Bat.*")])
     assert {hero.name for hero in matching} == {"Batman", "Batgirl"}
+
+
+def test_regex_alarm_handler_raises_regex_timeout_error() -> None:
+    """The SIGALRM handler backing _regex_matches's timeout raises _RegexTimeoutError.
+
+    Exercised directly (rather than only via a real catastrophic-backtracking match)
+    so this unit test stays fast and deterministic.
+    """
+    with pytest.raises(memory._RegexTimeoutError):
+        memory._on_regex_alarm(0, None)
+
+
+def test_regex_matches_returns_false_and_logs_on_timeout(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A pattern whose match exceeds the budget is treated as "no match", not a hang.
+
+    Uses a genuinely catastrophic-backtracking pattern ("(a+)+$" against a string with
+    no trailing match) against a very short budget, so this actually exercises the
+    SIGALRM-triggered abort path rather than just the happy path.
+    """
+    monkeypatch.setattr(memory, "_REGEX_TIMEOUT_SECONDS", 0.05)
+    with caplog.at_level("WARNING"):
+        assert memory._regex_matches("(a+)+$", "a" * 30 + "!") is False
+    assert "exceeded" in caplog.text
+
+
+async def test_filter_regex_rejects_unknown_field(repository: InMemoryRepository[Hero]) -> None:
+    """A filter/sort field that isn't a real mapped column raises, not an AttributeError."""
+    with pytest.raises(ValueError, match="not a filterable/sortable column"):
+        await repository.list(filters=[FilterClause("not_a_real_field", FilterOp.EQ, "x")])
 
 
 async def test_sort_ascending_and_descending(repository: InMemoryRepository[Hero]) -> None:

@@ -48,7 +48,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, func, or_, select
+from sqlalchemy import ColumnElement, Select, func, or_, select, text
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import IdentifiedBase
@@ -83,11 +84,25 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
         self._session = session
         self._model = model
 
+    def _column(self, field: str) -> ColumnElement[Any]:
+        """Return `field` as a mapped column of this repository's model, or raise.
+
+        `FilterClause.field`/`SortClause.field` are only meant to reach here already
+        validated against a resource's schema (app.controllers.crud_query.parse_filters/
+        parse_sort) -- this check is defense-in-depth so a caller that bypasses that
+        validation gets a clear error instead of either an AttributeError (an
+        unrecognized name) or silently traversing a relationship attribute (a name
+        that exists on the model but isn't a plain column).
+        """
+        if field not in sa_inspect(self._model).columns.keys():  # noqa: SIM118 -- .keys() is a ColumnCollection, not a dict
+            raise ValueError(f"{field!r} is not a filterable/sortable column of {self._model!r}")
+        return getattr(self._model, field)  # type: ignore[no-any-return]
+
     def _where_clauses(self, filters: Sequence[FilterClause]) -> list[ColumnElement[bool]]:
         """Translate each FilterClause into a SQLAlchemy predicate on this model's columns."""
         clauses: list[ColumnElement[bool]] = []
         for clause in filters:
-            column = getattr(self._model, clause.field)
+            column = self._column(clause.field)
             match clause.op:
                 case FilterOp.EQ:
                     clauses.append(column == clause.value)
@@ -136,14 +151,28 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
 
     def _order_by(self, sort: Sequence[SortClause]) -> list[ColumnElement[Any]]:
         """Translate each SortClause into a SQLAlchemy ORDER BY term on this model's columns."""
-        order = []
+        order: list[ColumnElement[Any]] = []
         for clause in sort:
-            column = getattr(self._model, clause.field)
+            column = self._column(clause.field)
             order.append(column.desc() if clause.descending else column.asc())
         return order
 
     def _matching(self, filters: Sequence[FilterClause]) -> Select[tuple[ModelT]]:
         return select(self._model).where(*self._where_clauses(filters))
+
+    async def _guard_regex_timeout(self, filters: Sequence[FilterClause]) -> None:
+        """Cap the current transaction's statement_timeout when `filters` includes a REGEX op.
+
+        `column.op("~")` (see `_where_clauses`) hands an attacker-supplied pattern to
+        Postgres's own regex engine verbatim -- app.controllers.crud_query's length cap
+        bounds the pattern's size, not its worst-case backtracking cost, so a short
+        pathological pattern (e.g. "(a+)+$") against a large/crafted column value can
+        still run the query for a very long time. `SET LOCAL` only affects the current
+        transaction (reset automatically on commit/rollback), so this never leaks into
+        an unrelated query sharing the same pooled connection.
+        """
+        if any(clause.op is FilterOp.REGEX for clause in filters):
+            await self._session.execute(text("SET LOCAL statement_timeout = '1s'"))
 
     async def get(
         self, record_id: int, *, include_archived: bool = False, include_unpublished: bool = False
@@ -175,6 +204,7 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
         include_unpublished: bool = False,
     ) -> Sequence[ModelT]:
         """Return up to `limit` matching records, skipping the first `skip`."""
+        await self._guard_regex_timeout(filters)
         order = self._order_by(sort) if sort else [self._model.id.asc()]
         statement = (
             self._matching(filters)
@@ -202,6 +232,7 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
         Called by app.controllers.crud_actions before a bulk update/delete, to cap
         how many records a single action can affect.
         """
+        await self._guard_regex_timeout(filters)
         statement = (
             select(func.count())
             .select_from(self._model)
@@ -266,6 +297,7 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
         editor must still be able to correct a scheduled record before it goes
         live (see app.models.mixins.Schedulable).
         """
+        await self._guard_regex_timeout(filters)
         statement = self._matching(filters).where(
             *self._visibility_clauses(include_archived=False, include_unpublished=True)
         )
@@ -288,6 +320,7 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
         not-yet-or-no-longer-published row is still reachable (see update_many's
         own docstring for why).
         """
+        await self._guard_regex_timeout(filters)
         statement = self._matching(filters).where(
             *self._visibility_clauses(include_archived=False, include_unpublished=True)
         )

@@ -20,8 +20,8 @@ what's counted toward the separate `pytest tests/e2e` coverage gate.
 """
 
 import asyncio
-import contextlib
 import json
+import logging
 import ssl
 import uuid
 from collections.abc import AsyncIterator, Sequence
@@ -34,6 +34,8 @@ from pydantic import BaseModel
 
 from app.repositories.base import Repository
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
+
+logger = logging.getLogger(__name__)
 
 
 class RevisionSink(Protocol):
@@ -295,10 +297,14 @@ class MQTTEventSource:
 
         async def _disconnect() -> None:
             # Best-effort: this runs detached (see the docstring above), so there's no
-            # caller left to usefully react to a disconnect failure -- swallowing it
-            # here is what avoids an "exception was never retrieved" log for it.
-            with contextlib.suppress(Exception):
+            # caller left to usefully react to a disconnect failure -- catching it here
+            # (rather than letting it become an "exception was never retrieved" log)
+            # still logs it, so a broker-side auth/network anomaly during teardown
+            # leaves a trace instead of vanishing silently.
+            try:
                 await client.__aexit__(None, None, None)
+            except Exception:
+                logger.debug("MQTT disconnect failed", exc_info=True)
 
         try:
             async for message in client.messages:
@@ -349,12 +355,24 @@ class InMemoryEventSink:
         resolved = subscriber_id or str(uuid.uuid4())
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._queues[resolved] = queue
-        return resolved, self._events(queue)
+        return resolved, self._events(resolved, queue)
 
-    async def _events(self, queue: asyncio.Queue[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
-        """Yield events as they're published, forever -- caller stops iterating on disconnect."""
-        while True:
-            yield await queue.get()
+    async def _events(
+        self, subscriber_id: str, queue: asyncio.Queue[dict[str, Any]]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Yield events as they're published, forever -- caller stops iterating on disconnect.
+
+        `finally` drops this subscriber's queue from `self._queues` once the caller
+        stops consuming (return, exception, or cancellation) -- without it, every SSE
+        connect/disconnect cycle (each issuing its own `uuid4` subscriber_id) leaves a
+        queue behind for the rest of the process's lifetime, growing `self._queues`
+        unboundedly under repeated reconnects.
+        """
+        try:
+            while True:
+                yield await queue.get()
+        finally:
+            self._queues.pop(subscriber_id, None)
 
 
 @dataclass(frozen=True)

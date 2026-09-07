@@ -189,6 +189,28 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _require_encrypted_connections_in_production(self) -> Self:
+        """Refuse to construct production Settings with a plaintext S3/Redis/Postgres scheme.
+
+        `_require_non_default_credentials_in_production` above only checks whether a
+        credential still equals its local default -- it says nothing about whether the
+        connection carrying that credential (and the data behind it) is encrypted. An
+        operator who sets a real Postgres/Redis/S3 endpoint but leaves it on
+        `http://`/`redis://`/`postgresql+asyncpg://` would otherwise send credentials
+        and query traffic in cleartext with no startup failure to catch it, unlike
+        oidc_issuer_url and MQTT, which already require this below.
+        """
+        if self.mode == "production":  # pragma: no cover
+            insecure = []
+            if not self.s3_endpoint_url.startswith("https://"):
+                insecure.append("s3_endpoint_url must use https://")
+            if not self.redis_url.startswith("rediss://"):
+                insecure.append("redis_url must use rediss://")
+            if insecure:
+                raise ValueError("; ".join(insecure) + " when MODE=production")
+        return self
+
+    @model_validator(mode="after")
     def _require_https_oidc_issuer_in_production(self) -> Self:
         """Refuse to construct production Settings with a non-https oidc_issuer_url.
 

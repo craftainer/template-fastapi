@@ -44,9 +44,12 @@ _RESERVED_PARAMS = frozenset({"skip", "limit", "sort", "include_archived", "incl
 
 # A `field__regex=` filter reaches Postgres's `~` operator (SQLAlchemyRepository) or
 # Python's re.search (InMemoryRepository) verbatim -- an unbounded pattern is a ReDoS
-# vector via catastrophic backtracking (e.g. "(a+)+$" against a crafted string).
-# Capping length here bounds the worst case for both backends without needing a
-# linear-time regex engine.
+# vector via catastrophic backtracking (e.g. "(a+)+$" against a crafted string, only
+# 10 characters). Pattern *length* doesn't bound that -- backtracking cost is driven
+# by structure, not size -- so this cap is only a sanity limit against a genuinely
+# huge pattern; the actual ReDoS defense is a runtime budget enforced where the
+# pattern is evaluated (app.repositories.memory's `_regex_matches` alarm timeout,
+# app.repositories.sqlalchemy's per-transaction `statement_timeout`).
 _MAX_REGEX_PATTERN_LENGTH = 200
 
 

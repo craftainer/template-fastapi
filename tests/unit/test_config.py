@@ -18,6 +18,8 @@ _PRODUCTION_KWARGS: dict[str, object] = {
     "mqtt_use_tls": True,
     "mqtt_username": "real-mqtt-user",
     "mqtt_password": "real-mqtt-password",
+    "s3_endpoint_url": "https://s3.example.com",
+    "redis_url": "rediss://redis.example.com:6379/0",
 }
 
 
@@ -101,6 +103,30 @@ def test_dev_mode_allows_unauthenticated_mqtt() -> None:
     assert settings.mqtt_use_tls is False
     assert settings.mqtt_username is None
     assert settings.mqtt_password is None
+
+
+def test_production_mode_requires_https_s3_endpoint() -> None:
+    """Settings(mode="production") with an http:// s3_endpoint_url raises."""
+    kwargs = {**_PRODUCTION_KWARGS, "s3_endpoint_url": "http://s3.example.com"}
+    with pytest.raises(ValidationError, match="s3_endpoint_url"):
+        Settings(**kwargs)  # type: ignore[arg-type]
+
+
+def test_dev_mode_allows_http_s3_endpoint() -> None:
+    """Settings(mode="dev") (the default) keeps the local http:// S3 endpoint default."""
+    assert Settings().s3_endpoint_url.startswith("http://")
+
+
+def test_production_mode_requires_encrypted_redis_url() -> None:
+    """Settings(mode="production") with a plain redis:// URL raises."""
+    kwargs = {**_PRODUCTION_KWARGS, "redis_url": "redis://redis.example.com:6379/0"}
+    with pytest.raises(ValidationError, match="redis_url"):
+        Settings(**kwargs)  # type: ignore[arg-type]
+
+
+def test_dev_mode_allows_plain_redis_url() -> None:
+    """Settings(mode="dev") (the default) keeps the local redis:// URL default."""
+    assert Settings().redis_url.startswith("redis://")
 
 
 def test_unrelated_env_vars_are_not_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

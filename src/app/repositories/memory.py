@@ -39,7 +39,9 @@ A few branches below are `# pragma: no cover`, for two different reasons:
   counted toward the separate `pytest tests/e2e` coverage gate.
 """
 
+import logging
 import re
+import signal
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -49,6 +51,43 @@ from sqlalchemy import inspect as sa_inspect
 from app.models.base import IdentifiedBase
 from app.repositories.base import RecordLockedError
 from app.repositories.filtering import FilterClause, FilterOp, SortClause
+
+logger = logging.getLogger(__name__)
+
+# A FilterOp.REGEX pattern reaches Python's re.search verbatim -- app.controllers.
+# crud_query's own length cap bounds a pattern's *size*, not its worst-case
+# backtracking cost (a short pattern like "(a+)+$" is already catastrophic against a
+# crafted string). re has no built-in backtracking limit, so this repository (unlike
+# SQLAlchemyRepository, which delegates to Postgres's own engine) is directly
+# exposed: a pathological match run inline here blocks the whole event loop, not just
+# one request. `_REGEX_TIMEOUT_SECONDS` bounds that with a wall-clock alarm --
+# relies on running on the main thread of a single-process worker (true for this
+# app's asyncio event loop; see app.models.base's NullPool comment for the same
+# single-worker assumption elsewhere) -- a runaway match is aborted and treated as
+# "no match" rather than hanging the process indefinitely.
+_REGEX_TIMEOUT_SECONDS = 1
+
+
+class _RegexTimeoutError(Exception):
+    """Raised internally when a FilterOp.REGEX match exceeds its evaluation budget."""
+
+
+def _on_regex_alarm(signum: int, frame: object) -> None:
+    raise _RegexTimeoutError
+
+
+def _regex_matches(pattern: str, value: str) -> bool:
+    """Run `re.search(pattern, value)`, aborting (as "no match") past `_REGEX_TIMEOUT_SECONDS`."""
+    previous_handler = signal.signal(signal.SIGALRM, _on_regex_alarm)
+    signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_SECONDS)
+    try:
+        return re.search(pattern, value) is not None
+    except _RegexTimeoutError:
+        logger.warning("Regex filter exceeded %ss budget: %r", _REGEX_TIMEOUT_SECONDS, pattern)
+        return False
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def _now() -> datetime:
@@ -83,17 +122,34 @@ _PREDICATES: dict[FilterOp, Callable[[Any, Any], bool]] = {
     FilterOp.IN: lambda value, target: value in target,
     FilterOp.CONTAINS: lambda value, target: str(target) in str(value),
     FilterOp.ICONTAINS: lambda value, target: str(target).casefold() in str(value).casefold(),
-    FilterOp.REGEX: lambda value, target: re.search(str(target), str(value)) is not None,
+    FilterOp.REGEX: lambda value, target: _regex_matches(str(target), str(value)),
 }
 
 
+def _known_field(instance: object, field: str) -> Any:  # noqa: ANN401
+    """Return `field` off `instance`, or raise if it isn't a mapped column of its model.
+
+    Same defense-in-depth rationale as SQLAlchemyRepository._column: FilterClause.field/
+    SortClause.field are only meant to reach here already validated against a
+    resource's schema (app.controllers.crud_query.parse_filters/parse_sort) -- this
+    check is what turns a caller that bypasses that validation into a clear error
+    instead of either an AttributeError (an unrecognized name) or a silent read of an
+    unintended attribute.
+    """
+    mapper = sa_inspect(type(instance))
+    assert mapper is not None  # noqa: S101 -- `instance` is always a mapped IdentifiedBase
+    if field not in mapper.columns.keys():  # noqa: SIM118 -- ColumnCollection, not a dict
+        raise ValueError(f"{field!r} is not a filterable/sortable column of {type(instance)!r}")
+    return getattr(instance, field)
+
+
 def _matches(instance: object, clause: FilterClause) -> bool:
-    value = getattr(instance, clause.field)
+    value = _known_field(instance, clause.field)
     return _PREDICATES[clause.op](value, clause.value)
 
 
 def _sort_key(instance: object, clause: SortClause) -> Any:  # noqa: ANN401
-    return getattr(instance, clause.field)
+    return _known_field(instance, clause.field)
 
 
 def _is_visible(instance: object, *, include_archived: bool, include_unpublished: bool) -> bool:
