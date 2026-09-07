@@ -13,6 +13,20 @@
   applies the `replace`/`merge` tiers between two template checkouts and
   the instance working tree, and reads/writes
   `../template-sync-state.json`.
+- `run_claude.sh` — invokes `claude -p` for one issue-moderation stage
+  inside the devcontainer; shared by all four Claude-invoking
+  `../workflows/moderate-*.yml` jobs. See `../workflows/README.md`'s
+  "Issue moderation" section.
+- `moderate_cleanup.sh` — closes any open PR for a moderation branch and
+  deletes the branch; used by `../workflows/moderate-cleanup.yml` (issue
+  closed) and `reset_issue_state.sh` (issue reopened). Idempotent.
+- `reset_issue_state.sh` — strips stage labels back to the bare
+  `bug`/`enhancement` label and reconciles any leftover branch/PR, on
+  issue reopen; used by `../workflows/moderate-bug-triage.yml` and
+  `../workflows/moderate-feature-triage.yml`.
+- `prompts/` — the Claude prompt for each moderation stage
+  (`bug-triage.md`, `bug-fix.md`, `feature-triage.md`,
+  `feature-build.md`), read by `run_claude.sh`.
 
 ## Do
 
