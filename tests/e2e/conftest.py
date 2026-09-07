@@ -4,6 +4,7 @@ and at a browser served by the selenium container instead of a local one.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -17,8 +18,10 @@ import httpx
 import pytest
 from playwright.sync_api import Browser, Playwright
 from selenium.webdriver import ChromeOptions, Remote
+from sqlalchemy import text
 
 from app.config import get_settings
+from app.models.base import engine
 
 _STARTUP_TIMEOUT_SECONDS = 10.0
 
@@ -64,8 +67,47 @@ def base_url(app_mode: str) -> str:
     return f"http://api:{_MODE_PORTS[app_mode]}"
 
 
+@pytest.fixture(scope="session")
+def _reset_dev_database(app_mode: str) -> None:
+    """Truncate heroes/revisions before the dev leg's tests run.
+
+    Unlike mock's InMemoryRepository (fresh per uvicorn subprocess), dev's real
+    Postgres persists across every e2e run against this same devcontainer stack.
+    Every role journey creates test heroes, and app.interfaces.base.OwnerScope means
+    tests/e2e/editor's own cleanup can never actually delete what it creates (a
+    known, accepted gap -- see docs/adrs/0011-owner-scoped-crud-example-resource.md),
+    so rows leak on every run. Once enough accumulate to push a test's own newly
+    created hero past the CRUD list endpoint's default `limit=100`, tests that
+    assert their hero shows up in that default list start failing -- starting each
+    dev leg from empty tables is what prevents that. `revisions` isn't FK-linked to
+    `heroes` (see app.models.revision's own docstring: it's an intentionally
+    append-only audit log that outlives the record it describes), so it needs its
+    own truncate rather than relying on `heroes`'s cascade to reach it -- and to
+    avoid stale rows colliding with a hero id that `RESTART IDENTITY` lets a later
+    run reuse.
+
+    Skipped when E2E_BASE_URL points elsewhere: that mode assumes the target
+    environment is managed by someone else, not disposable test data this suite
+    owns, so truncating it would be destructive rather than a cleanup.
+    """
+    if app_mode != "dev" or "E2E_BASE_URL" in os.environ:
+        return
+
+    async def _truncate() -> None:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("TRUNCATE TABLE heroes, revisions RESTART IDENTITY CASCADE")
+            )
+
+    # asyncio.run, not an async fixture: pytest-asyncio's session-scoped async
+    # fixtures don't survive app_mode's own session-scoped reparametrization across
+    # the dev/mock legs (every mock-leg test errors with "coroutine ... setup was
+    # never awaited"). A fresh, self-contained event loop here sidesteps that.
+    asyncio.run(_truncate())
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _running_app(app_mode: str, base_url: str) -> Generator[None]:
+def _running_app(app_mode: str, base_url: str, _reset_dev_database: None) -> Generator[None]:
     """Start the api server for the duration of the e2e run, unless one is
     already up (e.g. under the "FastAPI: api" launch config) or E2E_BASE_URL
     points somewhere this suite doesn't own (dev leg only).
