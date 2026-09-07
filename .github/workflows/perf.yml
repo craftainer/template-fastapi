@@ -42,7 +42,7 @@ jobs:
       - name: Point this runner at the stack's Keycloak
         run: |
           echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts
-          docker compose -f compose.yml -p "$COMPOSE_PROJECT_NAME" cp keycloak-tls-cert:/tls/keycloak.crt keycloak.crt
+          docker compose -f compose.yml -p "$COMPOSE_PROJECT_NAME" cp smoke-tls-cert:/tls/keycloak.crt keycloak.crt
 
       - name: Run Locust load test
         env:

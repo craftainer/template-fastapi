@@ -10,30 +10,31 @@
 # this smoke test -- which means it must also satisfy src/app/config.py's
 # production-only guardrails: postgres_password/s3_access_key/s3_secret_key
 # can't be left at the stack fragments' shared local-dev defaults, and
-# oidc_issuer_url must be https://. The overrides below exist only to
-# satisfy those two guardrails; they're smoke-test-only values, not real
-# secrets, and never touch the shared .devcontainer/stack fragments (whose
-# local-dev defaults stay exactly as-is for the devcontainer itself).
-# redis needs no override, so it's the only fragment still pulled in via
-# include:. postgres/s3/keycloak need credential/TLS overrides below, and
-# `include:` (unlike `extends:`) deliberately errors on any field conflict
-# with an included service instead of merging -- so those three are
-# extended per-service instead (see each service below).
-include:
-  - ./.devcontainer/stack/redis/compose.yml
+# oidc_issuer_url/s3_endpoint_url/redis_url must all be encrypted. The
+# overrides below exist only to satisfy those guardrails; they're
+# smoke-test-only values, not real secrets, and never touch the shared
+# .devcontainer/stack fragments (whose local-dev defaults stay exactly
+# as-is for the devcontainer itself). postgres/redis/s3/keycloak all need
+# credential and/or TLS overrides below, and `include:` (unlike `extends:`)
+# deliberately errors on any field conflict with an included service
+# instead of merging -- so all four are extended per-service instead (see
+# each service below); nothing here is pulled in via include: anymore.
 
 x-smoke-postgres-password: &smoke_postgres_password smoke-only-postgres-pw
 x-smoke-s3-access-key: &smoke_s3_access_key smoke-only-access-key
 x-smoke-s3-secret-key: &smoke_s3_secret_key smoke-only-secret-key-000
 
 services:
-  # One-shot: generates a self-signed cert for Keycloak so oidc_issuer_url
-  # can be https:// (config.py's production guardrail) with the OIDC health
-  # check's discovery request (app.health.checks.OIDCHealthCheck) actually
-  # able to complete a TLS handshake against it. SAN must match the
-  # in-network hostname ("keycloak") since that's what both Keycloak's own
-  # https listener and the api container's discovery request use.
-  keycloak-tls-cert:
+  # One-shot: generates a single self-signed cert (with SANs for every
+  # in-network hostname that terminates TLS in this stack) so Keycloak,
+  # Redis, and S3 can each serve TLS to satisfy config.py's production
+  # guardrails, with the OIDC/S3/Redis health checks able to complete a
+  # TLS handshake against them. SANs must match the in-network hostnames
+  # ("keycloak"/"redis"/"s3") since that's what both each service's own
+  # TLS listener and the api container's client connections use. Also
+  # writes the same key pair under RustFS's required filenames
+  # (RUSTFS_TLS_PATH expects exactly rustfs_cert.pem/rustfs_key.pem).
+  smoke-tls-cert:
     image: alpine/openssl:latest
     entrypoint: ["sh", "-c"]
     command:
@@ -43,10 +44,14 @@ services:
       - >-
         openssl req -x509 -newkey rsa:2048 -nodes -days 1
         -keyout /tls/keycloak.key -out /tls/keycloak.crt
-        -subj /CN=keycloak -addext subjectAltName=DNS:keycloak
+        -subj /CN=keycloak
+        -addext subjectAltName=DNS:keycloak,DNS:redis,DNS:s3
+        && cp /tls/keycloak.crt /tls/rustfs_cert.pem
+        && cp /tls/keycloak.key /tls/rustfs_key.pem
         && chmod 644 /tls/keycloak.key /tls/keycloak.crt
+        /tls/rustfs_cert.pem /tls/rustfs_key.pem
     volumes:
-      - keycloak-tls:/tls
+      - smoke-tls:/tls
 
   postgres:
     extends:
@@ -55,6 +60,33 @@ services:
     environment:
       POSTGRES_PASSWORD: *smoke_postgres_password
 
+  # extends: (not the plain include: every other stack service that needs
+  # no override uses) so the TLS command/port/healthcheck below can replace
+  # the shared fragment's plaintext-only ones -- include: errors on that
+  # kind of field conflict instead of merging. The shared dev-only fragment
+  # itself (.devcontainer/stack/redis/compose.yml) is untouched.
+  redis:
+    extends:
+      file: ./.devcontainer/stack/redis/compose.yml
+      service: redis
+    # extends: replaces command: wholesale rather than merging, so the
+    # existing --appendonly yes has to be repeated alongside the new TLS
+    # flags. Plaintext 6379 is left open too (ssl_auth_clients no isn't set
+    # here -- --tls-port only adds a second, encrypted listener, it doesn't
+    # replace 6379) so the valkey-cli ping healthcheck below keeps working
+    # unchanged over plaintext while api's actual REDIS_URL connection
+    # (rediss://redis:6380/0, see the api service below) is genuinely
+    # encrypted.
+    command: >-
+      valkey-server --appendonly yes
+      --tls-port 6380 --tls-cert-file /tls/keycloak.crt
+      --tls-key-file /tls/keycloak.key --tls-auth-clients no
+    volumes:
+      - smoke-tls:/tls:ro
+    depends_on:
+      smoke-tls-cert:
+        condition: service_completed_successfully
+
   s3:
     extends:
       file: ./.devcontainer/stack/s3/compose.yml
@@ -62,18 +94,37 @@ services:
     environment:
       RUSTFS_ACCESS_KEY: *smoke_s3_access_key
       RUSTFS_SECRET_KEY: *smoke_s3_secret_key
+      # RustFS's TLS mode replaces the plain-HTTP listener on the same
+      # address rather than adding a second port (MinIO-like), so once this
+      # is set http://s3:9000 stops answering and only https://s3:9000
+      # does -- see the healthcheck and the api service's S3_ENDPOINT_URL
+      # override below.
+      RUSTFS_TLS_PATH: /tls
+    volumes:
+      - smoke-tls:/tls:ro
+    healthcheck:
+      # -k: self-signed, internal-only check -- api's actual client still
+      # verifies via its own CA trust (AWS_CA_BUNDLE, see the api service
+      # below).
+      test: ["CMD", "curl", "-fk", "https://localhost:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      smoke-tls-cert:
+        condition: service_completed_successfully
 
   keycloak:
     extends:
       file: ./.devcontainer/stack/keycloak/compose.yml
       service: keycloak
     volumes:
-      - keycloak-tls:/opt/keycloak/tls:ro
+      - smoke-tls:/opt/keycloak/tls:ro
     environment:
       KC_HTTPS_CERTIFICATE_FILE: /opt/keycloak/tls/keycloak.crt
       KC_HTTPS_CERTIFICATE_KEY_FILE: /opt/keycloak/tls/keycloak.key
     depends_on:
-      keycloak-tls-cert:
+      smoke-tls-cert:
         condition: service_completed_successfully
     ports:
       # Second deliberate deviation from stack/README.md's "no ports:" rule
@@ -105,22 +156,42 @@ services:
       # dependencies, not MODE=mock's in-memory fakes.
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
-      S3_ENDPOINT_URL: http://s3:9000
-      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: https://s3:9000
+      REDIS_URL: rediss://redis:6380/0
       # Match the postgres/s3 overrides above -- see this file's header
       # comment for why these can't stay at the shared stack defaults.
       POSTGRES_PASSWORD: *smoke_postgres_password
       RUSTFS_ACCESS_KEY: *smoke_s3_access_key
       RUSTFS_SECRET_KEY: *smoke_s3_secret_key
-      # keycloak's https listener (see keycloak-tls-cert above) uses a
-      # self-signed cert; SSL_CERT_FILE is honored by httpx's default SSL
-      # context (httpx._config.create_ssl_context) so the OIDC health
-      # check's discovery request trusts it instead of failing TLS
-      # verification against the usual public CA bundle.
+      # keycloak's/redis's/s3's TLS listeners (see smoke-tls-cert above) all
+      # use the same self-signed cert; SSL_CERT_FILE is honored by httpx's
+      # default SSL context (httpx._config.create_ssl_context) so the OIDC
+      # health check's discovery request trusts it, and by
+      # ssl.create_default_context() (redis-py's SSLConnection, see
+      # health/checks.py's RedisHealthCheck) so the rediss:// connection
+      # trusts it too -- both instead of failing TLS verification against
+      # the usual public CA bundle.
       OIDC_ISSUER_URL: https://keycloak:8443/realms/template-fastapi
       SSL_CERT_FILE: /tls/keycloak.crt
+      # boto3/botocore does *not* honor SSL_CERT_FILE (unlike httpx/redis-py
+      # above) -- AWS_CA_BUNDLE is its own equivalent env var, needed so the
+      # S3 health check (health/checks.py's S3HealthCheck, boto3-based)
+      # trusts the same self-signed cert instead of failing TLS
+      # verification.
+      AWS_CA_BUNDLE: /tls/keycloak.crt
+      # _require_mqtt_auth_in_production (config.py) refuses to construct
+      # Settings at all under MODE=production unless these are set, even
+      # though nothing in this smoke test actually reaches the broker --
+      # app.interfaces.base.MQTTEventSink/MQTTEventSource connect lazily,
+      # per-publish/subscribe, and health/registry.py registers no MQTT
+      # check, so /health/live and /health/ready never touch it. No mqtt
+      # service is added to this stack; these are smoke-test-only values
+      # to satisfy the guardrail, not a real broker's credentials.
+      MQTT_USE_TLS: "true"
+      MQTT_USERNAME: smoke-only-mqtt-user
+      MQTT_PASSWORD: smoke-only-mqtt-pw
     volumes:
-      - keycloak-tls:/tls:ro
+      - smoke-tls:/tls:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -130,7 +201,7 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
-      keycloak-tls-cert:
+      smoke-tls-cert:
         condition: service_completed_successfully
     # No curl/wget in the runner image (slim base, nothing installed beyond
     # the venv -- see scripts/runner-setup.sh), so this shells out to the
@@ -156,10 +227,11 @@ services:
       - "8000:8000"
 
 volumes:
-  keycloak-tls:
+  smoke-tls:
   # extends: (unlike include:) only copies the named service's own config,
   # not the extended file's top-level volumes: section -- these two must be
-  # declared here too, matching what postgres/compose.yml and s3/compose.yml
+  # declared here too, matching what postgres/redis/s3's own compose.yml
   # declare for the same named volumes.
   postgres-data:
+  redis-data:
   s3-data:
