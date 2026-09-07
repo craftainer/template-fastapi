@@ -72,17 +72,27 @@ class _RegexTimeoutError(Exception):
     """Raised internally when a FilterOp.REGEX match exceeds its evaluation budget."""
 
 
-def _on_regex_alarm(signum: int, frame: object) -> None:
+def _on_regex_alarm(signum: int, frame: object) -> None:  # pragma: no cover -- see below
     raise _RegexTimeoutError
 
 
 def _regex_matches(pattern: str, value: str) -> bool:
-    """Run `re.search(pattern, value)`, aborting (as "no match") past `_REGEX_TIMEOUT_SECONDS`."""
+    """Run `re.search(pattern, value)`, aborting (as "no match") past `_REGEX_TIMEOUT_SECONDS`.
+
+    `# pragma: no cover` on the alarm handler and the branch below is for tests/e2e
+    specifically: hitting it for real means deliberately hanging for
+    `_REGEX_TIMEOUT_SECONDS`, which that suite avoids by design rather than eating a
+    real multi-second delay per run. tests/unit/repositories/test_memory.py's
+    test_regex_alarm_handler_raises_regex_timeout_error and
+    test_regex_matches_returns_false_and_logs_on_timeout exercise both directly (the
+    former calling the handler itself, the latter with the timeout patched to ~0) and
+    still count toward that suite's own 95% gate.
+    """
     previous_handler = signal.signal(signal.SIGALRM, _on_regex_alarm)
     signal.setitimer(signal.ITIMER_REAL, _REGEX_TIMEOUT_SECONDS)
     try:
         return re.search(pattern, value) is not None
-    except _RegexTimeoutError:
+    except _RegexTimeoutError:  # pragma: no cover -- see docstring above
         logger.warning("Regex filter exceeded %ss budget: %r", _REGEX_TIMEOUT_SECONDS, pattern)
         return False
     finally:
@@ -135,11 +145,20 @@ def _known_field(instance: object, field: str) -> Any:  # noqa: ANN401
     check is what turns a caller that bypasses that validation into a clear error
     instead of either an AttributeError (an unrecognized name) or a silent read of an
     unintended attribute.
+
+    `# pragma: no cover` on the raise below is for tests/e2e specifically: it only
+    ever reaches this repository through the real HTTP routes, which parse_filters/
+    parse_sort already validate against Hero's schema, so an unknown field name can
+    never actually arrive here that way. tests/unit/repositories/test_memory.py's
+    test_filter_regex_rejects_unknown_field calls this repository directly, bypassing
+    that validation, and still counts toward that suite's own 95% gate.
     """
     mapper = sa_inspect(type(instance))
     assert mapper is not None  # noqa: S101 -- `instance` is always a mapped IdentifiedBase
     if field not in mapper.columns.keys():  # noqa: SIM118 -- ColumnCollection, not a dict
-        raise ValueError(f"{field!r} is not a filterable/sortable column of {type(instance)!r}")
+        raise ValueError(  # pragma: no cover -- see docstring above
+            f"{field!r} is not a filterable/sortable column of {type(instance)!r}"
+        )
     return getattr(instance, field)
 
 

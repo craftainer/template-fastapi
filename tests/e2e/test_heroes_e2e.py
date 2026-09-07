@@ -464,6 +464,60 @@ def test_hero_publish_missing_returns_404(
     assert response.status == 404
 
 
+def test_caller_cannot_publish_another_owners_draft(
+    page: Page, base_url: str, access_token: Callable[[str], str]
+) -> None:
+    """One user's POST /publish?id= 404s for a draft another user created, rather than 500ing.
+
+    `crud.get` (unscoped, see app.interfaces.base.OwnerScope's read_scoped=False) lets the
+    second caller see the first caller's draft exists, but `crud.update` (always
+    owner-scoped) returns None since they don't own it -- app.controllers.crud_router's
+    publish_record must turn that into a 404, not return None as its `-> schema` response.
+    Both "editor" and "maintainer" hold the write role Hero's /publish route requires (see
+    app.crud_1.heroes.heroes_v2.WriteRoles), so they stand in here as two distinct owners.
+    """
+    maintainer_headers = {"Authorization": f"Bearer {access_token('maintainer')}"}
+    editor_headers = {"Authorization": f"Bearer {access_token('editor')}"}
+    suffix = uuid4()
+    draft = page.request.post(
+        f"{base_url}/crud/v1/heroes/v2/json/draft",
+        data={"name": f"E2E Cross-Owner Draft Hero {suffix}"},
+        headers=maintainer_headers,
+    ).json()
+    try:
+        # Fill in the fields create_schema requires, as the owner -- otherwise
+        # publish_record's own required-fields check 422s before ever reaching the
+        # owner-scoped crud.update this test means to exercise.
+        page.request.patch(
+            f"{base_url}/crud/v1/heroes/v2/json",
+            params={"id": draft["id"]},
+            data={"powers": ["Tactics"]},
+            headers=maintainer_headers,
+        )
+
+        publish_attempt = page.request.post(
+            f"{base_url}/crud/v1/heroes/v2/json/publish",
+            params={"id": draft["id"]},
+            headers=editor_headers,
+            fail_on_status_code=False,
+        )
+        assert publish_attempt.status == 404
+
+        still_draft = page.request.get(
+            f"{base_url}/crud/v1/heroes/v2/json",
+            params={"id": draft["id"]},
+            headers=maintainer_headers,
+        ).json()
+        assert still_draft["is_draft"] is True
+    finally:
+        page.request.delete(
+            f"{base_url}/crud/v1/heroes/v2/json",
+            params={"id": draft["id"]},
+            headers=maintainer_headers,
+            fail_on_status_code=False,
+        )
+
+
 def test_hero_bulk_lock_blocks_bulk_update_and_delete(
     page: Page, base_url: str, access_token: Callable[[str], str]
 ) -> None:

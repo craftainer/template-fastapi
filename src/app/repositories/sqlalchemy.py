@@ -93,9 +93,19 @@ class SQLAlchemyRepository[ModelT: IdentifiedBase]:
         validation gets a clear error instead of either an AttributeError (an
         unrecognized name) or silently traversing a relationship attribute (a name
         that exists on the model but isn't a plain column).
+
+        `# pragma: no cover` on the raise below is for tests/e2e specifically: it only
+        ever reaches this repository through the real HTTP routes, which parse_filters/
+        parse_sort already validate against Hero's schema, so an unknown field name can
+        never actually arrive here that way. tests/unit/repositories/test_sqlalchemy.py's
+        test_where_clauses_rejects_unknown_filter_field/test_order_by_rejects_unknown_
+        sort_field call this repository directly, bypassing that validation, and still
+        count toward that suite's own 95% gate.
         """
         if field not in sa_inspect(self._model).columns.keys():  # noqa: SIM118 -- .keys() is a ColumnCollection, not a dict
-            raise ValueError(f"{field!r} is not a filterable/sortable column of {self._model!r}")
+            raise ValueError(  # pragma: no cover -- see docstring above
+                f"{field!r} is not a filterable/sortable column of {self._model!r}"
+            )
         return getattr(self._model, field)  # type: ignore[no-any-return]
 
     def _where_clauses(self, filters: Sequence[FilterClause]) -> list[ColumnElement[bool]]:

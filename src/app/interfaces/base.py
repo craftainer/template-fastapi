@@ -300,10 +300,15 @@ class MQTTEventSource:
             # caller left to usefully react to a disconnect failure -- catching it here
             # (rather than letting it become an "exception was never retrieved" log)
             # still logs it, so a broker-side auth/network anomaly during teardown
-            # leaves a trace instead of vanishing silently.
+            # leaves a trace instead of vanishing silently. `# pragma: no cover` below
+            # is for tests/e2e specifically: its one live process talks to a real,
+            # reachable Mosquitto broker, so a clean disconnect can never fail there --
+            # tests/unit/interfaces/test_base.py's test_mqtt_event_source_logs_a_failed_
+            # disconnect exercises this branch directly (a stand-in client whose
+            # __aexit__ always raises) and still counts toward its own 95% gate.
             try:
                 await client.__aexit__(None, None, None)
-            except Exception:
+            except Exception:  # pragma: no cover -- see comment above
                 logger.debug("MQTT disconnect failed", exc_info=True)
 
         try:
