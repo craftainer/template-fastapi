@@ -43,7 +43,7 @@ dev = [
     "boto3-stubs[s3]==1.43.89",
     "types-defusedxml==0.7.0.20260504",
     "pip-audit==2.10.1",
-    "locust==2.46.4",
+    "locust==2.46.5",
 ]
 
 [build-system]
