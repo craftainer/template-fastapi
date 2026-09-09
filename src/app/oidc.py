@@ -136,7 +136,7 @@ def require_roles(*roles: str) -> Callable[..., Awaitable[dict[str, Any]]]:
                 roles,
             )
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Insufficient role")
-        # Stashed on request.state so app.controllers.crud_actions's audit log can
+        # Stashed on request.state so crud.controllers.crud_actions's audit log can
         # name the caller without every route needing to redeclare this dependency
         # as a captured parameter just to get its return value.
         request.state.claims = claims

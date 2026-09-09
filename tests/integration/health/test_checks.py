@@ -2,7 +2,7 @@
 
 from app.config import get_settings
 from app.health.checks import DatabaseHealthCheck, OIDCHealthCheck, RedisHealthCheck, S3HealthCheck
-from app.models.base import engine
+from crud.models.base import engine
 
 
 async def test_database_check_against_real_postgres() -> None:

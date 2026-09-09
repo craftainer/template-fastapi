@@ -15,19 +15,19 @@ from typing import Annotated, Any
 
 from fastapi import Depends
 
-from app.controllers.crud_router import ROUTER_VERSION, build_resource_router
-from app.interfaces.base import CRUDInterface, EventSource, OwnerScope, RepositoryRevisionSink
-from app.interfaces.dependency import (
+from app.models.hero import Hero as HeroModel
+from app.oidc import get_current_claims, require_roles
+from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
+from crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
+from crud.interfaces.base import CRUDInterface, EventSource, OwnerScope, RepositoryRevisionSink
+from crud.interfaces.dependency import (
     build_event_sink_provider,
     build_event_source_provider,
     build_repository_provider,
 )
-from app.models.base import DBSession
-from app.models.hero import Hero as HeroModel
-from app.models.revision import Revision
-from app.oidc import get_current_claims, require_roles
-from app.repositories.base import Repository
-from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
+from crud.models.base import DBSession
+from crud.models.revision import Revision
+from crud.repositories.base import Repository
 
 _hero_repository = build_repository_provider(HeroModel)
 _revision_repository = build_repository_provider(Revision)
@@ -59,20 +59,20 @@ def get_hero_crud(
     `owner=OwnerScope("owner_id", claims["sub"], read_scoped=False)`: every
     authenticated caller reads every hero (list/get), same as before this was
     added, but `update`/`delete` (single or bulk) only ever reach heroes the
-    caller themselves created -- see app.interfaces.base.OwnerScope's own
+    caller themselves created -- see crud.interfaces.base.OwnerScope's own
     docstring and docs/adrs/0011-owner-scoped-crud-example-resource.md for why
     Hero uses `read_scoped=False` rather than the fully-scoped default.
 
     `revisions=RepositoryRevisionSink(...)`/`resource="hero"`/`actor=claims["sub"]`:
     every create/update/update_many/delete/delete_many is logged to the shared
-    Revision table -- see app.interfaces.base.RevisionSink's own docstring and
+    Revision table -- see crud.interfaces.base.RevisionSink's own docstring and
     `GET <prefix>/revisions?id=`, added below via `revision_repository_dependency`.
     `actor` is resolved from the same per-request claims `owner` already reads,
-    the same pattern app.interfaces.README.md's "Do" section describes.
+    the same pattern crud.interfaces.README.md's "Do" section describes.
 
     `events=_hero_event_sink()`: every create/update/update_many/delete/
     delete_many **and** restore/restore_many is published for real-time streaming
-    -- see app.interfaces.base.EventSink's own docstring and `GET <prefix>/events`,
+    -- see crud.interfaces.base.EventSink's own docstring and `GET <prefix>/events`,
     added below via `event_source_dependency`.
 
     MODE=mock uses the shared in-memory repository instead of `session` -- an

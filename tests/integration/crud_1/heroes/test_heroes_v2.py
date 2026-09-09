@@ -12,9 +12,9 @@ from starlette.types import Message
 
 from app.config import get_settings
 from app.main import app
-from app.models.base import async_session_factory
 from app.models.hero import Hero
 from app.oidc import get_current_claims
+from crud.models.base import async_session_factory
 
 client = TestClient(app)
 
@@ -158,7 +158,7 @@ async def test_write_is_committed_before_the_response_is_sent() -> None:
     dependency's exit code, which at `Depends()`'s default `scope="request"` runs
     *after* the response is sent, so a client that immediately acts on the write's
     own response could reach a database where the INSERT hadn't committed yet.
-    `app.models.base.DBSession` pins `scope="function"` to close that window.
+    `crud.models.base.DBSession` pins `scope="function"` to close that window.
 
     Driven over raw ASGI rather than TestClient because TestClient only returns once
     the whole ASGI cycle (teardown included) has finished, which hides the ordering
@@ -218,7 +218,7 @@ async def test_write_is_committed_before_the_response_is_sent() -> None:
 def test_owner_cannot_update_or_delete_another_owners_hero_against_real_postgres() -> None:
     """Reads stay open across owners, but a second caller can't update/delete Alice's hero.
 
-    Proves app.interfaces.base.OwnerScope(read_scoped=False)'s wiring holds end-to-end
+    Proves crud.interfaces.base.OwnerScope(read_scoped=False)'s wiring holds end-to-end
     (real get_hero_crud, real SQLAlchemyRepository/session), not just against the
     in-memory fake tests/unit/crud_1/heroes/test_heroes_v2.py and tests/unit/
     interfaces/test_base.py already cover.
@@ -329,7 +329,7 @@ def test_hero_restore_missing_returns_404_against_real_postgres() -> None:
 def test_hero_bulk_restore_via_filters_against_real_postgres() -> None:
     """POST /crud/v1/heroes/v2/json/restore with no id restores every matching archived hero.
 
-    Archive is soft (see app.models.mixins.Archivable), so a plain DELETE in this
+    Archive is soft (see crud.models.mixins.Archivable), so a plain DELETE in this
     test's own cleanup can't actually remove the row it created -- a fixed name
     filter would keep matching this test's own past runs' now-permanently-archived
     heroes forever. A run-unique name suffix keeps each run's filter scoped to only

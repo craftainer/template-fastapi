@@ -15,11 +15,11 @@ from app.controllers import (
     health,
     mock,
 )
-from app.controllers.crud_router import ROUTER_VERSION
 from app.crud_1 import router as crud_v1_router
 from app.http_headers import add_security_headers
 from app.problem_details import register_problem_handlers
 from app.telemetry import configure_logging
+from crud.controllers.crud_router import ROUTER_VERSION
 
 settings = get_settings()
 configure_logging()
@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Apply pending migrations before serving, then run normally until shutdown.
 
     MODE=mock skips migrations entirely -- there's no database to migrate against
-    (see app.repositories.memory). `# pragma: no branch` below is for tests/e2e
+    (see crud.repositories.memory). `# pragma: no branch` below is for tests/e2e
     specifically: its one live process is always MODE=dev, so the other branch can
     never run there -- tests/unit/test_main.py exercises it directly and still
     counts toward its own 95% gate.

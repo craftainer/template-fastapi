@@ -4,6 +4,9 @@ Source layout for the installable package.
 
 - `app/` — the FastAPI application package (`app.main:app`); see its own
   `README.md`.
+- `crud/` — the generic CRUD framework `app`'s resource packages build
+  on (router factories, interface, repositories, model/view bases); see
+  its own `README.md`.
 
 ## Keeping the system design doc current
 

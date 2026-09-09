@@ -6,9 +6,9 @@ other test in this directory is parametrized. tests/integration/crud_1/heroes/
 test_heroes_v2_events.py already proves the MQTT persistent-session delivery guarantee
 in detail; this file's job is narrower: prove the route actually works end to end
 against each mode's live process, closing the coverage this suite would otherwise
-leave on `app.controllers.crud_router`'s `stream_events`/`_sse_events`,
-`app.interfaces.base`'s `MQTTEventSource`/`InMemoryEventSink`, and
-`app.interfaces.dependency`'s event-source provider.
+leave on `crud.controllers.crud_router`'s `stream_events`/`_sse_events`,
+`crud.interfaces.base`'s `MQTTEventSource`/`InMemoryEventSink`, and
+`crud.interfaces.dependency`'s event-source provider.
 
 Plain (sync) `httpx`, not Playwright's `page.request`, and not `async def` tests: this
 endpoint's response body never completes on its own (see the integration test's own

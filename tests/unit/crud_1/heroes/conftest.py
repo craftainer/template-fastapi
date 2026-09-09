@@ -1,6 +1,6 @@
 """Shared helper for tests/unit/crud_1/heroes: an owner-aware get_hero_crud override.
 
-Hero.owner_id has no default (see app.models.hero) and app.interfaces.base.
+Hero.owner_id has no default (see app.models.hero) and crud.interfaces.base.
 CRUDInterface.create only stamps it when an OwnerScope is set -- every test in
 this package that overrides get_hero_crud needs one, mirroring the real
 get_hero_crud's own OwnerScope("owner_id", claims["sub"], read_scoped=False)
@@ -11,11 +11,11 @@ from typing import Annotated, Any
 
 from fastapi import Depends
 
-from app.interfaces.base import CRUDInterface, OwnerScope
 from app.models.hero import Hero as HeroModel
 from app.oidc import get_current_claims
-from app.repositories.memory import InMemoryRepository
 from app.views.hero_v2 import HeroV2
+from crud.interfaces.base import CRUDInterface, OwnerScope
+from crud.repositories.memory import InMemoryRepository
 
 
 def override_hero_crud(

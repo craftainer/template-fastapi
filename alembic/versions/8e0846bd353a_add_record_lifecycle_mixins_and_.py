@@ -40,7 +40,7 @@ def upgrade() -> None:
     op.add_column("heroes", sa.Column("archived_at", sa.DateTime(), nullable=True))
     # server_default backfills any existing row (this template's own disposable
     # example data) -- the model itself only declares a client-side `default`
-    # (see app.models.mixins.Draftable/Lockable), matching every other plain
+    # (see crud.models.mixins.Draftable/Lockable), matching every other plain
     # column here; the server_default stays in place afterward as a harmless
     # extra safety net, not removed in a follow-up statement.
     op.add_column(

@@ -8,7 +8,7 @@ that e2e (and other engineers' sessions) depend on, which isn't a trade worth
 making for a smoke-test suite -- tests/unit/health/test_checks.py fakes each
 client to exercise every failure branch instead, and still counts toward its own
 95% gate. MockHealthCheck is excluded from that same run for the same MODE-only
-reason as app.repositories.memory -- see its module docstring.
+reason as crud.repositories.memory -- see its module docstring.
 """
 
 import asyncio

@@ -1,7 +1,7 @@
 # mqtt
 
 [Eclipse Mosquitto](https://mosquitto.org/), the MQTT broker backing
-`src/app/interfaces/base.py`'s `MQTTEventSink`/`MQTTEventSource` (the
+`src/crud/interfaces/base.py`'s `MQTTEventSink`/`MQTTEventSource` (the
 generic CRUD interface's opt-in real-time event stream — see
 `docs/adrs/0015-mqtt-for-crud-events.md`). Mosquitto is dual
 EPL-2.0/EDL-1.0 licensed, both OSI-approved, unlike this stack's Redis/
@@ -41,7 +41,7 @@ had to begin with, since it's introduced fresh here.
 Delete this directory and remove its compose file entry from
 `.devcontainer/compose.yml`'s `include:` list (and the `api` service's
 matching `depends_on:` entry there) — this also removes the real
-(non-`MODE=mock`) backend for `app.interfaces.base.MQTTEventSink`/
+(non-`MODE=mock`) backend for `crud.interfaces.base.MQTTEventSink`/
 `MQTTEventSource`, so a resource using `event_source_dependency` would
 need `MODE=mock` or a different broker configured via
 `Settings.mqtt_host`/`mqtt_port`.

@@ -2,7 +2,7 @@
 
 `heroes_v2.py`/`heroes_v1.py` each build their own `build_resource_router(...)`
 router with `prefix=""` -- neither carries any mount prefix of its own (see
-`app.controllers.crud_router`'s "Generic CRUD router factories" and
+`crud.controllers.crud_router`'s "Generic CRUD router factories" and
 `crud_1/README.md`'s "Don't" section for why). This module is the one that
 assigns each version's own segment, explicitly, at the `include_router` call
 that mounts it -- combining the two into the one `router` `app.crud_1` mounts

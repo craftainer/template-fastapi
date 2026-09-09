@@ -10,13 +10,13 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.crud_1.heroes.heroes_v2 import get_hero_crud, get_hero_revision_repository
-from app.interfaces.base import CRUDInterface, OwnerScope, RepositoryRevisionSink
 from app.main import app
 from app.models.hero import Hero as HeroModel
-from app.models.revision import Revision
 from app.oidc import get_current_claims
-from app.repositories.memory import InMemoryRepository
 from app.views.hero_v2 import HeroV2
+from crud.interfaces.base import CRUDInterface, OwnerScope, RepositoryRevisionSink
+from crud.models.revision import Revision
+from crud.repositories.memory import InMemoryRepository
 
 from .conftest import override_hero_crud as _override_crud
 
@@ -219,7 +219,7 @@ def test_caller_cannot_publish_another_owners_draft(authed: None) -> None:
 
     `crud.get` (unscoped, see OwnerScope's read_scoped=False) lets Bob see Alice's
     draft exists, but `crud.update` (always owner-scoped) returns None since he
-    doesn't own it -- app.controllers.crud_router's publish_record must turn that
+    doesn't own it -- crud.controllers.crud_router's publish_record must turn that
     into a 404, not return None as its `-> schema` response.
     """
     repository = InMemoryRepository(HeroModel)
@@ -415,7 +415,7 @@ def test_hero_record_lifecycle_draft_through_revisions(authed: None) -> None:
         revisions = revisions_response.json()
         # Newest first; the clone's own "create" is filed under *its* id, not
         # hero_id (see crud_router.py's clone_record), restore() isn't itself
-        # revision-logged (see app.interfaces.base.CRUDInterface.restore), and the
+        # revision-logged (see crud.interfaces.base.CRUDInterface.restore), and the
         # locked edit above never reached a mutation -- so this hero's own log is
         # just its own create plus every update/delete that actually applied.
         assert [revision["action"] for revision in revisions] == [
@@ -474,7 +474,7 @@ def test_hero_bulk_lock_blocks_bulk_update_and_delete(authed: None) -> None:
     """A locked hero is skipped by neither -- bulk PATCH/DELETE against it 423s, matching
     single-record lock enforcement, since Hero's OwnerScope routes even single-record
     update/delete through the repository's update_many/delete_many (see
-    app.interfaces.base.OwnerScope's own docstring).
+    crud.interfaces.base.OwnerScope's own docstring).
     """
     repository = InMemoryRepository(HeroModel)
     app.dependency_overrides[get_hero_crud] = _override_crud(repository)

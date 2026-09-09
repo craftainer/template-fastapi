@@ -17,7 +17,7 @@ problem: bytes flow through the OS as they're written, independent of when the w
 request finishes, and closing the connection is what actually delivers an ASGI
 `http.disconnect` message to the running app. `_live_server` below runs the real app
 under `uvicorn` on a loopback TCP port, as a task on this test's own event loop (not a
-separate thread) so the shared async engine/session singleton (see app.models.base) stays
+separate thread) so the shared async engine/session singleton (see crud.models.base) stays
 on the one event loop tests/README.md's "Do" section requires.
 """
 

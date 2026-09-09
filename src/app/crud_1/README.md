@@ -2,12 +2,13 @@
 
 Resource routers for the `/crud/v{ROUTER_VERSION}` API: one subpackage per
 resource, each combining that resource's versioned sibling routers (built
-from `../controllers/`'s generic factories) into one router, which this
-package's own `__init__.py` then combines into the single `router`
-`app.main` mounts at `/crud/v{ROUTER_VERSION}`. Sits after `controllers`
-in `src/app/`'s import order — may import from `app.controllers` (its
-generic router factories) or any lower layer, but nothing else may import
-from here except `main` (see `../README.md`'s "Layering" section).
+from `../../crud/controllers/`'s generic factories) into one router,
+which this package's own `__init__.py` then combines into the single
+`router` `app.main` mounts at `/crud/v{ROUTER_VERSION}`. Sits after
+`controllers` in `src/app/`'s import order — may import from
+`app.controllers`/`crud.controllers` (the generic router factories) or
+any lower layer, but nothing else may import from here except `main`
+(see `../README.md`'s "Layering" section).
 
 - `heroes/` — the example CRUD resource; see `../README.md`'s "Example
   CRUD resource: Hero".
@@ -32,8 +33,8 @@ module, so each version's controller stays its own file (`heroes_v2.py`,
 one module. The package's `__init__.py` is the only thing this package's
 own `__init__.py` ever imports for that resource — it combines every
 version's own router (each built by
-`app.controllers.crud_router.build_resource_router`, see
-`../controllers/README.md`'s "Generic CRUD router factories") into one
+`crud.controllers.crud_router.build_resource_router`, see
+`../../crud/controllers/README.md`'s "Generic CRUD router factories") into one
 `router`, so a resource stays a single `include_router` call at the
 mount site no matter how many versions it carries internally:
 
@@ -60,7 +61,7 @@ needs, not a rule every resource follows.
 non-empty `prefix` argument — no exceptions.** That applies to app-level
 mounts (`app.main`), this package's resource mounts, a resource
 package's per-version mounts, and the per-format mounts inside
-`app.controllers.crud_router.build_resource_router` alike, in tests as
+`crud.controllers.crud_router.build_resource_router` alike, in tests as
 well as in `src/`.
 
 The point is readability and maintainability: the full URL of any route
@@ -85,7 +86,7 @@ version, a resource-shape version, and a format explicitly. See
 for the full reasoning; it supersedes
 `docs/adrs/0002-api-and-model-versioning.md`.
 
-`router_version` (`app.controllers.crud_router`'s `ROUTER_VERSION`
+`router_version` (`crud.controllers.crud_router`'s `ROUTER_VERSION`
 constant) names a version of the generic router factories themselves,
 not a resource's shape. It's applied exactly once, at this package's own
 mount site in `app.main` (`app.include_router(crud_v1_router,
@@ -101,7 +102,7 @@ router still needs the full, absolute `/crud/v{ROUTER_VERSION}/...`
 path is `build_resource_router`'s `api_prefix` argument, since that gets
 baked into rendered HTML/JS at build time and can't be derived from the
 `include_router` calls that do the actual mounting — see
-`../controllers/README.md`'s "Generic CRUD router factories". The DB
+`../../crud/controllers/README.md`'s "Generic CRUD router factories". The DB
 model (`app.models`) always represents
 the *current* shape only — an older API version is a `views` + `crud`
 concern, never a second table/model. Only `app.views` classes carry a
@@ -113,13 +114,13 @@ A deprecated version follows the `*_vN.py` pattern: a `views/hero_vN.py`
 module defining that version's Pydantic shape plus pure converter
 functions to/from the current version's views (see
 `app.views.hero_v1`), and a sibling controller module (`heroes_v1.py`)
-that calls the same `build_resource_router` `../controllers/README.md`'s
-"Generic CRUD router factories" describes, with `crud_dependency`
-pointing at a `CompatCRUD`-typed dependency instead of a
-`CRUDInterface`-typed one. `app.interfaces.compat.CompatCRUD` is the reusable
+that calls the same `build_resource_router` `../../crud/controllers/
+README.md`'s "Generic CRUD router factories" describes, with
+`crud_dependency` pointing at a `CompatCRUD`-typed dependency instead of a
+`CRUDInterface`-typed one. `crud.interfaces.compat.CompatCRUD` is the reusable
 wrapper that adapts the current version's `CRUDInterface` to speak in
 the deprecated view's shape, so the deprecated router needs no new
-persistence wiring — see `app.interfaces.README.md`. Apply
+persistence wiring — see `../../crud/interfaces/README.md`. Apply
 `app.http_headers.sunset(...)` via the deprecated resource-version's
 `router_dependencies=[...]` `build_resource_router` argument (not per
 format) so every route under it — JSON/XML/web alike — advertises
@@ -138,9 +139,9 @@ successor resource-version's base, full absolute path (e.g.
   will never carry more than one version): a per-request `CRUDInterface`
   builder function (`get_<resource>_crud`, depended on via
   `Annotated[..., Depends(...)]` for reuse across that router's routes,
-  following `heroes/heroes_v2.py`'s shape — `app.interfaces.dependency.
+  following `heroes/heroes_v2.py`'s shape — `crud.interfaces.dependency.
   build_repository_provider` supplies the MODE-aware repository it
-  wraps), then one `app.controllers.crud_router.build_resource_router(...)`
+  wraps), then one `crud.controllers.crud_router.build_resource_router(...)`
   call (or a single `build_json_router(...)` call directly, for a
   resource that only ever needs JSON).
 - `include_router` a new resource's router in this package's own
@@ -153,11 +154,11 @@ successor resource-version's base, full absolute path (e.g.
 ## Don't
 
 - Put persistence or conversion logic directly in a route body — that
-  belongs in `app.interfaces`/`app.repositories`; a route should stay a thin
+  belongs in `crud.interfaces`/`crud.repositories`; a route should stay a thin
   translation between HTTP and a `CRUDInterface` call.
 - Add resource-agnostic router-building logic here — a new generic
   factory (usable by any resource) belongs in
-  `app.controllers.crud_router`, not duplicated inside a resource
+  `crud.controllers.crud_router`, not duplicated inside a resource
   package.
 - **Have a resource-version's own router bake in any part of its own
   mount prefix** (e.g. `build_resource_router(prefix="/heroes/v2", ...)`)

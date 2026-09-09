@@ -15,7 +15,7 @@ middleware -- it checks the limit inline in the route's own call, before the
 handler body runs.
 
 Applied to a route's update/delete/restore handler as a whole (see
-app.controllers.crud_router), not just its bulk branch -- a single-record
+crud.controllers.crud_router), not just its bulk branch -- a single-record
 edit (`?id=`) shares the same budget as a bulk one, since exempting single-
 record calls would leave per-record updates/deletes unrated regardless of
 how many a single client issues.

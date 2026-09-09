@@ -3,9 +3,9 @@
 from datetime import UTC, datetime, timedelta
 
 from app.maintenance import purge_archived
-from app.models.base import async_session_factory
 from app.models.hero import Hero
-from app.repositories.sqlalchemy import SQLAlchemyRepository
+from crud.models.base import async_session_factory
+from crud.repositories.sqlalchemy import SQLAlchemyRepository
 
 
 async def test_purge_archived_deletes_only_rows_past_older_than() -> None:

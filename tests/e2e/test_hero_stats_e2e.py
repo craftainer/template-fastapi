@@ -35,7 +35,7 @@ def test_hero_stats_accepts_every_bucket_width(
     page: Page, base_url: str, access_token: Callable[[str], str]
 ) -> None:
     """GET .../stats?bucket=day|week|month all render a real time_series -- closes the
-    coverage app.repositories.memory's own `_bucket_start` would otherwise leave on its
+    coverage crud.repositories.memory's own `_bucket_start` would otherwise leave on its
     WEEK/MONTH branches (the smoke test above only ever passes bucket=day). A single
     real (same-day) hero is enough: `_bucket_start` runs once per matching record
     regardless of how many distinct buckets that produces, unlike crud_stats.forecast's

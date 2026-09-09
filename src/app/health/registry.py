@@ -12,7 +12,7 @@ from app.health.checks import (
     RedisHealthCheck,
     S3HealthCheck,
 )
-from app.models.base import engine
+from crud.models.base import engine
 
 
 class HealthRegistry:
@@ -36,7 +36,7 @@ def get_health_registry() -> HealthRegistry:
     """Return the process-wide cached HealthRegistry, with every external service registered.
 
     MODE=mock registers MockHealthCheck for every service instead of the real checks --
-    there's nothing real to reach (see app.repositories.memory, app.oidc's mock decode path).
+    there's nothing real to reach (see crud.repositories.memory, app.oidc's mock decode path).
     """
     settings = get_settings()
     registry = HealthRegistry()

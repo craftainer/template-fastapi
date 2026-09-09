@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     # A bulk PATCH/DELETE with a technically-non-empty but always-true filter (e.g.
     # id__gte=0) would otherwise still match every row -- see
-    # app.controllers.crud_actions, which counts matches before applying either
+    # crud.controllers.crud_actions, which counts matches before applying either
     # action and refuses to proceed above this threshold.
     bulk_action_max_matched: int = 1000
 
@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     rate_limit_mock_token: str = "10/minute"  # noqa: S105 -- a rate-limit expression, not a secret
     rate_limit_bulk_action: str = "20/minute"
 
-    # app.maintenance.purge_archived: how old an archived row (see app.models.mixins.
+    # app.maintenance.purge_archived: how old an archived row (see crud.models.mixins.
     # Archivable) must be before that out-of-request-path script hard-deletes it.
     # None (the default) disables purge entirely -- this devcontainer-only stack has
     # no scheduler/worker service to invoke it automatically either way (see
@@ -91,7 +91,7 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
-    # app.interfaces.dependency.build_event_sink_provider/build_event_source_provider's
+    # crud.interfaces.dependency.build_event_sink_provider/build_event_source_provider's
     # real (non-MODE=mock) backend -- see .devcontainer/stack/mqtt/.
     # mqtt_keepalive_seconds is the aiomqtt.Client keepalive passed to both
     # MQTTEventSink and MQTTEventSource. mqtt_username/mqtt_password/mqtt_use_tls
@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     mqtt_password: str | None = None
     mqtt_use_tls: bool = False
 
-    # app.controllers.crud_router's `GET <prefix>/events` SSE route: how often an
+    # crud.controllers.crud_router's `GET <prefix>/events` SSE route: how often an
     # idle stream sends a `: keep-alive` comment, so intermediary proxies/load
     # balancers don't time out the connection.
     sse_keepalive_seconds: float = 15.0
@@ -229,7 +229,7 @@ class Settings(BaseSettings):
     def _require_mqtt_auth_in_production(self) -> Self:
         """Refuse to construct production Settings with an unauthenticated MQTT broker.
 
-        app.interfaces.base.MQTTEventSink/MQTTEventSource connect with no
+        crud.interfaces.base.MQTTEventSink/MQTTEventSource connect with no
         credentials/TLS unless these are set, matching mosquitto.conf's own
         no-auth/no-TLS local-dev default (see .devcontainer/stack/mqtt/
         mosquitto.conf's "Don't" section) -- a production broker reachable over

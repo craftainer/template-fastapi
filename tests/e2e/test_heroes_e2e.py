@@ -113,7 +113,7 @@ def test_hero_filter_sort_and_bulk_actions(
             params={
                 "name__icontains": "Filter Test",
                 # No UTC offset -- exercises the naive-datetime path of
-                # app.controllers.crud_query._cast_datetime, distinct from
+                # crud.controllers.crud_query._cast_datetime, distinct from
                 # created_after's tz-aware value above.
                 "created_at__max": "2999-01-01T00:00:00",
             },
@@ -469,9 +469,9 @@ def test_caller_cannot_publish_another_owners_draft(
 ) -> None:
     """One user's POST /publish?id= 404s for a draft another user created, rather than 500ing.
 
-    `crud.get` (unscoped, see app.interfaces.base.OwnerScope's read_scoped=False) lets the
+    `crud.get` (unscoped, see crud.interfaces.base.OwnerScope's read_scoped=False) lets the
     second caller see the first caller's draft exists, but `crud.update` (always
-    owner-scoped) returns None since they don't own it -- app.controllers.crud_router's
+    owner-scoped) returns None since they don't own it -- crud.controllers.crud_router's
     publish_record must turn that into a 404, not return None as its `-> schema` response.
     Both "editor" and "maintainer" hold the write role Hero's /publish route requires (see
     app.crud_1.heroes.heroes_v2.WriteRoles), so they stand in here as two distinct owners.
@@ -666,7 +666,7 @@ def test_hero_scheduled_visibility(
     page: Page, base_url: str, access_token: Callable[[str], str]
 ) -> None:
     """A hero with a future publish_at or a past unpublish_at is excluded from a plain GET
-    by default, and reachable with include_unpublished=true -- see app.models.mixins.Schedulable.
+    by default, and reachable with include_unpublished=true -- see crud.models.mixins.Schedulable.
     Setting the two columns is just a normal PATCH (see views.hero_v2.HeroV2Update).
     """
     headers = {"Authorization": f"Bearer {access_token('maintainer')}"}
