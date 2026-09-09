@@ -51,7 +51,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/app", "src/crud"]
+packages = ["src/app", "src/crud", "src/health"]
 
 [tool.ruff]
 line-length = 100
@@ -75,7 +75,7 @@ select = [
 ignore = ["COM812", "ISC001"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "crud"]
+known-first-party = ["app", "crud", "health"]
 
 [tool.ruff.lint.per-file-ignores]
 # assert is the point of a test, and comparing to literal expected values
@@ -127,13 +127,13 @@ known-first-party = ["app", "crud"]
 "tests/e2e/test_heroes_xml_e2e.py" = ["PLR0915"]
 
 [tool.importlinter]
-# Enforces src/app/README.md's and src/crud/README.md's strict import order between
-# each package's own subpackages: within a container, a layer may import any layer
-# listed after it, never one listed before it (e.g. app.models must never import
-# from app.controllers; crud.models must never import from crud.controllers). Run
-# via `uv run lint-imports` (wired into .pre-commit-config.yaml's manual/pre-push
-# stage).
-root_packages = ["app", "crud"]
+# Enforces src/app/README.md's, src/crud/README.md's, and src/health/README.md's
+# strict import order between each package's own subpackages: within a container,
+# a layer may import any layer listed after it, never one listed before it (e.g.
+# app.models must never import from app.controllers; crud.models must never import
+# from crud.controllers). Run via `uv run lint-imports` (wired into
+# .pre-commit-config.yaml's manual/pre-push stage).
+root_packages = ["app", "crud", "health"]
 
 [[tool.importlinter.contracts]]
 name = "app layers"
@@ -146,7 +146,6 @@ layers = [
     "http_headers",
     "xml_codec",
     "web_components",
-    "health",
     "views",
     "maintenance",
     "models",
@@ -154,6 +153,7 @@ layers = [
     "problem_details",
     "telemetry",
     "rate_limit",
+    "health_checks",
     "config",
 ]
 
@@ -169,6 +169,16 @@ layers = [
     "models",
 ]
 
+[[tool.importlinter.contracts]]
+name = "health layers"
+type = "layers"
+containers = ["health"]
+layers = [
+    "router",
+    "registry",
+    "base",
+]
+
 [tool.mypy]
 python_version = "3.14"
 mypy_path = "src"
@@ -180,9 +190,9 @@ cache_dir = "/home/vscode/.cache/mypy"
 [tool.pytest.ini_options]
 # cache_dir: see the cache-dir comment under [tool.ruff] above -- same reasoning.
 cache_dir = "/home/vscode/.cache/pytest"
-addopts = "--strict-markers --strict-config -ra --ignore=tests/e2e --cov=app --cov=crud --cov-report=term-missing"
+addopts = "--strict-markers --strict-config -ra --ignore=tests/e2e --cov=app --cov=crud --cov=health --cov-report=term-missing"
 # Lets an `async def test_...` run without a per-test @pytest.mark.asyncio marker --
-# needed once tests exercise app.interfaces/app.repositories/app.health directly (not just
+# needed once tests exercise app.interfaces/app.repositories/health directly (not just
 # through TestClient, which stays sync regardless of this setting).
 asyncio_mode = "auto"
 # app.models.base's engine/session factory are process-wide singletons (like
@@ -217,7 +227,7 @@ filterwarnings = [
 # saves data first and is what ends up back in place by the time uvicorn
 # re-raises the signal it caught (tests/e2e/conftest.py stops that process
 # with SIGTERM).
-source = ["app", "crud"]
+source = ["app", "crud", "health"]
 branch = true
 parallel = true
 relative_files = true

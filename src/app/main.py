@@ -12,14 +12,15 @@ from alembic import command
 from app.config import get_settings
 from app.controllers import (
     audit,
-    health,
     mock,
 )
 from app.crud_1 import router as crud_v1_router
+from app.health_checks import get_health_registry
 from app.http_headers import add_security_headers
 from app.problem_details import register_problem_handlers
 from app.telemetry import configure_logging
 from crud.controllers.crud_router import ROUTER_VERSION
+from health.router import build_health_router
 
 settings = get_settings()
 configure_logging()
@@ -109,7 +110,7 @@ app = FastAPI(
 register_problem_handlers(app)
 add_security_headers(app)
 
-app.include_router(health.router, prefix="/health")
+app.include_router(build_health_router(get_health_registry), prefix="/health")
 app.include_router(crud_v1_router, prefix=f"/crud/v{ROUTER_VERSION}")
 app.include_router(audit.router, prefix="/audit")
 _mount_mode_specific_routers(app, settings.mode)

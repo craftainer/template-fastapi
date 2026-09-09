@@ -1,11 +1,11 @@
-"""Concrete health checks for this app's external services: Postgres, Redis, S3, OIDC.
+"""This app's concrete health checks: Postgres, Redis, S3, OIDC -- and the registry they wire into.
 
 Also MockHealthCheck, a network-free always-healthy stand-in used when MODE=mock.
 
 Each check's failure branch is `# pragma: no cover` for tests/e2e specifically:
 proving it requires actually breaking the live shared Postgres/Redis/S3/Keycloak
 that e2e (and other engineers' sessions) depend on, which isn't a trade worth
-making for a smoke-test suite -- tests/unit/health/test_checks.py fakes each
+making for a smoke-test suite -- tests/unit/test_health_checks.py fakes each
 client to exercise every failure branch instead, and still counts toward its own
 95% gate. MockHealthCheck is excluded from that same run for the same MODE-only
 reason as crud.repositories.memory -- see its module docstring.
@@ -13,6 +13,7 @@ reason as crud.repositories.memory -- see its module docstring.
 
 import asyncio
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import boto3
@@ -24,7 +25,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.health.base import HealthCheckResult
+from app.config import get_settings
+from crud.models.base import engine
+from health.base import HealthCheckResult
+from health.registry import HealthRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -147,3 +151,27 @@ class OIDCHealthCheck:
             logger.exception("OIDC health check failed")
             return HealthCheckResult(self.name, healthy=False, detail=_UNHEALTHY_DETAIL)
         return HealthCheckResult(self.name, healthy=True)
+
+
+@lru_cache
+def get_health_registry() -> HealthRegistry:
+    """Return the process-wide cached HealthRegistry, with every external service registered.
+
+    MODE=mock registers MockHealthCheck for every service instead of the real checks --
+    there's nothing real to reach (see crud.repositories.memory, app.oidc's mock decode path).
+    """
+    settings = get_settings()
+    registry = HealthRegistry()
+    if settings.mode == "mock":
+        registry.register(MockHealthCheck("database"))
+        registry.register(MockHealthCheck("redis"))
+        registry.register(MockHealthCheck("s3"))
+        registry.register(MockHealthCheck("oidc"))
+        return registry
+    registry.register(DatabaseHealthCheck(engine))
+    registry.register(RedisHealthCheck(settings.redis_url))
+    registry.register(
+        S3HealthCheck(settings.s3_endpoint_url, settings.s3_access_key, settings.s3_secret_key)
+    )
+    registry.register(OIDCHealthCheck(settings.oidc_issuer_url))
+    return registry

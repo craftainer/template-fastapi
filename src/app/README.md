@@ -10,26 +10,30 @@ split across subpackages, each with its own `README.md`:
   `hero_v1.py`/`hero_v2.py`). The generic view bases live in
   `../crud/views/` instead.
 - `controllers/` — FastAPI routers with no resource of their own
-  (health/audit/mock). The generic CRUD router factories a resource
-  builds on live in `../crud/controllers/` instead.
+  (audit/mock). The generic CRUD router factories a resource builds on
+  live in `../crud/controllers/` instead.
 - `crud_1/` — one subpackage per resource (e.g. `heroes/`), each
   combining its versioned sibling routers (built from `../crud/
   controllers/`'s factories) into one router, all combined into the
   single router `main.py` mounts at `/crud/v{ROUTER_VERSION}`; see its
   own `README.md`.
-- `health/` — the health check interface and registry.
 
 The generic CRUD framework itself — router factories, the interface,
 storage-agnostic repositories, and model/view bases — lives in the
 sibling `../crud/` package, not here; see its own `README.md`. A
 resource's own model/view/router (Hero's, e.g.) stays in `app/` and
-imports from `crud.*` to build on that framework.
+imports from `crud.*` to build on that framework. The generic health
+check framework (interface, registry, and router factory) similarly
+lives in the sibling `../health/` package, not here — see its own
+`README.md` — with `health_checks.py`'s concrete checks and wiring
+(below) built on top of it, the same split as a resource's own
+model/view/router built on `crud.*`.
 
 `config.py`/`main.py`/`oidc.py`/`telemetry.py`/`problem_details.py`/
 `rate_limit.py`/`http_headers.py`/`xml_codec.py`/`web_components.py`/
-`maintenance.py` stay flat, outside any subpackage — a flat module has no
-resource-specific code and no state of its own beyond what it's explicitly
-passed or reads from `app.config`.
+`maintenance.py`/`health_checks.py` stay flat, outside any subpackage —
+a flat module has no resource-specific code and no state of its own
+beyond what it's explicitly passed or reads from `app.config`.
 
 - `config.py` — settings, read from environment variables; see
   "Configuration" and "MODE" below.
@@ -57,15 +61,21 @@ passed or reads from `app.config`.
   (`python -m app.maintenance`) by a host/k8s `CronJob`, never from
   `main.py` — see "Example CRUD resource: Hero" below and its own module
   docstring.
+- `health_checks.py` — this app's concrete `HealthCheck`s (Postgres,
+  Redis, S3, OIDC) built on `health.base`, and `get_health_registry`,
+  the `lru_cache`d factory (matching `app.config.get_settings`'s
+  pattern) that wires them into a `health.registry.HealthRegistry`;
+  `main.py` passes it to `health.router.build_health_router` to mount
+  `/health`.
 
 ## Layering
 
 Import order between all of the above is strict and one-directional —
-lower layers never import from higher ones (`config` → `rate_limit` →
-`telemetry` → `problem_details` → `oidc` → `models` → `maintenance` →
-`views` → `health` → `web_components` → `xml_codec` → `http_headers` →
-`controllers` → `crud_1` → `main`) — enforced by `import-linter`'s
-`"app layers"` contract in `../../pyproject.toml`'s
+lower layers never import from higher ones (`config` → `health_checks`
+→ `rate_limit` → `telemetry` → `problem_details` → `oidc` → `models` →
+`maintenance` → `views` → `web_components` → `xml_codec` →
+`http_headers` → `controllers` → `crud_1` → `main`) — enforced by
+`import-linter`'s `"app layers"` contract in `../../pyproject.toml`'s
 `[tool.importlinter]`, run via `uv run lint-imports` (wired into
 `../../.pre-commit-config.yaml`'s manual/pre-push stage, same as mypy).
 A new subpackage or flat module gets added to that `layers` list at the
@@ -73,7 +83,12 @@ point matching its real dependencies, not appended blindly to one end --
 `maintenance` sits directly above `models` (the only layer it imports from,
 besides `config`/`oidc`/`problem_details`/`telemetry`/`rate_limit` below
 that) since nothing else in `app/` imports it back (it's invoked externally,
-`python -m app.maintenance`, never from `main.py`).
+`python -m app.maintenance`, never from `main.py`); `health_checks` sits
+directly above `config` for the same reason -- its only dependency
+within `app/` is `config` (its other imports, `crud.models.base`'s
+engine and `health.base`/`health.registry`, are outside this container
+entirely) and nothing else in `app/` imports it back (only `main.py`
+does, to build the health router).
 `crud_1` sits between `controllers` and `main` specifically because a
 resource package imports `../crud/controllers/crud_router.py`'s
 factories to build its own routers, and `main` imports the finished
@@ -86,14 +101,19 @@ own `README.md`; `app/`'s resource-specific modules (`models/hero.py`,
 but nothing in `crud/` ever imports back from `app/`'s resource-specific
 modules (only from its flat `config`/`rate_limit`/`web_components`/
 `xml_codec` modules, which sit below everything resource-specific
-anyway).
+anyway). The sibling `../health/` package has its own separate
+`"health layers"` contract too, documented in its own `README.md`;
+`health_checks.py` imports from it freely (`health.base`/
+`health.registry`), and `main.py` builds the finished router by calling
+`health.router.build_health_router(get_health_registry)` the same way
+it imports `crud_1`'s finished router.
 
 ```mermaid
 graph LR
-    config --> rate_limit --> telemetry --> problem_details --> oidc
-    oidc --> models --> maintenance --> views --> health --> web_components
-    web_components --> xml_codec --> http_headers --> controllers
-    controllers --> crud_1 --> main
+    config --> health_checks --> rate_limit --> telemetry
+    telemetry --> problem_details --> oidc --> models --> maintenance
+    maintenance --> views --> web_components --> xml_codec
+    xml_codec --> http_headers --> controllers --> crud_1 --> main
 ```
 
 An arrow means "may import from" — each module may depend on anything
@@ -199,7 +219,7 @@ not a per-request one.
 - `mock`: every external service is replaced with a local fake, so the
   app needs zero containers to boot — `repositories.memory.
   InMemoryRepository` instead of `SQLAlchemyRepository` (Alembic
-  migrations are skipped entirely), `health.checks.MockHealthCheck`
+  migrations are skipped entirely), `health_checks.MockHealthCheck`
   instead of the real per-service checks, and `oidc.
   decode_bearer_token` skips JWKS/network and trusts the token's claims
   as-is. `POST /mock/token` (`controllers.mock`, mounted only in this
@@ -439,8 +459,11 @@ generated-JS shape each takes):
 - Add auth to a new route with `Depends(get_current_claims)` from
   `oidc.py` — a route with no such dependency is public.
 - Register a new external service's health check with
-  `HealthRegistry.register` in `health/registry.py`'s
-  `get_health_registry` — see `health/README.md`.
+  `HealthRegistry.register` in `health_checks.py`'s
+  `get_health_registry` — catch that service's own client library's
+  narrow exception type (e.g. `RedisError`, not bare `Exception`) so a
+  real bug elsewhere doesn't get silently reported as "service
+  unhealthy".
 
 ## Don't
 

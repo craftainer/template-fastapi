@@ -18,7 +18,7 @@ live in `../crud/models/` instead — see its own `README.md`.
 
 ## Don't
 
-- Import from `app.views`, `app.controllers`, or `app.health` — see
+- Import from `app.views`, `app.controllers`, or `app.health_checks` — see
   `../README.md`'s "Layering" section. Importing from `crud.*` is fine —
   a resource's model builds on the generic base/mixins there.
 - Add generic, resource-agnostic model code here — that belongs in

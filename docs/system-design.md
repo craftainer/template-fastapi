@@ -42,8 +42,8 @@ contract:
 
 ```mermaid
 graph LR
-    config --> telemetry --> problem_details --> oidc --> models
-    models --> views --> health --> web_components --> xml_codec
+    config --> health_checks --> telemetry --> problem_details --> oidc
+    oidc --> models --> views --> web_components --> xml_codec
     xml_codec --> http_headers --> controllers --> crud_1 --> main
 ```
 
@@ -51,15 +51,25 @@ graph LR
   on `crud.models`.
 - `views/` — a resource's own Pydantic schemas, built on `crud.views`.
 - `controllers/` — FastAPI routers with no resource of their own
-  (health/audit/mock).
+  (audit/mock).
 - `crud_1/` — one subpackage per resource, combining its router (built
   from `crud.controllers`'s factories) into the single router `main.py`
   mounts.
-- `health/` — the health check interface and registry, run by
-  `/health/ready`.
+
+The generic health check framework (interface, registry, and router
+factory backing `/health/live`/`/health/ready`) lives in its own
+sibling `src/health/` package, laid out the same MVC-ish way under its
+own `"health layers"` contract — no external dependency beyond FastAPI
+itself. `app/health_checks.py`'s concrete, service-specific checks
+(Postgres, Redis, S3, OIDC) build on that interface and wire into a
+registry `main.py` passes to `health.router.build_health_router` the
+same way it uses `crud_1`'s finished router — see
+[src/health/README.md](../src/health/README.md) and
+[src/app/README.md](../src/app/README.md).
 
 `config.py`/`telemetry.py`/`problem_details.py`/`oidc.py`/
-`http_headers.py`/`xml_codec.py`/`web_components.py`/`main.py` stay flat,
+`http_headers.py`/`xml_codec.py`/`web_components.py`/`health_checks.py`/
+`main.py` stay flat,
 outside any subpackage. See
 [src/app/README.md](../src/app/README.md) for what each one does, and
 [src/crud/README.md](../src/crud/README.md)'s own "Layering" section for

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # dev: debugger enabled (see app.main). mock: every external service
     # (Postgres, Redis, S3, OIDC) is replaced with a local/in-memory fake --
-    # see app.crud_1.heroes, app.health.registry, app.oidc. production:
+    # see app.crud_1.heroes, app.health_checks, app.oidc. production:
     # debugger disabled. Defaults to "dev" to match this template's other
     # defaults (localhost hosts, etc.), which assume local/devcontainer use
     # unless overridden -- see the Dockerfile's runner stage for the

@@ -27,7 +27,7 @@ in `../crud/views/` instead — see its own `README.md`.
 
 ## Don't
 
-- Import from `app.models`, `app.controllers`, or `app.health` — see
+- Import from `app.models`, `app.controllers`, or `app.health_checks` — see
   `../README.md`'s "Layering" section. Importing from `crud.*` is fine —
   a resource's view builds on `crud.views.base.ORMView` and friends.
   A view converts to/from an ORM instance structurally
