@@ -6,19 +6,19 @@ ARG PYTHON_VERSION=3.14.7
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.10
+ARG UV_VERSION=0.12.13
 
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.263
+ARG CLAUDE_CODE_VERSION=2.1.270
 
 # renovate: datasource=pypi depName=pyright
-ARG PYRIGHT_VERSION=1.1.411
+ARG PYRIGHT_VERSION=1.1.414
 
 # renovate: datasource=github-releases depName=edouard-claude/snip
-ARG SNIP_VERSION=0.25.1
+ARG SNIP_VERSION=0.25.2
 
 # renovate: datasource=github-releases depName=rustfs/cli
-ARG RUSTFS_CLI_VERSION=0.1.34
+ARG RUSTFS_CLI_VERSION=0.1.35
 
 # Node.js is infrastructure tooling only (npx, for the clear-thought MCP
 # server in .mcp.json), not part of this app's own runtime -- installed
@@ -26,7 +26,7 @@ ARG RUSTFS_CLI_VERSION=0.1.34
 # devcontainer feature, so it's pinned the same way, in the same place, as
 # every other tool in the develop stage.
 # renovate: datasource=node-version depName=node
-ARG NODE_VERSION=24.20.0
+ARG NODE_VERSION=24.21.0
 
 ARG APP_UID=1000
 
