@@ -21,7 +21,7 @@ from types import FrameType
 from selenium.webdriver import ChromeOptions, Remote
 
 # renovate: datasource=npm depName=@playwright/mcp
-_PLAYWRIGHT_MCP_VERSION = "0.0.80"
+_PLAYWRIGHT_MCP_VERSION = "0.0.82"
 
 
 def main() -> None:

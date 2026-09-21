@@ -35,7 +35,7 @@ jobs:
         run: echo "COMPOSE_PROJECT_NAME=ci-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.3.0
+        uses: docker/setup-buildx-action@v4.4.1
 
       # Warms the Buildx layer cache for the devcontainer image (the
       # `develop` stage below) before devcontainers/ci builds it via
@@ -44,7 +44,7 @@ jobs:
       # no push/load since this step only needs to populate the cache, not
       # produce a usable image. See docs/plans/2026-09-speed-up-checks-devcontainer-build.md.
       - name: Warm devcontainer image build cache
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@v7.4.0
         with:
           context: .
           target: develop

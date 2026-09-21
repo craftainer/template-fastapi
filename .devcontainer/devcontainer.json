@@ -7,7 +7,7 @@
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:4.1.0": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4.1.1": {
       "moby": false,
       "dockerDashComposeVersion": "v2"
     }
