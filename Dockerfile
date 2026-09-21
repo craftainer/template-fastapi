@@ -6,10 +6,10 @@ ARG PYTHON_VERSION=3.14.7
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.13
+ARG UV_VERSION=0.12.17
 
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.270
+ARG CLAUDE_CODE_VERSION=2.1.278
 
 # renovate: datasource=pypi depName=pyright
 ARG PYRIGHT_VERSION=1.1.414
@@ -18,7 +18,7 @@ ARG PYRIGHT_VERSION=1.1.414
 ARG SNIP_VERSION=0.25.2
 
 # renovate: datasource=github-releases depName=rustfs/cli
-ARG RUSTFS_CLI_VERSION=0.1.35
+ARG RUSTFS_CLI_VERSION=0.1.36
 
 # Node.js is infrastructure tooling only (npx, for the clear-thought MCP
 # server in .mcp.json), not part of this app's own runtime -- installed
