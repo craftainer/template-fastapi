@@ -223,6 +223,19 @@ therefore reaches a template-fastapi instance in two hops: a sync PR from
 template-base into template-fastapi, then a sync PR from template-fastapi
 into the instance.
 
+An instance created from template-fastapi before `v0.0.1-alpha.1` can't
+take its first sync unaided: its `template-sync.yml` pushes the sync
+branch with the default `GITHUB_TOKEN`, which GitHub refuses for any
+change under `.github/workflows/`, and that sync always includes some —
+among them the fixed `template-sync.yml` itself. Upgrade such an
+instance by hand, once:
+
+1. Copy template-fastapi's current `.github/workflows/template-sync.yml`
+   over the instance's own, and merge that change.
+2. Add a `TEMPLATE_SYNC_TOKEN` secret with workflow write access (see
+   `.github/workflows/README.md`'s "Template sync").
+3. Run Template sync again; from then on it syncs unaided.
+
 ## Versions and config
 
 Every version and config value is defined in exactly one place; nothing
