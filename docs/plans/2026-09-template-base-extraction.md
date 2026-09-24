@@ -2,7 +2,80 @@
 
 ## Status
 
-Draft
+In progress — §3 is done (`craftainer/template-base` exists, tagged
+`v1.0.0` and `v1.1.0`). §4/§5 are broken into the sub-plans under
+"Execution" below.
+
+Sub-plans were last checked against template-base `119d2d7` (= `v1.1.0`,
+2026-09-24). If template-base `main` has moved past that, re-check the
+sub-plans against the new commits before executing, starting with the
+tag numbers and the manifest tiers.
+
+## Execution
+
+Sub-plans, each executable on its own. They're written so a smaller
+model can carry them out without making design decisions. Order and
+parallelism:
+
+| # | Plan | Repo | Depends on |
+|---|---|---|---|
+| 1 | [`2026-09-artifact-actions-pin.md`](2026-09-artifact-actions-pin.md) | template-fastapi | — |
+| 2 | [`2026-09-base-hardened-moderation.md`](2026-09-base-hardened-moderation.md) | template-base | 1 |
+| 3 | [`2026-09-base-extension-points.md`](2026-09-base-extension-points.md) | template-base | 2 |
+| 4 | [`2026-09-base-release-matrix.md`](2026-09-base-release-matrix.md) (ends by tagging `v1.2.0`) | template-base | 3 |
+| 5 | [`2026-09-fastapi-instance-layer.md`](2026-09-fastapi-instance-layer.md) | template-fastapi | — (run in parallel with 2–4) |
+| 6 | [`2026-09-fastapi-bootstrap-base.md`](2026-09-fastapi-bootstrap-base.md) | template-fastapi | 4 and 5 |
+| 7 | [`2026-09-template-chain-verification.md`](2026-09-template-chain-verification.md) | all | 6 |
+
+Plans 2–4 all edit template-base's `docs/TEMPLATE.md` and manifest, so
+they stay sequential. Plan 5 touches only files the others don't.
+
+**Decisions this execution rests on.** These were made with the user on
+2026-09-24 and supersede §2's tier classification where the two differ:
+- *Extension points over `merge`.* Base-owned files stay `replace` and
+  expose hooks that an instance fills with files it owns:
+  - `scripts/develop.d/` and `scripts/post-create.d/`;
+  - `.devcontainer/compose.instance.yml`;
+  - a separate `app.Dockerfile` for the runtime image.
+
+  Only files with no include mechanism of their own go to `merge`: JSON
+  configs, `.pre-commit-config.yaml` (prek has no include), and docs.
+- *Arch matrix in base's release contract.* The contract gains
+  `release-arches`, a per-arch `build/sbom/release-assets/publish`,
+  `release-check` (inside the devcontainer) and `finalize`. This keeps
+  template-fastapi's native amd64/arm64 release and coverage report.
+- *`.github/template-sync-manifest.yml` is `merge` in base, not
+  `replace`.* Base marks it `replace`, so the first sync would
+  overwrite template-fastapi's own manifest and break every downstream
+  instance of template-fastapi. It isn't `ignore` either: since
+  `v1.1.0`, ordinary instances list their own files in the
+  instance-owned `.github/template-sync-manifest.local.yml`, and they
+  need to keep receiving base's manifest updates.
+  - Ordinary instances never edit the manifest itself, so a `merge` is
+    always clean for them.
+  - A repo that is itself a template, like template-fastapi, keeps its
+    own classification and resolves base's additions by hand.
+- *template-fastapi's hardened moderation workflows go to base first.*
+  Base still had the version where Claude runs with write access.
+
+**Rules for whoever executes a sub-plan:**
+- Follow that repo's `CLAUDE.md`, and read the `README.md`s on the path
+  to each file you touch.
+- The plans give exact file names, patterns and commands. Don't rename
+  or redesign anything. If what you find doesn't match what a plan says
+  (a file missing, a diff bigger than described, a check behaving
+  differently), **stop and report**. Don't improvise a fix.
+- Show the actual output of every "Verify" command. Anything that
+  can't be verified from inside the container (devcontainer rebuilds,
+  repo settings, workflow runs needing secrets): say so and hand it to
+  the user. Never claim it passed.
+- Update the sub-plan's Status as you go.
+
+**Finish.** Once plan 7 passes:
+- Fold the final release contract and the extension-point table into an
+  ADR under `../adrs/` (a significant, costly-to-reverse decision).
+- Then delete this plan and all seven sub-plans, per `README.md` in
+  this directory.
 
 ## Goal
 
