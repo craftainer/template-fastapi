@@ -25,7 +25,7 @@
     {
       "label": "Prek: run all hooks (manual stage)",
       "type": "shell",
-      "command": "uv run prek run --all-files --hook-stage manual",
+      "command": "prek run --all-files --hook-stage manual",
       "group": "build",
       "problemMatcher": []
     }

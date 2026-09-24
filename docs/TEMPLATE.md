@@ -107,7 +107,7 @@ dependencies, GitHub Actions, and every Dockerfile/compose image tag. Run
 everything at once with:
 
 ```bash
-uv run prek run --all-files --hook-stage manual
+prek run --all-files --hook-stage manual
 ```
 
 If a rule produces a false positive, silence that one line with a

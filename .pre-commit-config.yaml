@@ -4,7 +4,7 @@
 #
 # Fast, basic checks run on every commit. Slower, extensive checks run on
 # push. Every hook also carries the "manual" stage, so
-# `uv run prek run --hook-stage manual --all-files` runs everything at
+# `prek run --hook-stage manual --all-files` runs everything at
 # once regardless of which git hook would normally trigger it.
 default_install_hook_types:
   - pre-commit
