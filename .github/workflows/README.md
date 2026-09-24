@@ -209,9 +209,13 @@ variables/secrets, all optional:
   no-ops except during the first cron-scheduled week of the month.
 - `TEMPLATE_SYNC_CHANNEL` (variable, `stable` | `alpha` | `beta` | `rc`,
   default `stable`) — which tag channel to sync to.
-- `TEMPLATE_SYNC_TOKEN` (secret) — a PAT with read access to the
-  template repository, if it's private. Falls back to the default
-  `GITHUB_TOKEN` (works for a public template).
+- `TEMPLATE_SYNC_TOKEN` (secret) — a PAT used to read the template
+  repository and to push the sync branch / open the sync PR. It needs
+  the `workflow` scope (classic PAT) or **Workflows: read/write**
+  (fine-grained), because the default `GITHUB_TOKEN` can't push
+  changes to `.github/workflows/`, and nearly every sync includes some.
+  Falls back to `GITHUB_TOKEN`, which only works for a public template
+  *and* a sync that touches no workflow file.
 
 ## OCI registry
 
