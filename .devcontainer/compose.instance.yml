@@ -1,5 +1,5 @@
 # template-fastapi's instance-owned additions to template-base's
-# compose.yml (whose dev service is named `app`). Merged over it by
+# compose.yml (whose dev service is named `myapp`). Merged over it by
 # devcontainer.json's dockerComposeFile list.
 include:
   - ./stack/postgres/compose.yml
@@ -15,7 +15,7 @@ include:
 # postgres/rustfs values at runtime, and OIDC_* arrive from keycloak.env
 # already fully composed.
 services:
-  app:
+  myapp:
     env_file:
       - ./stack/postgres/postgres.env
       - ./stack/s3/s3.env

@@ -6,7 +6,10 @@
 # fragments -- see
 # .devcontainer/README.md's "Docker-in-Docker vs. the host's Docker".
 services:
-  app:
+  # Not `app`: Chrome HSTS-preloads the whole `.app` TLD, which also
+  # matches the bare hostname `app`, so a browser container (e.g. an
+  # instance's Selenium) would force http://app:<port> to HTTPS.
+  myapp:
     build:
       context: ..
       dockerfile: Dockerfile

@@ -26,7 +26,7 @@ exist immediately — no manual admin-console setup required.
 Unlike the other stack services, Keycloak's port is listed in
 `forwardPorts` in `.devcontainer/devcontainer.json` so you can reach the
 login and admin UI from your host browser at `http://localhost:8080`. Since
-Keycloak runs in a sibling container rather than the primary `app` one, that
+Keycloak runs in a sibling container rather than the primary `myapp` one, that
 entry must use the `"keycloak:8080"` (`serviceName:port`) form, not a bare
 `8080` — a bare port number only forwards from the primary container. That
 still isn't a compose `ports:` mapping — see the root README's "Don't" for

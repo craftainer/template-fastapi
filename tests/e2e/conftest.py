@@ -1,4 +1,4 @@
-"""E2E fixture overrides: point Playwright at the running app container,
+"""E2E fixture overrides: point Playwright at the running myapp container,
 and at a browser served by the selenium container instead of a local one.
 """
 
@@ -59,14 +59,14 @@ def app_mode(request: pytest.FixtureRequest) -> str:
 
 @pytest.fixture(scope="session")
 def base_url(app_mode: str) -> str:
-    """Return this mode's app base URL, overridable via E2E_BASE_URL for the dev leg only.
+    """Return this mode's myapp base URL, overridable via E2E_BASE_URL for the dev leg only.
 
     Mock's whole point is not depending on an externally-managed instance, so it
     always gets its own fixed port instead.
     """
     if app_mode == "dev" and "E2E_BASE_URL" in os.environ:
         return os.environ["E2E_BASE_URL"]
-    return f"http://app:{_MODE_PORTS[app_mode]}"
+    return f"http://myapp:{_MODE_PORTS[app_mode]}"
 
 
 @pytest.fixture(scope="session")

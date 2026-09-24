@@ -3,11 +3,11 @@
 - `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
   as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
   (features, mounts, forwarded ports, editor settings).
-- `compose.yml` — the dev service (`app`), built from the top-level
+- `compose.yml` — the dev service (`myapp`), built from the top-level
   `Dockerfile`'s `develop` stage. Owned by template-base.
 - `compose.instance.yml` — template-fastapi's layer on top of
   `compose.yml`: the `include:` list pulling in every `stack/` fragment,
-  plus `services.app`'s stack credentials (`env_file:`), `depends_on`
+  plus `services.myapp`'s stack credentials (`env_file:`), `depends_on`
   healthchecks, and environment. See `docs/TEMPLATE.md`'s "Instance
   extension points".
 - `stack/` — one subdirectory per supporting service (Postgres,
@@ -17,7 +17,7 @@
 
 This devcontainer has its own isolated Docker-in-Docker daemon (the
 `docker-in-docker` feature in `devcontainer.json`). It is **not** the
-same daemon running this project's own compose stack (`app`, `postgres`,
+same daemon running this project's own compose stack (`myapp`, `postgres`,
 the rest of `stack/`) — that stack is started by whatever invoked
 "Reopen in Container" against the *host's* Docker. So `docker`/`docker
 compose` run from inside the devcontainer can build and run throwaway
