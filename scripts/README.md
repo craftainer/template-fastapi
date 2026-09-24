@@ -1,22 +1,33 @@
 # scripts/
 
-Setup logic for each `Dockerfile` RUN step — every RUN in the Dockerfile
-calls exactly one of these, never a binary directly:
+Setup logic for each `Dockerfile` / `app.Dockerfile` RUN step — every RUN
+calls one of these (or loops over a hook directory below), never a binary
+directly:
 
-- `develop.sh` — the `develop` stage: apt packages, `uv`, the Claude Code
-  CLI, and `pyright` (for the `pyright-lsp` plugin — see
-  `.claude/README.md`).
-- `builder.sh` — the `builder` stage's tooling setup (apt packages, `uv`).
+- `develop.sh` — the Dockerfile's `develop`-stage setup: installs `prek`,
+  the Claude Code CLI, and `snip`, the only tooling this template requires
+  regardless of instance language. An instance adds its own language
+  runtime/tooling install on top, either by extending this script or
+  copying its shape into a second one invoked from the instance's own
+  `Dockerfile` layer. Prefer the hook below over either.
+- `post-create.sh` — the devcontainer's `postCreateCommand`: git
+  `safe.directory`, `prek install`, then every `post-create.d/*.sh`.
+- `develop.d/`, `post-create.d/` — instance hook directories; see
+  `docs/TEMPLATE.md`'s "Instance extension points". template-fastapi's
+  own hooks:
+  - `develop.d/NN-*.sh` — FastAPI-specific extra develop tooling (apt
+    clients, pyright, rustfs CLI, `kcadm`), run after `develop.sh`; each
+    pins its own version with a `# renovate:` comment.
+  - `post-create.d/NN-*.sh` — devcontainer post-create steps (`uv sync`,
+    migrations).
+- `builder.sh` — `app.Dockerfile`'s `builder` stage tooling setup (apt
+  packages, `uv`).
 - `builder-sync-deps.sh` / `builder-sync-app.sh` — the `builder` stage's
   two `uv sync` steps, split so a source-only change doesn't invalidate
   the dependency-install layer.
-- `runner-setup.sh` — the `runner` stage's user/permission setup.
+- `runner-setup.sh` — `app.Dockerfile`'s `runner` stage user/permission
+  setup.
 - `runner.sh` — the `runner` stage's entrypoint (starts the app).
-- `develop.d/NN-*.sh` — FastAPI-specific extra develop tooling (apt
-  clients, pyright, rustfs CLI, `kcadm`), run after template-base's own
-  `develop.sh`; each pins its own version with a `# renovate:` comment.
-- `post-create.d/NN-*.sh` — devcontainer post-create steps (`uv sync`,
-  migrations).
 - `check-dockerfile-versions.sh` — pre-commit check that `Dockerfile` and
   `app.Dockerfile` agree on `PYTHON_VERSION`/`DEBIAN_VERSION`.
 
@@ -37,3 +48,6 @@ calls exactly one of these, never a binary directly:
   script here instead.
 - Install tooling a different stage needs — `runner.sh` in particular
   should stay a plain entrypoint, not a setup script.
+- Add a language runtime or stack-specific tool to `develop.sh` — that
+  belongs in the instance's own layer (`develop.d/`), not the base
+  template's.

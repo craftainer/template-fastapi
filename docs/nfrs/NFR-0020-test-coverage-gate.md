@@ -17,5 +17,5 @@ Developers; QA/CI. Configured in `pyproject.toml`; documented in
 
 ## Verification
 
-CI runs `uv run prek run --all-files --hook-stage manual`, which
+CI runs `prek run --all-files --hook-stage manual`, which
 fails the build if either coverage run drops below 95%.

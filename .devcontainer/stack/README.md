@@ -40,9 +40,9 @@ declares a `ports:` mapping or a `networks:` block:
   exactly one place instead of scattered `ports:` blocks.
 
 Every stack fragment's service also defines a `healthcheck:`, and
-`../compose.yml`'s `api` service lists a matching `depends_on:
+`../compose.instance.yml`'s `myapp` service lists a matching `depends_on:
 <service>: condition: service_healthy` entry for it. Compose won't start
-`api` until every dependency reports healthy, so `docker compose up`
+`myapp` until every dependency reports healthy, so `docker compose up`
 (and therefore `devcontainers/ci`'s `runCmd`, and a fresh
 `postCreateCommand`) never runs a check or a test against a stack
 service that's still starting — e.g. Keycloak, a JVM app doing
@@ -62,8 +62,8 @@ inside that service's own subdirectory here — the single source of
 truth for that service's values, tracked in git since these are
 dev-only defaults, not real secrets (each service's `README.md` says
 so). That fragment's own `compose.yml` loads its file via `env_file:`
-directly into the service's container. Where `api` needs those same
-values (`../compose.yml`), it lists the same per-service files under its
+directly into the service's container. Where `myapp` needs those same
+values (`../compose.instance.yml`), it lists the same per-service files under its
 own `env_file:` — never re-pins the values a second time; see
 `../../src/app/README.md`'s "Configuration" section for how `app.config`
 assembles them into the settings the app itself reads.
@@ -74,8 +74,8 @@ assembles them into the settings the app itself reads.
   `compose.yml` + `README.md` pattern, plus a `<service>.env` if it has
   credentials or other config values to hold.
 - Give the service a `healthcheck:`, and add a matching `depends_on:
-  <service>: condition: service_healthy` entry to `api` in
-  `../compose.yml` — see "Devcontainer stack pattern" above for why, and
+  <service>: condition: service_healthy` entry to `myapp` in
+  `../compose.instance.yml` — see "Devcontainer stack pattern" above for why, and
   verify the healthcheck command against the real pinned image before
   trusting it (don't assume `curl`/`wget` are present).
 - Let it join the default network compose generates for this project —

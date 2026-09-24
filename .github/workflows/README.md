@@ -13,29 +13,19 @@
   demand. Runs as the same two-leg `amd64`/`arm64` matrix as
   `checks.yml` — this is the check that would actually catch an
   arch-specific runtime break (e.g. a C-extension dependency missing an
-  arm64 wheel), since `checks.yml`'s `pytest` run uses `MODE=mock`
+  arm64 wheel), since `checks.yml`'s test run uses `MODE=mock`
   in-process fakes for some paths rather than the built image.
 - `release.yml` — manually triggered. Takes a release channel
   (`alpha`/`beta`/`rc`/`full`) and a SemVer 2 bump
   (`major`/`minor`/`patch`/`none`), computes the next tag via
-  `../scripts/compute_next_version.py`, builds the `runner` stage of the
-  root `Dockerfile` natively for both `amd64` and `arm64` (no QEMU —
-  see "Architecture matrix" below), and creates a GitHub release with
-  auto-generated notes and both images attached as arch-suffixed OCI
-  tarballs (`template-fastapi-<version>-amd64.tar` /
-  `-arm64.tar`), one SPDX-JSON SBOM per arch (via
-  `anchore/sbom-action`/Syft), and a single `coverage.xml` report from
-  running the test suite against the released commit. Each built image
-  (both tarballs and, if configured, the registry push) carries
-  standard `org.opencontainers.image.*` labels via
-  `docker/metadata-action`, plus two custom
-  `io.github.<repository_owner>.*` labels pointing at that arch's SBOM
-  and the shared coverage-report release asset, so the image is
-  self-describing. If an OCI registry is configured (see "OCI registry"
-  below), each arch is pushed under its own `<version>-<arch>` tag and
-  then combined into one real multi-arch manifest list at the plain
-  `<version>` tag via `docker buildx imagetools create`, so `docker pull
-  template-fastapi:<version>` resolves to the right arch automatically.
+  `../scripts/compute_next_version.py`, then drives the instance's
+  Makefile release contract (see `../../docs/TEMPLATE.md`'s "Release: a
+  Makefile contract"): `make release-arches` picks the arch matrix;
+  `build`/`sbom`/`release-assets`/`publish` run once per arch, natively
+  (no QEMU — see "Architecture matrix" below), each leg uploading its
+  `dist/` as `release-assets-<arch>`; then one job downloads them all,
+  runs `make release-check` inside the devcontainer and `make finalize`
+  on the host, and creates a GitHub release with everything in `dist/`.
 - `moderate-bug-triage.yml` / `moderate-bug-fix.yml` /
   `moderate-bug-fix-apply.yml` / `moderate-feature-triage.yml` /
   `moderate-feature-build.yml` / `moderate-feature-build-apply.yml` /
@@ -82,7 +72,8 @@ verified end-to-end on arm64 hardware on 2026-09-06.
 ## Issue moderation
 
 `moderate-bug-triage.yml`, `moderate-bug-fix.yml`,
-`moderate-feature-triage.yml`, `moderate-feature-build.yml`, and
+`moderate-bug-fix-apply.yml`, `moderate-feature-triage.yml`,
+`moderate-feature-build.yml`, `moderate-feature-build-apply.yml`, and
 `moderate-cleanup.yml` run the `claude` CLI as an issue moderator: on a
 bug report, it verifies the report is actionable, reproduces it as a
 failing test on a branch, and asks the reporter to confirm before a
@@ -186,6 +177,14 @@ runaway prompt fails closed instead of burning CI/API budget; the actual
 spend cap lives in the Anthropic Console (a dedicated workspace/key with
 a monthly limit), since `claude` itself has no such flag.
 
+**Extra tools.** The read-only Claude jobs are limited to `git`, `gh`,
+file tools and `prek run`. An instance that needs Claude to run more
+(e.g. a targeted repro) sets the optional `MODERATION_EXTRA_TOOLS`
+repository variable to extra comma-separated Claude Code `--allowedTools`
+entries, e.g. `Bash(uv run pytest *)`; it's appended to each read-only
+job's tool list and never applies to the `-apply` workflows, which don't
+run Claude.
+
 A single `moderate-issue-<number>` `concurrency:` group, shared across
 the two triage workflows, the two worker (fix/build) workflows, and
 cleanup, serializes every stage against the same issue — a burst of
@@ -248,6 +247,20 @@ the registry push) carry the same label set, computed once by
   spec's own keys) and derived from `github.repository_owner` alone, so
   it's one stable prefix per org across every repo/template instance
   that org owns, rather than a per-repo namespace to look up each time.
+
+## Release variables and secrets
+
+`release.yml` passes these to the Makefile targets as environment
+variables of the same name; unset ones are empty, and a target should skip
+cleanly when the registry isn't configured.
+
+- `OCI_REGISTRY` (variable) — registry host (e.g. `ghcr.io`).
+- `OCI_IMAGE_NAME` (variable, optional) — image path within the registry.
+- `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets) —
+  registry credentials.
+- `CI_RUNNER_AMD64` / `CI_RUNNER_ARM64` (variables, optional) — runner
+  labels for each arch leg, defaulting to `ubuntu-24.04` /
+  `ubuntu-24.04-arm`.
 
 ## Do
 

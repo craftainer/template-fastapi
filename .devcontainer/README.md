@@ -1,23 +1,23 @@
 # .devcontainer/
 
-- `devcontainer.json` — references `compose.yml` as the devcontainer's
-  sole `dockerComposeFile`, and configures the devcontainer itself
-  (features, forwarded ports, editor settings).
-- `compose.yml` — the app service (`api`), built from the top-level
-  `Dockerfile`'s `develop` stage, and an `include:` list that pulls in
-  every supporting service's own compose fragment below.
+- `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
+  as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
+  (features, mounts, forwarded ports, editor settings).
+- `compose.yml` — the dev service (`myapp`), built from the top-level
+  `Dockerfile`'s `develop` stage. Owned by template-base.
+- `compose.instance.yml` — template-fastapi's layer on top of
+  `compose.yml`: the `include:` list pulling in every `stack/` fragment,
+  plus `services.myapp`'s stack credentials (`env_file:`), `depends_on`
+  healthchecks, and environment. See `docs/TEMPLATE.md`'s "Instance
+  extension points".
 - `stack/` — one subdirectory per supporting service (Postgres,
-  RustFS, Redis, Keycloak, Selenium); see its own `README.md`.
-- `.env` — credential/config values shared between `compose.yml` and
-  `stack/*/compose.yml` via Compose's own variable interpolation
-  (`${VAR}`) — not an application dotenv; see the file's own header
-  comment and `stack/README.md`'s "Configuration" section.
+  RustFS, Redis, MQTT, Keycloak, Selenium); see its own `README.md`.
 
 ## Docker-in-Docker vs. the host's Docker
 
 This devcontainer has its own isolated Docker-in-Docker daemon (the
 `docker-in-docker` feature in `devcontainer.json`). It is **not** the
-same daemon running this project's own compose stack (`api`, `postgres`,
+same daemon running this project's own compose stack (`myapp`, `postgres`,
 the rest of `stack/`) — that stack is started by whatever invoked
 "Reopen in Container" against the *host's* Docker. So `docker`/`docker
 compose` run from inside the devcontainer can build and run throwaway
@@ -115,7 +115,7 @@ process itself starts with anyway.
 
 ## Do
 
-- Add a new compose fragment's path to `compose.yml`'s own `include:`
+- Add a new compose fragment's path to `compose.instance.yml`'s `include:`
   list the same time you add the fragment — an unreferenced file starts
   nothing.
 - Keep service credentials and connection settings in the compose files'
@@ -126,7 +126,7 @@ process itself starts with anyway.
 - Write a bind-mount source path in a fragment under `stack/` as
   relative to that fragment's own directory, the same as if it were the
   only Compose file in play — see `stack/README.md`'s "Devcontainer stack
-  pattern" section for why. `compose.yml` itself is the exception: since
+  pattern" section for why. `compose.instance.yml` is the exception: since
   it reaches *into* a fragment's directory (its own `env_file:` list,
   `stack/postgres/postgres.env` and friends), those paths are written in
   — and so resolve against — this directory, and need the full

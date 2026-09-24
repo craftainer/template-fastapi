@@ -4,7 +4,7 @@
 
 ## Test plan
 
-<!-- How was this verified? e.g. ruff/mypy/pytest output, manual steps, screenshots -->
+<!-- How was this verified? e.g. check-suite output, manual steps, screenshots -->
 
 ## Additional context
 

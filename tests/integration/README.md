@@ -21,7 +21,7 @@ container and validates it through `app.oidc.decode_bearer_token`.
 - Assume these run outside the devcontainer/CI — they need the
   stack containers actually up.
 - Add readiness-polling for a stack service here — each service's own
-  `healthcheck:` plus `api`'s `depends_on: condition: service_healthy`
+  `healthcheck:` plus `myapp`'s `depends_on: condition: service_healthy`
   (see `../../.devcontainer/stack/README.md`'s "Devcontainer stack
   pattern" section) already
-  guarantees it's ready before `api`, and therefore this suite, starts.
+  guarantees it's ready before `myapp`, and therefore this suite, starts.

@@ -1,28 +1,22 @@
 #!/usr/bin/env bash
 # Sets up the `develop` stage on top of Microsoft's generic base
 # devcontainer image (which already provides the `vscode` user, git, sudo,
-# and curl); Python itself is installed below via `uv`, pinned to the same
-# exact version as the builder/runner stages.
+# and curl). Installs only the language-agnostic AI-assisted-workflow
+# tooling this template requires everywhere; an instance's own
+# scripts/develop.sh (or an addition to this one) installs its language
+# runtime and any stack-specific CLI on top -- see docs/TEMPLATE.md.
 set -euo pipefail
 
-python_version=$1
-uv_version=$2
-claude_code_version=$3
-pyright_version=$4
-snip_version=$5
-rustfs_cli_version=$6
-node_version=$7
+prek_version=$1
+claude_code_version=$2
+snip_version=$3
+uv_version=$4
+python_version=$5
+node_version=$6
 
+# xz-utils: Node's own release tarballs are .tar.xz.
 apt-get update
-# postgresql-client/redis-tools give psql/redis-cli for connecting to the
-# stack's postgres/redis services (see .devcontainer/stack/postgres and
-# .devcontainer/stack/redis's READMEs). Debian's own repo only carries one
-# version of each (currently newer than the pinned server images) -- same
-# as libpq-dev below, there's no exact-version pin available via apt; a
-# newer client talking to an older server is standard practice for both
-# tools. RustFS's own CLI (rc) isn't an apt package, so it's installed
-# separately below. xz-utils: Node's own release tarballs are .tar.xz.
-apt-get install -y --no-install-recommends libpq-dev postgresql-client redis-tools xz-utils
+apt-get install -y --no-install-recommends xz-utils
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
@@ -31,60 +25,26 @@ curl -LsSf "https://releases.astral.sh/github/uv/releases/download/${uv_version}
 ln -s /home/vscode/.local/bin/uv /usr/local/bin/uv
 ln -s /home/vscode/.local/bin/uvx /usr/local/bin/uvx
 
-# Installs the exact pinned CPython build (from python-build-standalone) --
-# UV_PYTHON in the Dockerfile's develop stage then pins `uv sync` and every
-# other uv invocation to it, so it matches the builder/runner stages' own
-# python:${PYTHON_VERSION}-slim base image exactly.
+# python3 isn't otherwise a dependency of this template -- it's
+# infrastructure tooling only: prek (like pre-commit) needs *some*
+# interpreter to build the venv for any "language: python" hook
+# (.pre-commit-config.yaml's pre-commit-hooks repo -- trailing-whitespace,
+# check-yaml, ...), and .github/scripts/*.py need one directly. uv is the
+# mechanism for an exact, checksum-verified build (python-build-standalone)
+# rather than an unpinned apt package; `uv python find` below resolves the
+# path so it can be symlinked to a plain, unversioned `python3` on PATH --
+# prek's own hook-venv creation looks for that directly, not via `uv run`.
 sudo -u vscode env HOME=/home/vscode /usr/local/bin/uv python install "$python_version"
+python_bin="$(sudo -u vscode env HOME=/home/vscode /usr/local/bin/uv python find "$python_version")"
+ln -s "$python_bin" /usr/local/bin/python3
+ln -s "$python_bin" /usr/local/bin/python
 
-curl -fsSL https://claude.ai/install.sh \
-    | sudo -u vscode env HOME=/home/vscode bash -s "$claude_code_version"
-ln -s /home/vscode/.local/bin/claude /usr/local/bin/claude
-
-# For the pyright-lsp Claude Code plugin — see .claude/README.md.
-sudo -u vscode env HOME=/home/vscode /usr/local/bin/uv tool install "pyright==${pyright_version}"
-ln -s /home/vscode/.local/bin/pyright /usr/local/bin/pyright
-ln -s /home/vscode/.local/bin/pyright-langserver /usr/local/bin/pyright-langserver
-
-# For the snip Claude Code PreToolUse hook — see .claude/README.md. Not on
-# PyPI/npm like the tools above, so fetched as a release tarball and
-# checksum-verified against the project's own published checksums.txt
-# instead of trusting a curl-pipe-to-sh installer.
-snip_arch="$(dpkg --print-architecture)"
-snip_asset="snip_${snip_version}_linux_${snip_arch}.tar.gz"
-snip_tmpdir="$(mktemp -d)"
-sudo chmod a+rwx "$snip_tmpdir"
-curl -LsSf -o "${snip_tmpdir}/${snip_asset}" \
-    "https://github.com/edouard-claude/snip/releases/download/v${snip_version}/${snip_asset}"
-curl -LsSf -o "${snip_tmpdir}/checksums.txt" \
-    "https://github.com/edouard-claude/snip/releases/download/v${snip_version}/checksums.txt"
-(cd "$snip_tmpdir" && grep " ${snip_asset}\$" checksums.txt | sha256sum -c -)
-tar -xzf "${snip_tmpdir}/${snip_asset}" -C "$snip_tmpdir" snip
-sudo -u vscode install -Dm755 "${snip_tmpdir}/snip" /home/vscode/.local/bin/snip
-rm -rf "$snip_tmpdir"
-ln -s /home/vscode/.local/bin/snip /usr/local/bin/snip
-
-# For connecting to the s3 stack service (RustFS) -- see
-# .devcontainer/stack/s3/README.md. Published as .deb/.rpm release assets
-# plus a SHA256SUMS file, not on apt/PyPI/npm, so fetched and
-# checksum-verified the same way as snip above.
-rustfs_cli_arch="$(dpkg --print-architecture)"
-rustfs_cli_asset="rustfs-cli_${rustfs_cli_version}_${rustfs_cli_arch}.deb"
-rustfs_cli_tmpdir="$(mktemp -d)"
-curl -LsSf -o "${rustfs_cli_tmpdir}/${rustfs_cli_asset}" \
-    "https://github.com/rustfs/cli/releases/download/v${rustfs_cli_version}/${rustfs_cli_asset}"
-curl -LsSf -o "${rustfs_cli_tmpdir}/SHA256SUMS" \
-    "https://github.com/rustfs/cli/releases/download/v${rustfs_cli_version}/SHA256SUMS"
-(cd "$rustfs_cli_tmpdir" && grep " ${rustfs_cli_asset}\$" SHA256SUMS | sha256sum -c -)
-apt-get install -y --no-install-recommends "${rustfs_cli_tmpdir}/${rustfs_cli_asset}"
-rm -rf "$rustfs_cli_tmpdir"
-
-# Node.js, infrastructure tooling only: the clear-thought MCP server in
-# ../.mcp.json is the only thing that needs npx. Installed directly from
-# nodejs.org's own release tarballs (checksum-verified against that
-# release's published SHASUMS256.txt) rather than a devcontainer feature,
-# so it's pinned the same way, in the same place, as every other tool in
-# this stage -- see the Dockerfile's NODE_VERSION ARG.
+# Node.js, likewise infrastructure tooling only: the clear-thought MCP
+# server in ../.mcp.json is the only thing that needs npx. Installed
+# directly from nodejs.org's own release tarballs (checksum-verified
+# against that release's published SHASUMS256.txt) rather than a
+# devcontainer feature, so every tool this stage installs is pinned the
+# same way, in the same place -- see the Dockerfile's NODE_VERSION ARG.
 node_dpkg_arch="$(dpkg --print-architecture)"
 case "$node_dpkg_arch" in
     amd64) node_arch=x64 ;;
@@ -108,44 +68,32 @@ ln -s "/usr/local/lib/nodejs/${node_asset}/bin/node" /usr/local/bin/node
 ln -s "/usr/local/lib/nodejs/${node_asset}/bin/npm" /usr/local/bin/npm
 ln -s "/usr/local/lib/nodejs/${node_asset}/bin/npx" /usr/local/bin/npx
 
-# `kcadm` reaches the sibling `keycloak` container's Admin REST API from
-# the devcontainer -- see .devcontainer/stack/keycloak/README.md. A thin
-# curl wrapper rather than the official kcadm.sh, which ships only inside
-# Keycloak's full server distribution and needs a JVM neither this stage
-# nor the app otherwise requires.
-kcadm_tmpfile="$(mktemp)"
-sudo chmod a+rwx "$kcadm_tmpfile"
-cat > "$kcadm_tmpfile" <<'EOF'
-#!/usr/bin/env bash
-# Thin curl wrapper for the Keycloak Admin REST API. See
-# .devcontainer/stack/keycloak/README.md for usage and required env vars.
-set -euo pipefail
+# prek (https://prek.j178.dev/) is installed as a standalone tool, not a
+# project dependency of any particular language's package manager -- every
+# instance, regardless of language, is expected to run
+# `prek run --all-files --hook-stage manual` (see checks.yml).
+curl -LsSf "https://github.com/j178/prek/releases/download/v${prek_version}/prek-installer.sh" \
+    | sudo -u vscode env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 sh
+ln -s /home/vscode/.local/bin/prek /usr/local/bin/prek
 
-if [[ $# -lt 2 ]]; then
-    echo "Usage: kcadm METHOD PATH [JSON_BODY]" >&2
-    echo "Example: kcadm GET /admin/realms/template-fastapi/users" >&2
-    exit 1
-fi
+curl -fsSL https://claude.ai/install.sh \
+    | sudo -u vscode env HOME=/home/vscode bash -s "$claude_code_version"
+ln -s /home/vscode/.local/bin/claude /usr/local/bin/claude
 
-method=$1
-path=$2
-body=${3:-}
-base_url=${KEYCLOAK_URL:-http://keycloak:8080}
-
-token=$(curl -sf -X POST "${base_url}/realms/master/protocol/openid-connect/token" \
-    -d grant_type=password \
-    -d client_id=admin-cli \
-    -d "username=${KEYCLOAK_ADMIN}" \
-    -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
-    | python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')
-
-curl_args=(-sf -X "$method" "${base_url}${path}" \
-    -H "Authorization: Bearer ${token}" \
-    -H "Content-Type: application/json")
-[[ -n "$body" ]] && curl_args+=(-d "$body")
-
-curl "${curl_args[@]}" | { python3 -m json.tool 2>/dev/null || cat; }
-EOF
-sudo -u vscode install -Dm755 "$kcadm_tmpfile" /home/vscode/.local/bin/kcadm
-rm -f "$kcadm_tmpfile"
-ln -s /home/vscode/.local/bin/kcadm /usr/local/bin/kcadm
+# For the snip Claude Code PreToolUse hook -- see .claude/README.md. Not on
+# PyPI/npm, so fetched as a release tarball and checksum-verified against
+# the project's own published checksums.txt instead of trusting a
+# curl-pipe-to-sh installer.
+snip_arch="$(dpkg --print-architecture)"
+snip_asset="snip_${snip_version}_linux_${snip_arch}.tar.gz"
+snip_tmpdir="$(mktemp -d)"
+sudo chmod a+rwx "$snip_tmpdir"
+curl -LsSf -o "${snip_tmpdir}/${snip_asset}" \
+    "https://github.com/edouard-claude/snip/releases/download/v${snip_version}/${snip_asset}"
+curl -LsSf -o "${snip_tmpdir}/checksums.txt" \
+    "https://github.com/edouard-claude/snip/releases/download/v${snip_version}/checksums.txt"
+(cd "$snip_tmpdir" && grep " ${snip_asset}\$" checksums.txt | sha256sum -c -)
+tar -xzf "${snip_tmpdir}/${snip_asset}" -C "$snip_tmpdir" snip
+sudo -u vscode install -Dm755 "${snip_tmpdir}/snip" /home/vscode/.local/bin/snip
+rm -rf "$snip_tmpdir"
+ln -s /home/vscode/.local/bin/snip /usr/local/bin/snip

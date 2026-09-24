@@ -1,7 +1,10 @@
-# Manually-triggered SemVer release: computes the tag, builds the runner
-# image natively for amd64 and arm64, and publishes a GitHub release with
-# both images attached as downloadable OCI tarballs -- plus, if an OCI
-# registry is configured, a single multi-arch manifest list pushed there.
+# Manually-triggered SemVer release: computes the tag/version, then runs
+# the instance's own Makefile release contract (see docs/TEMPLATE.md's
+# "Release: a Makefile contract" section) and creates a GitHub release
+# with everything the instance's Makefile populated into dist/:
+# `release-arches` picks the arch matrix; `build`/`sbom`/`release-assets`/
+# `publish` run once per arch on a native runner; then `release-check`
+# runs inside the devcontainer and `finalize` on the host, once.
 name: Release
 
 on:
@@ -40,6 +43,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      arches: ${{ steps.arches.outputs.arches }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1
@@ -54,26 +58,27 @@ jobs:
             --release-type "${{ inputs.release_type }}" \
             >> "$GITHUB_OUTPUT"
 
-  # Builds the runner image once per architecture, natively (no QEMU --
-  # ubuntu-24.04-arm is a real arm64 runner, free on this public repo; see
-  # docs/plans/2026-09-multi-arch-ci.md's resolved "runner cost/speed" open
-  # question). Each leg produces its own OCI tarball/SBOM and, if an OCI
-  # registry is configured, pushes its own arch-suffixed tag -- the
-  # `manifest` job below combines those two registry tags into one
-  # multi-arch manifest list.
+      - name: Get release arches
+        id: arches
+        run: echo "arches=$(make -s release-arches)" >> "$GITHUB_OUTPUT"
+
   build:
     needs: version
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            # renovate: datasource=github-runners depName=ubuntu
-            runner: ${{ vars.CI_RUNNER_AMD64 || 'ubuntu-24.04' }}
-          - arch: arm64
-            # renovate: datasource=github-runners depName=ubuntu
-            runner: ${{ vars.CI_RUNNER_ARM64 || 'ubuntu-24.04-arm' }}
-    runs-on: ${{ matrix.runner }}
+        arch: ${{ fromJSON(needs.version.outputs.arches) }}
+    # renovate: datasource=github-runners depName=ubuntu
+    runs-on: ${{ matrix.arch == 'arm64' && (vars.CI_RUNNER_ARM64 || 'ubuntu-24.04-arm') || (vars.CI_RUNNER_AMD64 || 'ubuntu-24.04') }}
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+      RELEASE_ARCH: ${{ matrix.arch }}
+      OCI_REGISTRY: ${{ vars.OCI_REGISTRY }}
+      OCI_IMAGE_NAME: ${{ vars.OCI_IMAGE_NAME }}
+      OCI_REGISTRY_USERNAME: ${{ secrets.OCI_REGISTRY_USERNAME }}
+      OCI_REGISTRY_PASSWORD: ${{ secrets.OCI_REGISTRY_PASSWORD }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1
@@ -81,135 +86,34 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.4.1
 
-      # Predictable release-asset URLs, computed before the image build so
-      # they can be baked into the image's own labels below -- GitHub's
-      # download URL shape is deterministic and the tag is already known
-      # from the version job, so this doesn't need the release to exist yet.
-      - name: Compute SBOM/coverage asset URLs
-        id: asset_urls
-        run: |
-          base="https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag }}"
-          echo "sbom=$base/template-fastapi-${{ needs.version.outputs.version }}-${{ matrix.arch }}.spdx.json" >> "$GITHUB_OUTPUT"
-          echo "coverage=$base/coverage.xml" >> "$GITHUB_OUTPUT"
+      # Exposes ACTIONS_RUNTIME_TOKEN/ACTIONS_RESULTS_URL to `run:` steps so
+      # a `make build` can use `--cache-to type=gha`.
+      - name: Expose GitHub Actions runtime
+        uses: crazy-max/ghaction-github-runtime@v4.0.0
 
-      # Derives standard org.opencontainers.image.* labels from git/GitHub
-      # context, plus two custom pointer labels (namespaced under the repo
-      # owner, not the org.opencontainers.image.* namespace reserved for
-      # the spec's own keys) so the image is self-describing: anyone with
-      # just the image can find its SBOM and coverage report.
-      - name: Compute image labels
-        id: meta
-        uses: docker/metadata-action@v6.2.0
-        with:
-          images: template-fastapi
-          tags: type=raw,value=${{ needs.version.outputs.version }}
-          labels: |
-            io.github.${{ github.repository_owner }}.sbom=${{ steps.asset_urls.outputs.sbom }}
-            io.github.${{ github.repository_owner }}.coverage-report=${{ steps.asset_urls.outputs.coverage }}
+      # Each target is the instance's own responsibility -- see
+      # docs/TEMPLATE.md's "Release: a Makefile contract" section for what
+      # each one is expected to do. A repo with nothing to build/publish
+      # still implements each target, even as a no-op, so this workflow
+      # never needs an instance-specific branch.
+      - name: Build release artifact(s)
+        run: make build
 
-      # Attached to the GitHub release below regardless of whether an OCI
-      # registry is configured -- a portable, offline-loadable artifact
-      # (`docker load --input`) of exactly what was released, for this arch.
-      - name: Build runner image (OCI tarball)
-        uses: docker/build-push-action@v7.4.0
-        with:
-          context: .
-          file: app.Dockerfile
-          target: runner
-          platforms: linux/${{ matrix.arch }}
-          tags: template-fastapi:${{ needs.version.outputs.version }}-${{ matrix.arch }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-          outputs: type=oci,dest=template-fastapi-${{ needs.version.outputs.version }}-${{ matrix.arch }}.tar
+      - name: Generate SBOM(s)
+        run: make sbom
 
-      # Syft introspects the OCI tarball directly, so this doesn't need the
-      # image loaded into the local Docker daemon.
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0.24.2
-        with:
-          image: oci-archive:template-fastapi-${{ needs.version.outputs.version }}-${{ matrix.arch }}.tar
-          format: spdx-json
-          output-file: template-fastapi-${{ needs.version.outputs.version }}-${{ matrix.arch }}.spdx.json
+      - name: Populate release assets
+        run: make release-assets
+
+      - name: Publish
+        run: make publish
 
       - name: Upload release assets
         uses: actions/upload-artifact@v7.0.1
         with:
           name: release-assets-${{ matrix.arch }}
-          path: |
-            template-fastapi-${{ needs.version.outputs.version }}-${{ matrix.arch }}.tar
-            template-fastapi-${{ needs.version.outputs.version }}-${{ matrix.arch }}.spdx.json
-
-      # Optional: only runs when an OCI registry is actually configured (a
-      # repository variable), so this workflow works out of the box with no
-      # registry at all. Pushes this arch's own tag; `manifest` below merges
-      # both arches' tags into one multi-arch manifest list at the release
-      # version tag.
-      - name: Determine OCI image name
-        if: vars.OCI_REGISTRY != ''
-        id: oci_image
-        run: |
-          image_name="${{ vars.OCI_IMAGE_NAME }}"
-          if [ -z "$image_name" ]; then
-            image_name="${{ github.repository }}"
-          fi
-          echo "name=${image_name,,}" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to OCI registry
-        if: vars.OCI_REGISTRY != ''
-        uses: docker/login-action@v4.6.0
-        with:
-          registry: ${{ vars.OCI_REGISTRY }}
-          username: ${{ secrets.OCI_REGISTRY_USERNAME }}
-          password: ${{ secrets.OCI_REGISTRY_PASSWORD }}
-
-      - name: Push runner image to OCI registry
-        if: vars.OCI_REGISTRY != ''
-        uses: docker/build-push-action@v7.4.0
-        with:
-          context: .
-          file: app.Dockerfile
-          target: runner
-          platforms: linux/${{ matrix.arch }}
-          push: true
-          tags: ${{ vars.OCI_REGISTRY }}/${{ steps.oci_image.outputs.name }}:${{ needs.version.outputs.version }}-${{ matrix.arch }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-
-  # Combines the two arch-suffixed registry tags pushed above into one real
-  # multi-arch manifest list at the plain version tag -- `docker pull
-  # template-fastapi:1.2.3` then resolves to the right arch automatically.
-  # No-ops (skipped) when no OCI registry is configured.
-  manifest:
-    needs: [version, build]
-    if: vars.OCI_REGISTRY != ''
-    # renovate: datasource=github-runners depName=ubuntu
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
-    steps:
-      - name: Log in to OCI registry
-        uses: docker/login-action@v4.6.0
-        with:
-          registry: ${{ vars.OCI_REGISTRY }}
-          username: ${{ secrets.OCI_REGISTRY_USERNAME }}
-          password: ${{ secrets.OCI_REGISTRY_PASSWORD }}
-
-      - name: Determine OCI image name
-        id: oci_image
-        run: |
-          image_name="${{ vars.OCI_IMAGE_NAME }}"
-          if [ -z "$image_name" ]; then
-            image_name="${{ github.repository }}"
-          fi
-          echo "name=${image_name,,}" >> "$GITHUB_OUTPUT"
-
-      - name: Create multi-arch manifest list
-        run: |
-          base="${{ vars.OCI_REGISTRY }}/${{ steps.oci_image.outputs.name }}"
-          docker buildx imagetools create \
-            --tag "$base:${{ needs.version.outputs.version }}" \
-            "$base:${{ needs.version.outputs.version }}-amd64" \
-            "$base:${{ needs.version.outputs.version }}-arm64"
+          path: dist/
+          if-no-files-found: ignore
 
   release:
     needs: [version, build]
@@ -224,25 +128,29 @@ jobs:
         with:
           pattern: release-assets-*
           merge-multiple: true
+          path: dist/
 
-      # Unique per run, matching checks.yml's reasoning -- avoids colliding
-      # with a concurrent run on container/volume/network names.
+      # Unique per run so concurrent runs (two PRs, or a re-run) never
+      # collide on container/volume/network names, and so the teardown
+      # step below tears down exactly this run's stack and nothing else.
       - name: Set compose project name
         run: echo "COMPOSE_PROJECT_NAME=ci-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
 
-      # Runs the suite against the exact commit being released, producing a
-      # Cobertura-style coverage.xml to attach to the release -- checks.yml
-      # already gates every commit, but this ties a coverage report to the
-      # specific artifact rather than just the pipeline. Runs once (amd64
-      # is sufficient -- it's the same source tree, not an image rebuild).
-      - name: Run tests with coverage report
+      # Values come from this step's `env:`; the `env:` input below names
+      # which of them devcontainers/ci forwards into the container.
+      - name: Run release-check in the devcontainer
         uses: devcontainers/ci@v0.3
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
         with:
-          runCmd: uv run pytest --cov-report=xml
+          runCmd: make release-check
+          env: |
+            RELEASE_VERSION
+            RELEASE_TAG
 
-      # devcontainers/ci starts the compose stack but never tears it down
-      # -- see checks.yml's identical step for why this repo wants an
-      # explicit teardown regardless.
+      # devcontainers/ci starts the full compose stack but never tears it
+      # down -- see checks.yml's identical step.
       - name: Tear down devcontainer stack
         if: always()
         run: |
@@ -250,9 +158,21 @@ jobs:
             -p ${{ env.COMPOSE_PROJECT_NAME }} \
             down --volumes --remove-orphans
 
+      - name: Finalize
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+          OCI_REGISTRY: ${{ vars.OCI_REGISTRY }}
+          OCI_IMAGE_NAME: ${{ vars.OCI_IMAGE_NAME }}
+          OCI_REGISTRY_USERNAME: ${{ secrets.OCI_REGISTRY_USERNAME }}
+          OCI_REGISTRY_PASSWORD: ${{ secrets.OCI_REGISTRY_PASSWORD }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make finalize
+
       # Lets `gh` create the tag itself (from the checked-out commit) and
       # the release in one step, using GitHub's own "generate release
       # notes" changelog — the same one the web UI's button produces.
+      # Every file `make release-assets` left in dist/ is attached.
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -262,12 +182,10 @@ jobs:
           else
             PRERELEASE_FLAG=
           fi
+          shopt -s nullglob
+          assets=(dist/*)
           gh release create "${{ needs.version.outputs.tag }}" \
-            "template-fastapi-${{ needs.version.outputs.version }}-amd64.tar" \
-            "template-fastapi-${{ needs.version.outputs.version }}-amd64.spdx.json" \
-            "template-fastapi-${{ needs.version.outputs.version }}-arm64.tar" \
-            "template-fastapi-${{ needs.version.outputs.version }}-arm64.spdx.json" \
-            "coverage.xml" \
+            "${assets[@]}" \
             --title "${{ needs.version.outputs.tag }}" \
             --target "${{ github.sha }}" \
             --generate-notes \

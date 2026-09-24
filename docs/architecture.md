@@ -1,6 +1,6 @@
 # Architecture
 
-Infrastructure/deployment view of the system: the `api` service and the
+Infrastructure/deployment view of the system: the dev service (`myapp`) and the
 supporting services it depends on, how they connect, and how the
 devcontainer's stack differs from the repo-root smoke-test stack. For
 the application's own internal layering and request flow, see
@@ -8,26 +8,26 @@ the application's own internal layering and request flow, see
 
 ## Devcontainer stack
 
-`.devcontainer/compose.yml` builds `api` from the `Dockerfile`'s
-`develop` stage and pulls in every supporting service via its
-`include:` list (each fragment under
+`.devcontainer/compose.yml` builds `myapp` from the `Dockerfile`'s
+`develop` stage, and `.devcontainer/compose.instance.yml` pulls in
+every supporting service via its `include:` list (each fragment under
 [.devcontainer/stack/](../.devcontainer/stack/)): Postgres (primary
 database), RustFS (S3-compatible object storage), Redis (cache/queue/
 pub-sub), Keycloak (OIDC identity provider), and Selenium (a remote
-browser Playwright drives for the e2e suite). `api` declares a
+browser Playwright drives for the e2e suite). `myapp` declares a
 `depends_on: <service>: condition: service_healthy` entry for each one,
-so Compose won't start `api` until every dependency's own healthcheck
+so Compose won't start `myapp` until every dependency's own healthcheck
 passes — see
 [.devcontainer/stack/README.md](../.devcontainer/stack/README.md)'s
 "Devcontainer stack pattern" section for why.
 
 ```mermaid
 graph LR
-    api -->|depends_on: service_healthy| postgres[(Postgres)]
-    api -->|depends_on: service_healthy| s3[(RustFS / S3)]
-    api -->|depends_on: service_healthy| redis[(Redis)]
-    api -->|depends_on: service_healthy| keycloak[Keycloak]
-    api -->|depends_on: service_healthy| selenium[Selenium]
+    myapp -->|depends_on: service_healthy| postgres[(Postgres)]
+    myapp -->|depends_on: service_healthy| s3[(RustFS / S3)]
+    myapp -->|depends_on: service_healthy| redis[(Redis)]
+    myapp -->|depends_on: service_healthy| keycloak[Keycloak]
+    myapp -->|depends_on: service_healthy| selenium[Selenium]
 ```
 
 No fragment declares a `networks:` block — every service already
@@ -39,19 +39,19 @@ host browser (its login/admin UI), so its port is forwarded via
 `forwardPorts`/`portsAttributes` in `.devcontainer/devcontainer.json`
 instead of a compose `ports:` entry — the Dev Containers spec forwards
 a container's port directly from its network namespace, without
-publishing it via Compose. `api`'s own `:8000` is forwarded the same
+publishing it via Compose. `myapp`'s own `:8000` is forwarded the same
 way, for the same reason.
 
 | Service   | Container-internal port(s) | Host-forwarded?                     |
 | --------- | --------------------------- | ------------------------------------ |
-| `api`     | 8000                         | yes — `forwardPorts` (devcontainer)  |
+| `myapp`     | 8000                         | yes — `forwardPorts` (devcontainer)  |
 | postgres  | 5432                         | no                                    |
 | s3        | 9000 (API), 9001 (console)  | no                                    |
 | redis     | 6379                         | no                                    |
 | keycloak  | 8080                         | yes — `forwardPorts` (login/admin UI) |
 | selenium  | 4444                         | no                                    |
 
-`api` loads each stack service's own local-dev-only credentials via
+`myapp` loads each stack service's own local-dev-only credentials via
 `env_file:` (the same per-service `<service>.env` files each fragment
 loads itself — never re-pinned a second time), plus a handful of fixed
 in-network hostname/port literals (`POSTGRES_HOST`, `S3_ENDPOINT_URL`,

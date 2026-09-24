@@ -10,41 +10,87 @@
 # wants a template-owned path gone for good should move its pattern to
 # "ignore" in a template release rather than deleting the file locally.
 #
+# This is template-fastapi's own manifest, classifying its full tracked-file
+# set for its instances. template-fastapi is itself an instance of
+# template-base, whose manifest is "merge" tier, so this file keeps its
+# FastAPI-specific entries across base syncs and takes base's additions by
+# hand -- see docs/TEMPLATE.md. It is "merge" tier here too: a repo that's
+# both an instance of template-fastapi and its own template for further
+# instances edits this file directly, covering its own (larger) tracked-file
+# set, and resolves this file's additions by hand.
+#
+# An instance that isn't itself a template doesn't edit this file; it lists
+# its own files in ../template-sync-manifest.local.yml instead -- same
+# format, "ignore" tier only, read by the completeness check but never by
+# sync.
+#
 # Patterns: a trailing "/" matches the directory and everything under it; "*"
 # matches any run of characters (including "/"); anything else is an exact
 # path. Every pattern here is anchored at the repo root.
 
 replace:
-  # Devcontainer, editor, CI, and CLI-assistant config -- no instance ever
-  # has a reason to diverge from the template's own setup for these.
-  # .claude/ in particular: if an instance ever needs to add its own
-  # permissions/hooks to .claude/settings.json, that one file (not the
-  # whole directory) should move to "merge" in a template release, rather
-  # than losing replace-tier sync for .claude/'s other, still-generic
-  # contents.
-  - .devcontainer/
-  - .vscode/
-  - .claude/
-  - .github/workflows/
+  # Base-owned files an instance extends through a hook (see
+  # docs/TEMPLATE.md's "Instance extension points") rather than by editing
+  # them, so a sync can overwrite them safely.
+  - .claude/hooks/self-check.sh
+  - .claude/skills/
+  - .devcontainer/compose.yml
+  - .devcontainer/devcontainer-lock.json
+  - .devcontainer/resolve-ssh-agent.sh
+  - .vscode/extensions.json
+  - .vscode/settings.json
+  # Listed one by one, not as a glob: .github/workflows/README.md is merge.
+  - .github/workflows/checks.yml
+  - .github/workflows/moderate-bug-fix-apply.yml
+  - .github/workflows/moderate-bug-fix.yml
+  - .github/workflows/moderate-bug-triage.yml
+  - .github/workflows/moderate-cleanup.yml
+  - .github/workflows/moderate-feature-build-apply.yml
+  - .github/workflows/moderate-feature-build.yml
+  - .github/workflows/moderate-feature-triage.yml
+  - .github/workflows/moderate-setup.yml
+  - .github/workflows/release.yml
+  - .github/workflows/template-sync.yml
   - .github/scripts/
-  - .github/CONTENTS.md
-  - .github/renovate.json
-  - .github/template-sync-manifest.yml
   - .github/ISSUE_TEMPLATE/
   - .github/PULL_REQUEST_TEMPLATE.md
 
   # Build/dependency/hook plumbing, all instance-agnostic.
   - Dockerfile
-  - .dockerignore
+  - .gitattributes
+  - scripts/develop.sh
+  - scripts/post-create.sh
+  - scripts/develop.d/README.md
+  - scripts/post-create.d/README.md
+
+  # template-fastapi's own layer on top of base: the app image, its release
+  # Makefile, the smoke-stack compose file, the backing-services stack, the
+  # FastAPI-specific workflows, and the hook scripts that install the
+  # stack's CLI tools. Listed one by one where base's hook directories are
+  # "ignore" for plain base instances -- an instance's own extra hook
+  # scripts go in its template-sync-manifest.local.yml.
+  - .claude/mcp/
+  - .devcontainer/compose.instance.yml
+  - .devcontainer/stack/
+  - .vscode/launch.json
+  - .github/workflows/perf.yml
+  - .github/workflows/smoke.yml
   - app.Dockerfile
   - app.Dockerfile.dockerignore
   - Makefile
-  - .gitattributes
-  - .gitignore
-  - .pre-commit-config.yaml
-  - scripts/
   - compose.yml
-  - .mcp.json
+  - scripts/builder.sh
+  - scripts/builder-sync-app.sh
+  - scripts/builder-sync-deps.sh
+  - scripts/runner.sh
+  - scripts/runner-setup.sh
+  - scripts/check-dockerfile-versions.sh
+  - scripts/develop.d/10-apt.sh
+  - scripts/develop.d/20-pyright.sh
+  - scripts/develop.d/30-rustfs-cli.sh
+  - scripts/develop.d/40-kcadm.sh
+  - scripts/post-create.d/10-uv-sync.sh
+  - scripts/post-create.d/20-migrate.sh
   - .secrets/README.md
   - .secrets/.gitkeep
 
@@ -57,7 +103,6 @@ replace:
   # The AI-assisted workflow, and every directory README/template documenting
   # this repo's own conventions rather than product knowledge.
   - CLAUDE.md
-  - docs/TEMPLATE.md
   - docs/README.md
   - docs/adrs/README.md
   - docs/adrs/template.md
@@ -103,8 +148,38 @@ ignore:
   # body when that happens).
   - uv.lock
 
+  # An instance's own extra "ignore" patterns for paths this manifest can't
+  # know about (see docs/TEMPLATE.md's "Template sync" section).
+  - .github/template-sync-manifest.local.yml
+
 merge:
   # Project identity (name/description/version) is interpolated per instance;
   # everything else in these two files is template-owned.
   - README.md
   - pyproject.toml
+
+  # Files with no include mechanism of their own (JSON configs, prek's
+  # .pre-commit-config.yaml), and docs an instance appends to: a three-way
+  # merge keeps the instance's additions.
+  - .claude/settings.json
+  - .claude/README.md
+  - .devcontainer/devcontainer.json
+  - .devcontainer/README.md
+  - .vscode/tasks.json
+  - .vscode/README.md
+  - .github/workflows/README.md
+  - .github/CONTENTS.md
+  - .github/renovate.json
+  - .pre-commit-config.yaml
+  - .mcp.json
+  - .gitignore
+  - .dockerignore
+  - scripts/README.md
+  - docs/TEMPLATE.md
+
+  # The critical one: as "replace", the first sync would overwrite a
+  # downstream template's own manifest, which classifies *its* tree for
+  # *its* instances. Ordinary instances never edit this file (they use the
+  # local manifest), so a merge applies cleanly for them and keeps their
+  # completeness check current with new base files.
+  - .github/template-sync-manifest.yml

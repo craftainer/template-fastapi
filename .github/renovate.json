@@ -26,10 +26,11 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/^scripts/develop\\.d/.*\\.sh$/"
+        "/^scripts/develop\\.d/.*\\.sh$/",
+        "/^scripts/post-create\\.d/.*\\.sh$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\n\\w+_VERSION=(?<currentValue>.*)\\s"
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\n[A-Z0-9_]+_VERSION=(?<currentValue>\\S+)"
       ]
     },
     {

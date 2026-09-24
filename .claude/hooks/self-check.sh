@@ -2,9 +2,10 @@
 # PostToolUse hook (Edit|Write): after Claude edits a file, run the fast,
 # pre-commit-stage hooks from .pre-commit-config.yaml against just that
 # file via prek -- reusing the same config as `git commit` would, instead
-# of a second, separate set of checks -- so ruff/whitespace/etc. issues
-# are caught (and auto-fixed where possible) immediately, not first at
-# commit time. mypy/pytest/uv-lock-check stay pre-push-only: too slow to
+# of a second, separate set of checks -- so whitespace/lint issues are
+# caught (and auto-fixed where possible) immediately, not first at commit
+# time. An instance's own slower, pre-push-only hooks (type checker, test
+# suite, lock-file check, ...) are deliberately excluded here: too slow to
 # run after every single edit.
 set -euo pipefail
 
@@ -20,12 +21,12 @@ case "$file_path" in
   *) exit 0 ;;
 esac
 
-command -v uv >/dev/null 2>&1 || exit 0
+command -v prek >/dev/null 2>&1 || exit 0
 
 cd "$project_dir"
 relative_path="${file_path#"$project_dir"/}"
 
-if ! output="$(uv run prek run --files "$relative_path" 2>&1)"; then
+if ! output="$(prek run --files "$relative_path" 2>&1)"; then
   echo "$output" >&2
   echo "prek found issues in $relative_path (fixed automatically where possible) -- review the diff." >&2
   exit 2
