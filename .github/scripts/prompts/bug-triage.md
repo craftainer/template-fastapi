@@ -40,9 +40,9 @@ comment and a label -- never leave the issue untouched.
   It must fail for the reason the report describes, not some unrelated
   error (a typo, a missing fixture, a bad import).
 - Run the project's test command, scoped to the new test (see this
-  repo's docs/TEMPLATE.md "Checks" section for how tests are normally
-  run, e.g. `uv run pytest <path>`), and confirm it fails for the
-  expected reason. If a genuine, on-target failing test doesn't come
+  repo's docs/TEMPLATE.md and its own instance-specific checks
+  documentation for how tests are normally run), and confirm it fails for
+  the expected reason. If a genuine, on-target failing test doesn't come
   together after a reasonable attempt, fall back to case C instead of
   committing a misleading or flaky test.
 - Commit with a Conventional Commits message (e.g. `test: reproduce

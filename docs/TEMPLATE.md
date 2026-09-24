@@ -24,6 +24,7 @@ this file current" for where a new convention belongs.
   exception, documenting the template itself rather than product/domain
   knowledge.
 - `.secrets/` — local secret files, never committed; see its `README.md`.
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
 - `Dockerfile` — three build stages: `develop`, `builder`, `runner`.
 - `compose.yml` — runner-image smoke-test stack (distinct from
   `.devcontainer/compose.yml`); see `.github/workflows/README.md`'s
@@ -31,14 +32,50 @@ this file current" for where a new convention belongs.
 - `pyproject.toml` / `uv.lock` — dependencies, managed with `uv`, pinned
   to exact patch versions.
 - `.pre-commit-config.yaml` — git hooks, run by `prek` or `pre-commit`.
+=======
+- `Dockerfile` — a single `develop` stage (the devcontainer image). An
+  instance adds its own `builder`/`runner` (or equivalent) stages on top
+  for its own release artifact.
+- `scripts/develop.sh`, `scripts/post-create.sh` — the `develop` stage's
+  setup script and the devcontainer's `postCreateCommand`, each running
+  an instance hook directory (`develop.d/`, `post-create.d/`); see
+  `scripts/README.md` and "Instance extension points" below.
+- `Makefile` — the release contract `release.yml` drives
+  (`build`/`sbom`/`release-assets`/`publish`), each a documented no-op
+  here — see "Release: a Makefile contract" below.
+- `.pre-commit-config.yaml` — git hooks, run by `prek` or `pre-commit`;
+  language-agnostic hooks only.
+>>>>>>> /tmp/template-new/docs/TEMPLATE.md
 - `CLAUDE.md` — the AI-assisted coding workflow Claude Code follows in
   this repository; general conventions live in this file and each
   directory's own `README.md` instead.
+
+## Instance extension points
+
+Base-owned files stay `replace` tier (a sync overwrites them) and expose
+hooks an instance fills with files it owns, so an instance never edits a
+base-owned file directly. Don't edit `Dockerfile`, `scripts/develop.sh`
+or `compose.yml` in an instance; use the hooks below.
+
+| Hook | Base side (template-owned) | Instance side (instance-owned) |
+|---|---|---|
+| Extra devcontainer tooling | `Dockerfile` `develop` stage runs every `scripts/develop.d/*.sh` after `develop.sh` | `scripts/develop.d/NN-name.sh` |
+| Extra post-create steps | `scripts/post-create.sh`, run by `devcontainer.json`'s `postCreateCommand`, runs every `scripts/post-create.d/*.sh` | `scripts/post-create.d/NN-name.sh` |
+| Extra compose services / dev-service settings | `devcontainer.json` `"dockerComposeFile": ["compose.yml", "compose.instance.yml"]` | `.devcontainer/compose.instance.yml` (base ships a stub, `ignore` tier) |
+| Runtime image | nothing (base `Dockerfile` is `develop`-only) | `app.Dockerfile` + `app.Dockerfile.dockerignore` |
+
+Files with no include mechanism of their own (JSON configs,
+`.pre-commit-config.yaml` — prek has no include) are `merge` tier, so an
+instance's additions survive a sync. The runtime image goes in its own
+`app.Dockerfile` so it never collides with the template-owned
+`Dockerfile`; BuildKit picks up `app.Dockerfile.dockerignore`
+automatically for `-f app.Dockerfile`.
 
 ## Getting started
 
 1. Open this folder in a devcontainer (VS Code: "Reopen in Container" —
    `.vscode/extensions.json` recommends the extension that offers this —
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
    or any tool that reads `.devcontainer/devcontainer.json`). This starts
    the app alongside Postgres, RustFS (S3), Redis, Keycloak (OIDC), and a
    Selenium container Playwright drives remotely for e2e tests; installs
@@ -61,6 +98,17 @@ your own `DATABASE_URL` / `S3_ENDPOINT_URL` / `S3_ACCESS_KEY` /
 defaults), then
 `uv sync --extra dev` and run uvicorn the same way. Run
 `uv run prek install` once to enable the git hooks.
+=======
+   or any tool that reads `.devcontainer/devcontainer.json`). This builds
+   the `develop` stage and installs the git hooks via `postCreateCommand`
+   (`scripts/post-create.sh`).
+2. There's nothing to run yet — `template-base` ships no application. An
+   instance documents its own "run the app" / "run the CLI" step here.
+
+Without a devcontainer: install [`prek`](https://prek.j178.dev/) and run
+`prek install` once to enable the git hooks; install whatever else your
+instance's own toolchain needs.
+>>>>>>> /tmp/template-new/docs/TEMPLATE.md
 
 ## Checks
 
@@ -108,6 +156,7 @@ command, inside the devcontainer itself, on every push and pull request
 — as an `amd64`/`arm64` matrix, both legs native (no QEMU). `smoke.yml`
 runs the same matrix against the built `runner` image itself.
 `.github/workflows/release.yml` is triggered manually to cut an
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
 alpha/beta/rc/full release with an auto-generated changelog and both
 arch's built images attached (and optionally pushed to an OCI registry
 as one multi-arch manifest) — see `.github/workflows/README.md`.
@@ -115,6 +164,53 @@ as one multi-arch manifest) — see `.github/workflows/README.md`.
 the `tests/perf/` Locust load test against the `runner` image on
 `workflow_dispatch` and a weekly schedule (not per-PR — see
 `docs/adrs/0010-locust-for-load-testing.md`).
+=======
+alpha/beta/rc/full release — see "Release: a Makefile contract" below and
+`.github/workflows/README.md`.
+
+## Release: a Makefile contract
+
+`release.yml` computes the next SemVer tag (`compute_next_version.py`,
+unchanged across every instance), then drives these targets:
+
+| Target | Runs | Where | Env available |
+|---|---|---|---|
+| `release-arches` | once, first | host runner | none; must print a JSON array on stdout, e.g. `["amd64"]` |
+| `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*` |
+| `release-check` | once, after all arches | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG` |
+| `finalize` | once, after `release-check` | host runner | same as per-arch minus `RELEASE_ARCH` |
+
+What each target is for: `build` produces the release artifact(s) (an
+image, `cargo build --release`, `npm pack`, `helm package`, ...); `sbom`
+writes an SBOM for what `build` produced; `release-assets` populates
+`dist/` (gitignored) with every file to attach to the GitHub release;
+`publish` pushes to whatever registry applies, skipping cleanly when its
+variable/secret isn't set; `release-check` runs checks that need the
+backing services (e.g. tests producing a coverage report); `finalize`
+does cross-arch work such as combining per-arch registry tags into one
+multi-arch manifest list. `RELEASE_VERSION` (e.g. `1.2.3` or
+`1.2.3-alpha.1`) and `RELEASE_TAG` (the same, `v`-prefixed) are for
+embedding or tagging with the version. A single-arch no-op is the
+default: `release-arches` prints `["amd64"]`.
+
+`dist/` rules: each arch leg's `dist/` is uploaded as artifact
+`release-assets-<arch>`, and the final job downloads all of them into one
+`dist/`, so **per-arch file names must include the arch**. `release-check`
+and `finalize` may add more files to `dist/`. `release.yml` then runs
+`gh release create` with every file left in `dist/`.
+
+The arch legs run natively, not under QEMU: `arm64` on `ubuntu-24.04-arm`,
+`amd64` on `ubuntu-24.04`, each overridable with the `CI_RUNNER_ARM64` /
+`CI_RUNNER_AMD64` repository/organization variables.
+
+This repo's own `Makefile` implements every target as a documented
+no-op, since `template-base` ships no artifact — it's both a working
+example of the contract's shape and what `release.yml` needs to run
+cleanly if this repo itself is ever released. An instance's `Makefile` is
+not template-owned (it's the whole point that it differs per artifact
+type), so it's tracked like any other instance-owned file — untouched by
+this template's own sync manifest.
+>>>>>>> /tmp/template-new/docs/TEMPLATE.md
 
 ## Template sync
 
@@ -131,6 +227,24 @@ resolve. An instance that predates this workflow bootstraps its
 `.github/template-sync-state.json` via the workflow's manual
 `initial_sync_tag`/`template_repo` inputs first.
 
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
+=======
+An instance that isn't itself a template shouldn't edit that manifest to
+list its own files (`src/`, say): it's `merge`-tier, so edits would
+conflict with later syncs. It lists them under an `ignore:` key in the
+instance-owned
+`.github/template-sync-manifest.local.yml` instead; the
+`template-sync-manifest` check merges that file in, but sync never reads
+it, and it accepts no other tier.
+
+A repo can itself be both an instance of `template-base` *and* its own
+template for further instances (e.g. `template-fastapi`): its own
+`.github/template-sync-manifest.yml` classifies its *own* tracked files
+for *its* downstream instances, entirely separate from this template's
+manifest (it edits the manifest directly and resolves base's additions by
+hand) — see that repo's own docs for the two-hop chain this produces.
+
+>>>>>>> /tmp/template-new/docs/TEMPLATE.md
 ## Versions and config
 
 Every version and config value is defined in exactly one place; nothing

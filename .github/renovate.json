@@ -26,6 +26,7 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/renovate.json
         "/^scripts/develop\\.d/.*\\.sh$/"
       ],
       "matchStrings": [
@@ -48,6 +49,13 @@
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\n_PLAYWRIGHT_MCP_VERSION = \"(?<currentValue>.*)\"\\s"
+=======
+        "/^scripts/develop\\.d/.*\\.sh$/",
+        "/^scripts/post-create\\.d/.*\\.sh$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\n[A-Z0-9_]+_VERSION=(?<currentValue>\\S+)"
+>>>>>>> /tmp/template-new/.github/renovate.json
       ]
     },
     {

@@ -1,5 +1,6 @@
 # .devcontainer/
 
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/README.md
 - `devcontainer.json` — references `compose.yml` as the devcontainer's
   sole `dockerComposeFile`, and configures the devcontainer itself
   (features, forwarded ports, editor settings).
@@ -12,6 +13,20 @@
   `stack/*/compose.yml` via Compose's own variable interpolation
   (`${VAR}`) — not an application dotenv; see the file's own header
   comment and `stack/README.md`'s "Configuration" section.
+=======
+- `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
+  as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
+  (features, mounts, editor settings).
+- `compose.yml` — the dev service (`app`), built from the top-level
+  `Dockerfile`'s `develop` stage. An instance that needs backing services
+  (a database, a queue, ...) adds its own `stack/` directory (one
+  subdirectory per service, each with its own compose fragment) and an
+  `include:` list in `compose.instance.yml` pointing at them — see `stack/README.md`'s
+  "Devcontainer stack pattern" convention once an instance adds one.
+- `compose.instance.yml` — instance-owned stub (`ignore` tier, never
+  touched by sync): an instance's `include:` list and extra `services.app`
+  settings. See `docs/TEMPLATE.md`'s "Instance extension points".
+>>>>>>> /tmp/template-new/.devcontainer/README.md
 
 ## Docker-in-Docker vs. the host's Docker
 
@@ -115,7 +130,7 @@ process itself starts with anyway.
 
 ## Do
 
-- Add a new compose fragment's path to `compose.yml`'s own `include:`
+- Add a new compose fragment's path to `compose.instance.yml`'s `include:`
   list the same time you add the fragment — an unreferenced file starts
   nothing.
 - Keep service credentials and connection settings in the compose files'
