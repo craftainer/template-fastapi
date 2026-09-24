@@ -50,8 +50,9 @@ Practices below are distilled from Anthropic's own Claude Code guidance
 
 - **Explore, then plan, then implement.** For anything touching more
   than one file, or where the approach isn't obvious, read the
-  relevant code and this file's directory-level `README.md`s (see
-  "Before writing anything" above) and write a plan before editing.
+  relevant code and the `README.md`s on the path to each file you'll
+  touch (see "Before writing anything" above) and write a plan before
+  editing.
   Skip planning for a change you could describe as a one-sentence diff.
   When asked to produce a plan, write it to `docs/plans/` per
   [`docs/plans/README.md`](docs/plans/README.md) rather than only
