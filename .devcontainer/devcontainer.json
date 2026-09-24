@@ -35,11 +35,7 @@
   "remoteEnv": {
     "SSH_AUTH_SOCK": "/home/vscode/.ssh-agent-resolved.sock"
   },
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/devcontainer.json
-  "postCreateCommand": "git config --global --add safe.directory /workspace && uv sync --extra dev && uv run prek install && uv run alembic upgrade head",
-=======
   "postCreateCommand": "bash /workspace/scripts/post-create.sh",
->>>>>>> /tmp/template-new/.devcontainer/devcontainer.json
   "postStartCommand": "sh /workspace/.devcontainer/resolve-ssh-agent.sh",
   "customizations": {
     "vscode": {

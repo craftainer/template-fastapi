@@ -10,21 +10,20 @@
 # wants a template-owned path gone for good should move its pattern to
 # "ignore" in a template release rather than deleting the file locally.
 #
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/template-sync-manifest.yml
-=======
-# This is template-base's own manifest, classifying the generic subset it
-# ships, and it is itself "merge" tier: a repo that's both an instance of
-# template-base and its own template for further instances (e.g.
-# template-fastapi) edits this file directly, covering its own (larger)
-# tracked-file set, and resolves base's additions by hand -- see that repo's
-# docs/TEMPLATE.md.
+# This is template-fastapi's own manifest, classifying its full tracked-file
+# set for its instances. template-fastapi is itself an instance of
+# template-base, whose manifest is "merge" tier, so this file keeps its
+# FastAPI-specific entries across base syncs and takes base's additions by
+# hand -- see docs/TEMPLATE.md. It is "merge" tier here too: a repo that's
+# both an instance of template-fastapi and its own template for further
+# instances edits this file directly, covering its own (larger) tracked-file
+# set, and resolves this file's additions by hand.
 #
 # An instance that isn't itself a template doesn't edit this file; it lists
-# its own files (e.g. src/) in ../template-sync-manifest.local.yml instead --
-# same format, "ignore" tier only, read by the completeness check but never
-# by sync.
+# its own files in ../template-sync-manifest.local.yml instead -- same
+# format, "ignore" tier only, read by the completeness check but never by
+# sync.
 #
->>>>>>> /tmp/template-new/.github/template-sync-manifest.yml
 # Patterns: a trailing "/" matches the directory and everything under it; "*"
 # matches any run of characters (including "/"); anything else is an exact
 # path. Every pattern here is anchored at the repo root.
@@ -58,24 +57,40 @@ replace:
 
   # Build/dependency/hook plumbing, all instance-agnostic.
   - Dockerfile
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/template-sync-manifest.yml
-  - .dockerignore
-  - app.Dockerfile
-  - app.Dockerfile.dockerignore
-  - Makefile
-  - .gitattributes
-  - .gitignore
-  - .pre-commit-config.yaml
-  - scripts/
-  - compose.yml
-  - .mcp.json
-=======
   - .gitattributes
   - scripts/develop.sh
   - scripts/post-create.sh
   - scripts/develop.d/README.md
   - scripts/post-create.d/README.md
->>>>>>> /tmp/template-new/.github/template-sync-manifest.yml
+
+  # template-fastapi's own layer on top of base: the app image, its release
+  # Makefile, the smoke-stack compose file, the backing-services stack, the
+  # FastAPI-specific workflows, and the hook scripts that install the
+  # stack's CLI tools. Listed one by one where base's hook directories are
+  # "ignore" for plain base instances -- an instance's own extra hook
+  # scripts go in its template-sync-manifest.local.yml.
+  - .claude/mcp/
+  - .devcontainer/compose.instance.yml
+  - .devcontainer/stack/
+  - .vscode/launch.json
+  - .github/workflows/perf.yml
+  - .github/workflows/smoke.yml
+  - app.Dockerfile
+  - app.Dockerfile.dockerignore
+  - Makefile
+  - compose.yml
+  - scripts/builder.sh
+  - scripts/builder-sync-app.sh
+  - scripts/builder-sync-deps.sh
+  - scripts/runner.sh
+  - scripts/runner-setup.sh
+  - scripts/check-dockerfile-versions.sh
+  - scripts/develop.d/10-apt.sh
+  - scripts/develop.d/20-pyright.sh
+  - scripts/develop.d/30-rustfs-cli.sh
+  - scripts/develop.d/40-kcadm.sh
+  - scripts/post-create.d/10-uv-sync.sh
+  - scripts/post-create.d/20-migrate.sh
   - .secrets/README.md
   - .secrets/.gitkeep
 
@@ -127,33 +142,21 @@ ignore:
   # Instance-owned bookkeeping, written only by the sync workflow itself.
   - .github/template-sync-state.json
 
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/template-sync-manifest.yml
   # Derived from pyproject.toml, which is merge-tier -- a 3-way merge of a
   # lock file is unreliable, so an instance regenerates it locally with
   # `uv lock` after a sync PR changes pyproject.toml (called out in the PR
   # body when that happens).
   - uv.lock
 
-merge:
-  # Project identity (name/description/version) is interpolated per instance;
-  # everything else in these two files is template-owned.
-  - README.md
-  - pyproject.toml
-=======
-  # Instance hook files (see docs/TEMPLATE.md's "Instance extension
-  # points"): an instance's own compose fragment and the scripts it drops
-  # into the two hook directories.
-  - .devcontainer/compose.instance.yml
-  - scripts/develop.d/*.sh
-  - scripts/post-create.d/*.sh
-
   # An instance's own extra "ignore" patterns for paths this manifest can't
   # know about (see docs/TEMPLATE.md's "Template sync" section).
   - .github/template-sync-manifest.local.yml
 
 merge:
-  # Project identity (name/description) is interpolated per instance.
+  # Project identity (name/description/version) is interpolated per instance;
+  # everything else in these two files is template-owned.
   - README.md
+  - pyproject.toml
 
   # Files with no include mechanism of their own (JSON configs, prek's
   # .pre-commit-config.yaml), and docs an instance appends to: a three-way
@@ -180,4 +183,3 @@ merge:
   # local manifest), so a merge applies cleanly for them and keeps their
   # completeness check current with new base files.
   - .github/template-sync-manifest.yml
->>>>>>> /tmp/template-new/.github/template-sync-manifest.yml

@@ -1,32 +1,17 @@
 # .devcontainer/
 
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/README.md
-- `devcontainer.json` — references `compose.yml` as the devcontainer's
-  sole `dockerComposeFile`, and configures the devcontainer itself
-  (features, forwarded ports, editor settings).
-- `compose.yml` — the app service (`api`), built from the top-level
-  `Dockerfile`'s `develop` stage, and an `include:` list that pulls in
-  every supporting service's own compose fragment below.
-- `stack/` — one subdirectory per supporting service (Postgres,
-  RustFS, Redis, Keycloak, Selenium); see its own `README.md`.
-- `.env` — credential/config values shared between `compose.yml` and
-  `stack/*/compose.yml` via Compose's own variable interpolation
-  (`${VAR}`) — not an application dotenv; see the file's own header
-  comment and `stack/README.md`'s "Configuration" section.
-=======
 - `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
   as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
-  (features, mounts, editor settings).
+  (features, mounts, forwarded ports, editor settings).
 - `compose.yml` — the dev service (`app`), built from the top-level
-  `Dockerfile`'s `develop` stage. An instance that needs backing services
-  (a database, a queue, ...) adds its own `stack/` directory (one
-  subdirectory per service, each with its own compose fragment) and an
-  `include:` list in `compose.instance.yml` pointing at them — see `stack/README.md`'s
-  "Devcontainer stack pattern" convention once an instance adds one.
-- `compose.instance.yml` — instance-owned stub (`ignore` tier, never
-  touched by sync): an instance's `include:` list and extra `services.app`
-  settings. See `docs/TEMPLATE.md`'s "Instance extension points".
->>>>>>> /tmp/template-new/.devcontainer/README.md
+  `Dockerfile`'s `develop` stage. Owned by template-base.
+- `compose.instance.yml` — template-fastapi's layer on top of
+  `compose.yml`: the `include:` list pulling in every `stack/` fragment,
+  plus `services.app`'s stack credentials (`env_file:`), `depends_on`
+  healthchecks, and environment. See `docs/TEMPLATE.md`'s "Instance
+  extension points".
+- `stack/` — one subdirectory per supporting service (Postgres,
+  RustFS, Redis, MQTT, Keycloak, Selenium); see its own `README.md`.
 
 ## Docker-in-Docker vs. the host's Docker
 
@@ -141,7 +126,7 @@ process itself starts with anyway.
 - Write a bind-mount source path in a fragment under `stack/` as
   relative to that fragment's own directory, the same as if it were the
   only Compose file in play — see `stack/README.md`'s "Devcontainer stack
-  pattern" section for why. `compose.yml` itself is the exception: since
+  pattern" section for why. `compose.instance.yml` is the exception: since
   it reaches *into* a fragment's directory (its own `env_file:` list,
   `stack/postgres/postgres.env` and friends), those paths are written in
   — and so resolve against — this directory, and need the full

@@ -24,28 +24,24 @@ this file current" for where a new convention belongs.
   exception, documenting the template itself rather than product/domain
   knowledge.
 - `.secrets/` — local secret files, never committed; see its `README.md`.
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
-- `Dockerfile` — three build stages: `develop`, `builder`, `runner`.
+- `Dockerfile` — a single `develop` stage (the devcontainer image),
+  owned by template-base.
+- `app.Dockerfile` — the app image's `builder` and `runner` stages; see
+  "Instance extension points" below.
+- `scripts/develop.sh`, `scripts/post-create.sh` — the `develop` stage's
+  setup script and the devcontainer's `postCreateCommand`, each running
+  an instance hook directory (`develop.d/`, `post-create.d/`); see
+  `scripts/README.md` and "Instance extension points" below.
+- `Makefile` — the release contract `release.yml` drives, implemented for
+  the app image — see "Release: a Makefile contract" below.
 - `compose.yml` — runner-image smoke-test stack (distinct from
   `.devcontainer/compose.yml`); see `.github/workflows/README.md`'s
   `smoke.yml` entry.
 - `pyproject.toml` / `uv.lock` — dependencies, managed with `uv`, pinned
   to exact patch versions.
-- `.pre-commit-config.yaml` — git hooks, run by `prek` or `pre-commit`.
-=======
-- `Dockerfile` — a single `develop` stage (the devcontainer image). An
-  instance adds its own `builder`/`runner` (or equivalent) stages on top
-  for its own release artifact.
-- `scripts/develop.sh`, `scripts/post-create.sh` — the `develop` stage's
-  setup script and the devcontainer's `postCreateCommand`, each running
-  an instance hook directory (`develop.d/`, `post-create.d/`); see
-  `scripts/README.md` and "Instance extension points" below.
-- `Makefile` — the release contract `release.yml` drives
-  (`build`/`sbom`/`release-assets`/`publish`), each a documented no-op
-  here — see "Release: a Makefile contract" below.
-- `.pre-commit-config.yaml` — git hooks, run by `prek` or `pre-commit`;
-  language-agnostic hooks only.
->>>>>>> /tmp/template-new/docs/TEMPLATE.md
+- `.pre-commit-config.yaml` — git hooks, run by `prek` or `pre-commit`:
+  template-base's language-agnostic hooks plus this template's Python
+  checks.
 - `CLAUDE.md` — the AI-assisted coding workflow Claude Code follows in
   this repository; general conventions live in this file and each
   directory's own `README.md` instead.
@@ -75,11 +71,11 @@ automatically for `-f app.Dockerfile`.
 
 1. Open this folder in a devcontainer (VS Code: "Reopen in Container" —
    `.vscode/extensions.json` recommends the extension that offers this —
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
    or any tool that reads `.devcontainer/devcontainer.json`). This starts
-   the app alongside Postgres, RustFS (S3), Redis, Keycloak (OIDC), and a
-   Selenium container Playwright drives remotely for e2e tests; installs
-   dependencies; and installs the git hooks, all via `postCreateCommand`.
+   the app alongside Postgres, RustFS (S3), Redis, MQTT, Keycloak (OIDC),
+   and a Selenium container Playwright drives remotely for e2e tests;
+   builds the `develop` stage; and installs dependencies and the git hooks
+   via `postCreateCommand` (`scripts/post-create.sh`).
 2. Run the app: `uvicorn app.main:app --reload --host 0.0.0.0`, or use
    the "FastAPI: api" launch config to run it under the debugger. Startup
    applies any pending Alembic migrations automatically — see
@@ -91,24 +87,13 @@ automatically for `-f app.Dockerfile`.
    CRUD resource: Hero"). `/protected` needs a bearer token from Keycloak —
    see `.devcontainer/stack/keycloak/README.md`.
 
-Without a devcontainer: install [`uv`](https://docs.astral.sh/uv/), export
-your own `DATABASE_URL` / `S3_ENDPOINT_URL` / `S3_ACCESS_KEY` /
-`S3_SECRET_KEY` / `REDIS_URL` / `OIDC_ISSUER_URL` / `OIDC_AUTHORIZATION_URL` /
-`OIDC_TOKEN_URL` / `OIDC_CLIENT_ID` (see `src/app/config.py` for the
-defaults), then
-`uv sync --extra dev` and run uvicorn the same way. Run
-`uv run prek install` once to enable the git hooks.
-=======
-   or any tool that reads `.devcontainer/devcontainer.json`). This builds
-   the `develop` stage and installs the git hooks via `postCreateCommand`
-   (`scripts/post-create.sh`).
-2. There's nothing to run yet — `template-base` ships no application. An
-   instance documents its own "run the app" / "run the CLI" step here.
-
-Without a devcontainer: install [`prek`](https://prek.j178.dev/) and run
-`prek install` once to enable the git hooks; install whatever else your
-instance's own toolchain needs.
->>>>>>> /tmp/template-new/docs/TEMPLATE.md
+Without a devcontainer: install [`uv`](https://docs.astral.sh/uv/) and
+[`prek`](https://prek.j178.dev/), export your own `DATABASE_URL` /
+`S3_ENDPOINT_URL` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `REDIS_URL` /
+`OIDC_ISSUER_URL` / `OIDC_AUTHORIZATION_URL` / `OIDC_TOKEN_URL` /
+`OIDC_CLIENT_ID` (see `src/app/config.py` for the defaults), then
+`uv sync --extra dev` and run uvicorn the same way. Run `prek install`
+once to enable the git hooks.
 
 ## Checks
 
@@ -156,17 +141,11 @@ command, inside the devcontainer itself, on every push and pull request
 — as an `amd64`/`arm64` matrix, both legs native (no QEMU). `smoke.yml`
 runs the same matrix against the built `runner` image itself.
 `.github/workflows/release.yml` is triggered manually to cut an
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
-alpha/beta/rc/full release with an auto-generated changelog and both
-arch's built images attached (and optionally pushed to an OCI registry
-as one multi-arch manifest) — see `.github/workflows/README.md`.
-`.github/workflows/perf.yml` runs
+alpha/beta/rc/full release — see "Release: a Makefile contract" below and
+`.github/workflows/README.md`. `.github/workflows/perf.yml` runs
 the `tests/perf/` Locust load test against the `runner` image on
 `workflow_dispatch` and a weekly schedule (not per-PR — see
 `docs/adrs/0010-locust-for-load-testing.md`).
-=======
-alpha/beta/rc/full release — see "Release: a Makefile contract" below and
-`.github/workflows/README.md`.
 
 ## Release: a Makefile contract
 
@@ -203,14 +182,13 @@ The arch legs run natively, not under QEMU: `arm64` on `ubuntu-24.04-arm`,
 `amd64` on `ubuntu-24.04`, each overridable with the `CI_RUNNER_ARM64` /
 `CI_RUNNER_AMD64` repository/organization variables.
 
-This repo's own `Makefile` implements every target as a documented
-no-op, since `template-base` ships no artifact — it's both a working
-example of the contract's shape and what `release.yml` needs to run
-cleanly if this repo itself is ever released. An instance's `Makefile` is
-not template-owned (it's the whole point that it differs per artifact
-type), so it's tracked like any other instance-owned file — untouched by
-this template's own sync manifest.
->>>>>>> /tmp/template-new/docs/TEMPLATE.md
+This repo's `Makefile` implements the contract for the app image:
+`release-arches` prints both `amd64` and `arm64`; `build` builds
+`app.Dockerfile`'s `runner` stage to a per-arch OCI tarball; `sbom`
+writes its SPDX SBOM with Syft; `publish` pushes a per-arch registry tag
+(when `OCI_REGISTRY` is set); `release-check` runs `pytest` for
+`coverage.xml`; and `finalize` combines the per-arch tags into one
+multi-arch manifest list.
 
 ## Template sync
 
@@ -227,24 +205,24 @@ resolve. An instance that predates this workflow bootstraps its
 `.github/template-sync-state.json` via the workflow's manual
 `initial_sync_tag`/`template_repo` inputs first.
 
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
-=======
 An instance that isn't itself a template shouldn't edit that manifest to
-list its own files (`src/`, say): it's `merge`-tier, so edits would
-conflict with later syncs. It lists them under an `ignore:` key in the
-instance-owned
-`.github/template-sync-manifest.local.yml` instead; the
+list its own files: it's `merge`-tier, so edits would conflict with later
+syncs. It lists them under an `ignore:` key in the instance-owned
+`.github/template-sync-manifest.local.yml` instead — including any extra
+`scripts/develop.d/`/`scripts/post-create.d/` hook scripts of its own; the
 `template-sync-manifest` check merges that file in, but sync never reads
 it, and it accepts no other tier.
 
-A repo can itself be both an instance of `template-base` *and* its own
-template for further instances (e.g. `template-fastapi`): its own
-`.github/template-sync-manifest.yml` classifies its *own* tracked files
-for *its* downstream instances, entirely separate from this template's
-manifest (it edits the manifest directly and resolves base's additions by
-hand) — see that repo's own docs for the two-hop chain this produces.
+`template-fastapi` is itself both an instance of
+[`template-base`](https://github.com/craftainer/template-base) *and* a
+template for further instances: its `.github/template-sync-manifest.yml`
+classifies its *own* tracked files for *its* downstream instances,
+separate from template-base's manifest (it edits the manifest directly
+and resolves base's additions by hand). A generic scaffolding fix
+therefore reaches a template-fastapi instance in two hops: a sync PR from
+template-base into template-fastapi, then a sync PR from template-fastapi
+into the instance.
 
->>>>>>> /tmp/template-new/docs/TEMPLATE.md
 ## Versions and config
 
 Every version and config value is defined in exactly one place; nothing
