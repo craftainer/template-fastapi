@@ -2,7 +2,6 @@
 
 - `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
   as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/README.md
   (features, mounts, forwarded ports, editor settings).
 - `compose.yml` — the dev service (`myapp`), built from the top-level
   `Dockerfile`'s `develop` stage. Owned by template-base.
@@ -13,18 +12,6 @@
   extension points".
 - `stack/` — one subdirectory per supporting service (Postgres,
   RustFS, Redis, MQTT, Keycloak, Selenium); see its own `README.md`.
-=======
-  (features, mounts, editor settings).
-- `compose.yml` — the dev service (`myapp`), built from the top-level
-  `Dockerfile`'s `develop` stage. An instance that needs backing services
-  (a database, a queue, ...) adds its own `stack/` directory (one
-  subdirectory per service, each with its own compose fragment) and an
-  `include:` list in `compose.instance.yml` pointing at them — see `stack/README.md`'s
-  "Devcontainer stack pattern" convention once an instance adds one.
-- `compose.instance.yml` — instance-owned stub (`ignore` tier, never
-  touched by sync): an instance's `include:` list and extra `services.myapp`
-  settings. See `docs/TEMPLATE.md`'s "Instance extension points".
->>>>>>> /tmp/template-new/.devcontainer/README.md
 
 ## Docker-in-Docker vs. the host's Docker
 
