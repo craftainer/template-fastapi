@@ -10,7 +10,7 @@ default; run it explicitly with `uv run pytest tests/e2e`).
 
 The whole suite runs twice per session, parametrized over the
 session-scoped `app_mode` fixture (`conftest.py`, `params=["dev",
-"mock"]`): once against the live `api` service under `MODE=dev`
+"mock"]`): once against the live `app` service under `MODE=dev`
 (`:8000`), once against a second `uvicorn` process under `MODE=mock`
 (`:8001`, `ALLOW_MOCK_MODE=1`) with no Postgres/Redis/S3/Keycloak
 dependency at all — `InMemoryRepository`, `MockHealthCheck`, and
@@ -67,11 +67,11 @@ shared `access_token` fixture (`conftest.py`) to log in as it.
   ```
 
 - Use the `base_url` fixture (from `conftest.py`) rather than
-  hardcoding `http://api:8000`.
+  hardcoding `http://app:8000`.
 - Use the `access_token` fixture (from `conftest.py`) to log in as a
   dev-realm user rather than adding another local
   `_fetch_access_token()`-style helper.
-- Reach the real `api` service — that's the point of this directory,
+- Reach the real `app` service — that's the point of this directory,
   unlike `../unit/`.
 
 ## Don't

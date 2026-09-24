@@ -133,7 +133,7 @@ provider-shaped string (the `OIDC_*` URLs) are written that way directly
 in the owning service's env file instead, so `config.py` never has to
 know a specific provider's URL scheme. Fixed in-network hostnames/ports
 are not credentials and stay as plain literals in the consuming compose
-file (e.g. `api`'s `POSTGRES_HOST: postgres`), not in an env file.
+file (e.g. `app`'s `POSTGRES_HOST: postgres`), not in an env file.
 
 ## Alembic migrations
 

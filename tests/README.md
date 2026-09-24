@@ -6,7 +6,7 @@ Four independent suites:
 - `integration/` — reaches the real stack containers (already
   running under the devcontainer, and under CI via `devcontainers/ci`) —
   no mocks.
-- `e2e/` — Playwright tests against the live `api` service, driving a
+- `e2e/` — Playwright tests against the live `app` service, driving a
   browser in the `selenium` stack container remotely; see its own
   `README.md`.
 - `perf/` — a Locust load test against the `runner` image over the real
@@ -24,7 +24,7 @@ annotations too (ruff's `ANN` rules enforce the same).
 
 Both that run and `uv run pytest tests/e2e` independently enforce 100%
 coverage of `src/app` (see `[tool.coverage.report]` in `pyproject.toml`)
-— e2e's coverage comes from the live `api` subprocess, not from the test
+— e2e's coverage comes from the live `app` subprocess, not from the test
 process itself; see `e2e/README.md`. `perf/` is exempt from that gate
 entirely, the same way `e2e/` would be if it weren't itself measured:
 Locust isn't `pytest`/`coverage.py`-instrumented, and it only exercises

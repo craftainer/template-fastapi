@@ -17,7 +17,7 @@
 
 This devcontainer has its own isolated Docker-in-Docker daemon (the
 `docker-in-docker` feature in `devcontainer.json`). It is **not** the
-same daemon running this project's own compose stack (`api`, `postgres`,
+same daemon running this project's own compose stack (`app`, `postgres`,
 the rest of `stack/`) — that stack is started by whatever invoked
 "Reopen in Container" against the *host's* Docker. So `docker`/`docker
 compose` run from inside the devcontainer can build and run throwaway

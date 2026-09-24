@@ -39,7 +39,7 @@ had to begin with, since it's introduced fresh here.
 ## Removing this service
 
 Delete this directory and remove its compose file entry from
-`.devcontainer/compose.yml`'s `include:` list (and the `api` service's
+`.devcontainer/compose.instance.yml`'s `include:` list (and the `app` service's
 matching `depends_on:` entry there) — this also removes the real
 (non-`MODE=mock`) backend for `crud.interfaces.base.MQTTEventSink`/
 `MQTTEventSource`, so a resource using `event_source_dependency` would

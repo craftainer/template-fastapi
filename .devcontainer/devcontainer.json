@@ -4,7 +4,7 @@
     "compose.yml",
     "compose.instance.yml"
   ],
-  "service": "api",
+  "service": "app",
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
   "features": {
@@ -16,7 +16,7 @@
   "forwardPorts": [8000, 5678, "keycloak:8080"],
   "portsAttributes": {
     "8000": {
-      "label": "FastAPI (api)",
+      "label": "FastAPI (app)",
       "onAutoForward": "openPreview"
     },
     "5678": {

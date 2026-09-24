@@ -48,8 +48,8 @@ this directory).
   `enabledPlugins` above. Each is pinned to an exact version (a commit
   SHA where the project publishes no tagged release) and, where it
   needs the stack's own credentials/endpoints, reads them via `${VAR}`
-  from the same env vars `../.devcontainer/compose.yml` already gives
-  the `api` service — never re-pinned a second time:
+  from the same env vars `../.devcontainer/compose.instance.yml` already
+  gives the `app` service — never re-pinned a second time:
   - `clear-thought` (`@waldzellai/clear-thought-onepointfive`) — a
     local stdio MCP server exposing structured reasoning/mental-model
     tools, launched via `npx`. `npx` needs Node.js, which isn't

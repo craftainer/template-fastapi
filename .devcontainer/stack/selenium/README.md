@@ -4,7 +4,7 @@ A browser (Chromium, via Selenium Grid's standalone image) for the e2e
 suite in `tests/e2e/`. `tests/e2e/conftest.py`'s `browser` fixture opens
 a WebDriver session against this container purely to read its `se:cdp`
 Chrome DevTools Protocol URL, then hands that URL to Playwright's
-`connect_over_cdp` — so Playwright, running in the `api` container,
+`connect_over_cdp` — so Playwright, running in the `app` container,
 drives this remote browser instead of launching a local one. That's what
 lets the e2e suite run from inside the devcontainer itself, unlike the
 Postgres/RustFS/Keycloak-style pattern of exec-ing into a sibling
@@ -14,7 +14,7 @@ container from the host.
 - Image: `selenium/standalone-chromium`
 - Reached from: `tests/e2e/conftest.py`, at `http://selenium:4444`
   (overridable via `E2E_SELENIUM_URL`)
-- Target under test: `http://api:8000` (via `E2E_BASE_URL`)
+- Target under test: `http://app:8000` (via `E2E_BASE_URL`)
 - Also reached from: Claude's `playwright` MCP server, the same way —
   see `../../../.claude/mcp/playwright_selenium_bridge.py` and
   `../../../.claude/README.md`.
