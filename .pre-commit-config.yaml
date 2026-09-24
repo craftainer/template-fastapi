@@ -129,3 +129,11 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit, manual]
+
+      - id: check-dockerfile-versions
+        name: check-dockerfile-versions (PYTHON/DEBIAN_VERSION match)
+        entry: bash scripts/check-dockerfile-versions.sh
+        language: system
+        files: ^(app\.)?Dockerfile$
+        pass_filenames: false
+        stages: [pre-commit, manual]

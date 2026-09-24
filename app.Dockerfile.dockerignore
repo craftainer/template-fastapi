@@ -1,0 +1,15 @@
+# Build context excludes for `docker build -f app.Dockerfile` (see app.Dockerfile).
+.git
+.github
+.devcontainer
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.secrets
+docs
+tests
+README.md
+CLAUDE.md

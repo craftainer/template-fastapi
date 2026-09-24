@@ -36,6 +36,9 @@ replace:
   # Build/dependency/hook plumbing, all instance-agnostic.
   - Dockerfile
   - .dockerignore
+  - app.Dockerfile
+  - app.Dockerfile.dockerignore
+  - Makefile
   - .gitattributes
   - .gitignore
   - .pre-commit-config.yaml

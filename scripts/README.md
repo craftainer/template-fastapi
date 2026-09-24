@@ -12,6 +12,13 @@ calls exactly one of these, never a binary directly:
   the dependency-install layer.
 - `runner-setup.sh` — the `runner` stage's user/permission setup.
 - `runner.sh` — the `runner` stage's entrypoint (starts the app).
+- `develop.d/NN-*.sh` — FastAPI-specific extra develop tooling (apt
+  clients, pyright, rustfs CLI, `kcadm`), run after template-base's own
+  `develop.sh`; each pins its own version with a `# renovate:` comment.
+- `post-create.d/NN-*.sh` — devcontainer post-create steps (`uv sync`,
+  migrations).
+- `check-dockerfile-versions.sh` — pre-commit check that `Dockerfile` and
+  `app.Dockerfile` agree on `PYTHON_VERSION`/`DEBIAN_VERSION`.
 
 ## Do
 

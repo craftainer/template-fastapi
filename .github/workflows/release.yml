@@ -114,6 +114,7 @@ jobs:
         uses: docker/build-push-action@v7.4.0
         with:
           context: .
+          file: app.Dockerfile
           target: runner
           platforms: linux/${{ matrix.arch }}
           tags: template-fastapi:${{ needs.version.outputs.version }}-${{ matrix.arch }}
@@ -167,6 +168,7 @@ jobs:
         uses: docker/build-push-action@v7.4.0
         with:
           context: .
+          file: app.Dockerfile
           target: runner
           platforms: linux/${{ matrix.arch }}
           push: true
