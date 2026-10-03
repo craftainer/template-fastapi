@@ -3,11 +3,11 @@
 # base-owned `Dockerfile`'s `develop` stage.
 
 # renovate: datasource=python-version depName=python
-ARG PYTHON_VERSION=3.14.7
+ARG PYTHON_VERSION=3.14.8
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.17
+ARG UV_VERSION=0.12.23
 
 ARG APP_UID=1000
 
