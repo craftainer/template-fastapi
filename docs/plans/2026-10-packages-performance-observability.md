@@ -98,6 +98,9 @@ Plan-specific settings:
 
 ### Pre-flight: what the user sets up before kickoff
 
+Step-by-step version for the user to work through:
+[`2026-10-packages-performance-observability-preflight.md`](2026-10-packages-performance-observability-preflight.md).
+
 Everything here is either something only the user can do (org admin
 rights, third-party web UIs, rebuilding the devcontainer) or a decision
 that would otherwise stop execution midway. Once all of it is done,
