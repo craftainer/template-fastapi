@@ -44,6 +44,27 @@ Keycloak (password grant, same convention as `../e2e/conftest.py`'s
   `locustfile.py`'s own `quitting` event listener additionally fails the
   run if any endpoint's p95 latency exceeds `NFR-0024`'s ceiling
   (Locust has no built-in latency-threshold flag).
+- Authenticate against the stack's own Keycloak when running from the
+  devcontainer. `compose.yml`'s api only accepts tokens whose issuer is
+  `https://keycloak:8443/realms/template-fastapi`, but inside the devcontainer
+  the name `keycloak` resolves to the devcontainer's own Keycloak (and
+  `get_settings()` points at it), so without the steps below most requests
+  get 401. The stack publishes its Keycloak on host port 8443 and Keycloak
+  echoes the request's `Host` header into the token's `iss`, so
+  `locustfile.py` can connect to `127.0.0.1:8443` while sending
+  `Host: keycloak:8443` and TLS server name `keycloak`. Set, in the shell that
+  runs Locust (no `.devcontainer/` or app change needed):
+
+  ```bash
+  docker compose -f compose.yml -f compose.perf.yml cp smoke-tls-cert:/tls/keycloak.crt tests/perf/.results/keycloak.crt
+  export OIDC_TOKEN_URL=https://keycloak:8443/realms/template-fastapi/protocol/openid-connect/token
+  export PERF_OIDC_CONNECT_URL=https://127.0.0.1:8443   # where token requests actually connect
+  export SSL_CERT_FILE=$PWD/tests/perf/.results/keycloak.crt
+  ```
+
+  `PERF_OIDC_CONNECT_URL` is optional and unset in CI, where
+  `.github/workflows/perf.yml` instead maps `keycloak` to 127.0.0.1 in
+  `/etc/hosts`.
 - Reuse `app.config.get_settings()` for the OIDC token/client-id values
   (as `locustfile.py` already does) rather than hardcoding Keycloak's
   URL a second time.
@@ -135,12 +156,16 @@ in both modes, when the run quits (not written by distributed workers):
   step's top-level numbers are the aggregate over all endpoints;
   `endpoints` breaks them out per endpoint.
 - `generator_cpu_percent`: percent of one core, the busiest generator
-  process (master or worker) per 5-second sample. `null` values mean the
+  process (master or worker) per 5-second sample; `workers` is the peak
+  number of workers connected during the run (0 without `--processes`). `null` values mean the
   run was shorter than one sample.
 - `api_resources` is present only if `--stats-json <path>` names a file
   that exists when the run quits. It embeds the `api` container sampler's
   output as-is (`container`, `interval_s`, `samples`, and `summary` with
-  `cpu_percent` mean/p95/max and `mem_bytes` mean/max).
+  `cpu_percent` mean/p95/max and `mem_bytes` mean/max). `stats.py` only writes
+  its file when it stops, so stop it (SIGINT, or `--duration` shorter than the
+  run) before Locust quits; in capacity mode Locust quits right after the first
+  failing step unless `--capacity-run-all-steps` is set.
 
 ## Don't
 
