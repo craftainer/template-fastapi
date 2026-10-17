@@ -15,6 +15,7 @@ from pydantic import Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Mode = Literal["dev", "mock", "production"]
+PostgresSslMode = Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
 
 
 class Settings(BaseSettings):
@@ -85,6 +86,26 @@ class Settings(BaseSettings):
     postgres_db: str = "app"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
+    # libpq sslmode, passed through to asyncpg's `ssl` argument by the engine
+    # factory. None (the default) means no TLS, as before; production requires
+    # an encrypting mode, see _require_postgres_tls_in_production below.
+    postgres_sslmode: PostgresSslMode | None = None
+
+    # SQLAlchemy pool tuning. "null" (NullPool, one connection per use) is
+    # today's behavior; "local" is an in-process QueuePool; "external" assumes a
+    # pooler such as PgBouncer. The three sizes are None (unset) so the engine
+    # factory passes only what is set and SQLAlchemy's own defaults apply.
+    db_pool_mode: Literal["null", "local", "external"] = "null"
+    db_pool_size: int | None = Field(default=None, ge=0)
+    db_max_overflow: int | None = Field(default=None, ge=0)
+    db_pool_recycle: int | None = Field(default=None, ge=0)
+
+    # asyncpg timeouts in seconds; None (unset) keeps asyncpg's own defaults.
+    db_connect_timeout: float | None = Field(default=None, gt=0)
+    db_command_timeout: float | None = Field(default=None, gt=0)
+
+    # Whether the api process runs Alembic migrations itself on startup.
+    run_migrations_on_startup: bool = True
 
     s3_endpoint_url: str = "http://localhost:9000"
     s3_access_key: str = Field(default="rustfsadmin", validation_alias="RUSTFS_ACCESS_KEY")
@@ -209,6 +230,24 @@ class Settings(BaseSettings):
                 insecure.append("redis_url must use rediss://")
             if insecure:
                 raise ValueError("; ".join(insecure) + " when MODE=production")
+        return self
+
+    @model_validator(mode="after")
+    def _require_postgres_tls_in_production(self) -> Self:
+        """Refuse to construct production Settings with Postgres TLS off or unverified-weak.
+
+        postgres_sslmode unset (or disable/allow/prefer) can leave the connection in
+        cleartext, sending credentials and query traffic unencrypted; production
+        must pick require, verify-ca or verify-full.
+        """
+        if self.mode == "production" and self.postgres_sslmode not in (  # pragma: no cover
+            "require",
+            "verify-ca",
+            "verify-full",
+        ):
+            raise ValueError(
+                "postgres_sslmode must be require, verify-ca, or verify-full when MODE=production"
+            )
         return self
 
     @model_validator(mode="after")

@@ -133,6 +133,20 @@ know a specific provider's URL scheme. Fixed in-network hostnames/ports
 are not credentials and stay as plain literals in the consuming compose
 file (e.g. `myapp`'s `POSTGRES_HOST: postgres`), not in an env file.
 
+Database connection settings (none are consumed yet; defaults keep
+today's behavior):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `POSTGRES_SSLMODE` | unset (no TLS) | libpq sslmode: `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. Must be `require`, `verify-ca` or `verify-full` under `MODE=production`. |
+| `DB_POOL_MODE` | `null` | `null`, `local` or `external` connection pooling. |
+| `DB_POOL_SIZE` | unset (SQLAlchemy default) | Pool size, integer >= 0. |
+| `DB_MAX_OVERFLOW` | unset (SQLAlchemy default) | Extra connections beyond the pool size, integer >= 0. |
+| `DB_POOL_RECYCLE` | unset (SQLAlchemy default) | Seconds before a pooled connection is recycled, integer >= 0. |
+| `DB_CONNECT_TIMEOUT` | unset (asyncpg default) | Connect timeout in seconds, > 0. |
+| `DB_COMMAND_TIMEOUT` | unset (asyncpg default) | Per-command timeout in seconds, > 0. |
+| `RUN_MIGRATIONS_ON_STARTUP` | `true` | Whether the api runs Alembic migrations on startup. |
+
 ## Alembic migrations
 
 Pending migrations apply automatically: `main.py`'s FastAPI `lifespan`
