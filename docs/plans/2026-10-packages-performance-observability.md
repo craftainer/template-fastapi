@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+In progress (kickoff 2026-10-17, G0 granted; pre-flight steps 3–5 still with the user). Baseline commit: `07154b9` (full check suite green). Integration branch: `integration/packages-perf-observability`. Wave 0: W0a done in pre-flight; W0 running.
 
 ## Goal
 
@@ -999,3 +999,7 @@ orchestrator appends to this list as it resolves escalations.
 | 2026-10-17 | Permission rules live in the shared `.claude/settings.json` (allow routine commands, ask on release/variable changes, deny publishing, force/main pushes, merges, repo deletion). |
 | 2026-10-17 | Standing approvals: create the three new repos; push branches and open PRs; trigger template-base releases. The user merges all PRs and approves `tool-*`/template releases. PyPI publishing happens only inside `release.yml`, never by hand. |
 | 2026-10-17 | Autoscaling: app-side readiness only in this repo. No scale to zero, at least 2 replicas, KEDA on in-flight requests preferred over CPU-only HPA, never VPA and HPA on the same metric. |
+| 2026-10-17 | Integration branch is `integration/packages-perf-observability`, cut from `07154b9`; `L1`'s baseline image is built from that commit. |
+| 2026-10-17 | W0's write set also covers stale path references in `docs/system-design.md`, FR-0022, FR-0023 and `.devcontainer/stack/mqtt/README.md` (path-only edits). Accepted ADRs and NFR-0023 stay as written; X1 supersedes NFR-0023. |
+| 2026-10-17 | `pyinstrument` is a `dev` dependency only; N1's profiling hook imports it lazily (matches A6's pins, which omit `[profiling]`). |
+| 2026-10-17 | `OTEL_SERVICE_NAME=template-fastapi` (today's `Settings.app_name` default) in `compose.yml` and `.devcontainer/compose.instance.yml`; the devcontainer needs a rebuild for it to apply. |
