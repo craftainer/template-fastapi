@@ -15,6 +15,9 @@ ARG CLAUDE_CODE_VERSION=2.1.296
 # renovate: datasource=github-releases depName=edouard-claude/snip
 ARG SNIP_VERSION=0.25.2
 
+# renovate: datasource=github-releases depName=cli/cli
+ARG GH_VERSION=2.102.0
+
 # uv itself isn't a project dependency manager here -- it's only the
 # mechanism scripts/develop.sh uses to install an exact, checksum-verified
 # CPython build (see PYTHON_VERSION below) rather than an unpinned apt
@@ -55,6 +58,7 @@ ARG SNIP_VERSION
 ARG UV_VERSION
 ARG PYTHON_VERSION
 ARG NODE_VERSION
+ARG GH_VERSION
 ARG SSL_CERT_FILE
 ARG SSL_CERT_DIR
 
@@ -64,7 +68,7 @@ ENV SSL_CERT_FILE=${SSL_CERT_FILE} \
     CURL_CA_BUNDLE=${SSL_CERT_FILE}
 
 COPY scripts/develop.sh /tmp/develop.sh
-RUN bash /tmp/develop.sh "$PREK_VERSION" "$CLAUDE_CODE_VERSION" "$SNIP_VERSION" "$UV_VERSION" "$PYTHON_VERSION" "$NODE_VERSION"
+RUN bash /tmp/develop.sh "$PREK_VERSION" "$CLAUDE_CODE_VERSION" "$SNIP_VERSION" "$UV_VERSION" "$PYTHON_VERSION" "$NODE_VERSION" "$GH_VERSION"
 
 # Instance hook: scripts/develop.d/*.sh, see that directory's README.md.
 COPY scripts/develop.d/ /tmp/develop.d/
