@@ -30,7 +30,7 @@ lives in the sibling `../craftainer_tool_observability/health/` package, not her
 model/view/router built on `craftainer_tool_crud.*`.
 
 `config.py`/`main.py`/`oidc.py`/`problem_details.py`/
-`rate_limit.py`/`http_headers.py`/`xml_codec.py`/`web_components.py`/
+`rate_limit.py`/`http_headers.py`/`db.py`/
 `maintenance.py`/`health_checks.py` stay flat, outside any subpackage —
 a flat module has no resource-specific code and no state of its own
 beyond what it's explicitly passed or reads from `app.config`.
@@ -49,10 +49,17 @@ beyond what it's explicitly passed or reads from `app.config`.
 - `http_headers.py` — the `Sunset`/`Deprecation` header dependency and
   the baseline security-headers middleware; see "Sunset/Deprecation
   headers" below.
-- `xml_codec.py` / `web_components.py` — the generic XML and HTML-form
-  rendering pieces a resource's sibling routers reuse; see
-  `../craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories" section for
-  the pattern.
+- `db.py` — the async `engine` and `session_factory` (`NullPool`), built
+  from `Settings.database_url`. `crud_1/wiring.py` hands the session
+  factory to `craftainer_tool_crud`; `health_checks.py` and
+  `maintenance.py` use these too.
+- `crud_1/wiring.py` — the one place `app` wires `craftainer_tool_crud`:
+  it builds `CrudConfig` from `Settings`, calls
+  `craftainer_tool_crud.config.configure(...)`, and exposes `bulk_rate_limit`
+  (`limiter.limit(...)`), which each resource router passes to
+  `build_resource_router(bulk_rate_limit=...)`. Resource modules import it
+  so the config is installed before any router is built. (`xml_codec` and
+  `web_components` now live in `craftainer_tool_crud`.)
 - `maintenance.py` — `purge_archived`, the out-of-request-path job that
   hard-deletes rows past `Settings.archive_purge_after_days` for every
   model carrying `craftainer_tool_crud.models.mixins.Archivable`; invoked externally
@@ -69,9 +76,10 @@ beyond what it's explicitly passed or reads from `app.config`.
 ## Layering
 
 Import order between all of the above is strict and one-directional —
-lower layers never import from higher ones (`config` → `health_checks`
+lower layers never import from higher ones (`config` → `db` →
+`health_checks`
 → `rate_limit` → `problem_details` → `oidc` → `models` →
-`maintenance` → `views` → `web_components` → `xml_codec` →
+`maintenance` → `views` →
 `http_headers` → `controllers` → `crud_1` → `main`) — enforced by
 `import-linter`'s `"app layers"` contract in `../../pyproject.toml`'s
 `[tool.importlinter]`, run via `uv run lint-imports` (wired into
@@ -83,8 +91,7 @@ besides `config`/`oidc`/`problem_details`/`rate_limit` below
 that) since nothing else in `app/` imports it back (it's invoked externally,
 `python -m app.maintenance`, never from `main.py`); `health_checks` sits
 directly above `config` for the same reason -- its only dependency
-within `app/` is `config` (its other imports, `craftainer_tool_crud.models.base`'s
-engine and `craftainer_tool_observability.health.base`/`craftainer_tool_observability.health.registry`, are outside this container
+within `app/` is `db` (its other imports, `craftainer_tool_observability.health.base`/`craftainer_tool_observability.health.registry`, are outside this container
 entirely) and nothing else in `app/` imports it back (only `main.py`
 does, to build the health router).
 `crud_1` sits between `controllers` and `main` specifically because a
@@ -97,9 +104,8 @@ generic CRUD framework in `../craftainer_tool_crud/` has its own separate
 own `README.md`; `app/`'s resource-specific modules (`models/hero.py`,
 `views/hero_v1.py`/`hero_v2.py`, `crud_1/`) import from `craftainer_tool_crud.*` freely,
 but nothing in `craftainer_tool_crud/` ever imports back from `app/`'s resource-specific
-modules (only from its flat `config`/`rate_limit`/`web_components`/
-`xml_codec` modules, which sit below everything resource-specific
-anyway). The sibling `../craftainer_tool_observability/health/` package has its own separate
+modules (it imports nothing from `app` at all; the `"crud never imports app"`
+import-linter contract enforces this). The sibling `../craftainer_tool_observability/health/` package has its own separate
 `"health layers"` contract too, documented in its own `README.md`;
 `health_checks.py` imports from it freely (`craftainer_tool_observability.health.base`/
 `craftainer_tool_observability.health.registry`), and `main.py` builds the finished router by calling
@@ -108,10 +114,9 @@ it imports `crud_1`'s finished router.
 
 ```mermaid
 graph LR
-    config --> health_checks --> rate_limit --> problem_details
+    config --> db --> health_checks --> rate_limit --> problem_details
     problem_details --> oidc --> models --> maintenance
-    maintenance --> views --> web_components --> xml_codec
-    xml_codec --> http_headers --> controllers --> crud_1 --> main
+    maintenance --> views --> http_headers --> controllers --> crud_1 --> main
 ```
 
 An arrow means "may import from" — each module may depend on anything

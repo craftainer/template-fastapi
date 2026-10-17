@@ -4,9 +4,10 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete
 
+from app.db import session_factory as async_session_factory
 from app.maintenance import purge_archived
 from app.models.hero import Hero
-from craftainer_tool_crud.models.base import Base, async_session_factory
+from craftainer_tool_crud.models.base import Base
 from craftainer_tool_crud.repositories.sqlalchemy import SQLAlchemyRepository
 
 

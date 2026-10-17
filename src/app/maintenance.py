@@ -47,8 +47,9 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.db import session_factory
 from app.models.hero import Hero  # noqa: F401 -- registers Hero on Base.registry.mappers
-from craftainer_tool_crud.models.base import Base, async_session_factory
+from craftainer_tool_crud.models.base import Base
 from craftainer_tool_crud.models.revision import Revision  # noqa: F401 -- see above
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ async def _run() -> None:  # pragma: no cover -- thin CLI entrypoint, see __main
     older_than = datetime.now(UTC).replace(tzinfo=None) - timedelta(
         days=settings.archive_purge_after_days
     )
-    async with async_session_factory() as session:
+    async with session_factory() as session:
         deleted = await purge_archived(session, older_than=older_than)
         await session.commit()
     logger.info("purge_archived deleted %d row(s) archived before %s", deleted, older_than)

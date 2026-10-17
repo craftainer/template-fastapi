@@ -26,7 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import get_settings
-from craftainer_tool_crud.models.base import engine
+from app.db import engine
 from craftainer_tool_observability.health.base import HealthCheckResult
 from craftainer_tool_observability.health.registry import HealthRegistry
 

@@ -11,10 +11,10 @@ from sqlalchemy import delete, select
 from starlette.types import Message
 
 from app.config import get_settings
+from app.db import session_factory as async_session_factory
 from app.main import app
 from app.models.hero import Hero
 from app.oidc import get_current_claims
-from craftainer_tool_crud.models.base import async_session_factory
 
 client = TestClient(app)
 

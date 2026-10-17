@@ -575,7 +575,7 @@ def test_hero_xml_router_lifecycle_parity(authed: None) -> None:
         restore_response = client.post("/crud/v1/heroes/v2/xml/restore", params={"id": hero_id})
         assert restore_response.status_code == 200
         # A None field is omitted entirely, not rendered as literal "None" text --
-        # see app.xml_codec.to_xml's own docstring.
+        # see craftainer_tool_crud.xml_codec.to_xml's own docstring.
         assert "<archived_at>" not in restore_response.text
 
         clone_response = client.post("/crud/v1/heroes/v2/xml/clone", params={"id": hero_id})
