@@ -131,6 +131,13 @@ process itself starts with anyway.
   `stack/postgres/postgres.env` and friends), those paths are written in
   — and so resolve against — this directory, and need the full
   `./stack/<name>/<file>` form instead.
+- Commit `devcontainer-lock.json` in the same change as any feature
+  edit in `devcontainer.json`. Regenerate it with
+  `npx @devcontainers/cli upgrade --workspace-folder .`, or by
+  rebuilding the devcontainer. Feature versions are bumped by hand,
+  not by Renovate: Renovate can't regenerate this file, so
+  `../.github/renovate.json` turns its devcontainer feature updates
+  off rather than let them merge with a stale lockfile.
 
 ## Don't
 

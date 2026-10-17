@@ -9,7 +9,9 @@
   version pins in the Dockerfile and `.claude/mcp/playwright_selenium_bridge.py`.
   All patch/minor updates are grouped into a single weekly PR that
   automerges once required checks pass; all major updates are grouped
-  into a separate PR for manual review.
+  into a separate PR for manual review. Devcontainer features are
+  left out: Renovate can't regenerate their lockfile, so they're bumped
+  by hand (see `../.devcontainer/README.md`).
 - `ISSUE_TEMPLATE/` — issue forms (bug report, feature request) shown
   when opening a new issue.
 - `PULL_REQUEST_TEMPLATE.md` — prefills the description box for new PRs.
