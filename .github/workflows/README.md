@@ -26,6 +26,7 @@
   `dist/` as `release-assets-<arch>`; then one job downloads them all,
   runs `make release-check` inside the devcontainer and `make finalize`
   on the host, and creates a GitHub release with everything in `dist/`.
+- `migration-compat.yml` — see "Migration compatibility" below.
 - `moderate-bug-triage.yml` / `moderate-bug-fix.yml` /
   `moderate-bug-fix-apply.yml` / `moderate-feature-triage.yml` /
   `moderate-feature-build.yml` / `moderate-feature-build-apply.yml` /
@@ -68,6 +69,31 @@ architecture the host is on, so an arm64 contributor gets a native
 arm64 devcontainer with no QEMU emulation in their inner loop. Only CI
 needs to prove cross-arch correctness continuously; this was manually
 verified end-to-end on arm64 hardware on 2026-09-06.
+
+## Migration compatibility
+
+`migration-compat.yml` enforces `../../docs/nfrs/NFR-0027-expand-contract-migrations.md`
+on pull requests that touch `alembic/versions/` or the model packages
+(and on demand). Inside the devcontainer, like `checks.yml`, it:
+
+1. lints the PR's new or changed revisions with Squawk
+   (`../../scripts/lint-migrations.sh`);
+2. creates a fresh `migration_compat` database and migrates it to the
+   PR's head;
+3. checks the latest stable release tag (`vMAJOR.MINOR.PATCH`) out into a
+   worktree and runs that tag's `tests/integration` and `tests/e2e`
+   against the migrated database with `RUN_MIGRATIONS_ON_STARTUP=false`,
+   so the previous release has to keep working on the new schema.
+
+**Skips until the first release with `RUN_MIGRATIONS_ON_STARTUP`.** Older
+code always migrates on startup and would try to migrate a database whose
+revision it doesn't know. A first step reads the latest release tag's
+`src/app/config.py`; if there is no stable tag, or the file has no
+`run_migrations_on_startup` setting, the N-1 part is skipped: the job
+writes the reason to the run summary and a notice annotation, still runs
+the lint, and finishes green (steps 2 and 3 are the only ones skipped).
+It starts enforcing on its own once a release containing the setting
+exists.
 
 ## Issue moderation
 

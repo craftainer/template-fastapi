@@ -77,6 +77,7 @@ replace:
   - .vscode/launch.json
   - .github/workflows/perf.yml
   - .github/workflows/smoke.yml
+  - .github/workflows/migration-compat.yml
   - Dockerfile
   - .dockerignore
   # Retired: the runtime image's pre-v1.3.0 (template-base) names. Kept
@@ -95,6 +96,7 @@ replace:
   - scripts/runner.sh
   - scripts/runner-setup.sh
   - scripts/check-dockerfile-versions.sh
+  - scripts/lint-migrations.sh
   - scripts/develop.d/10-apt.sh
   - scripts/develop.d/20-pyright.sh
   - scripts/develop.d/30-rustfs-cli.sh
