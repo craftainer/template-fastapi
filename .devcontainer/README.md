@@ -120,6 +120,7 @@ process itself starts with anyway.
   nothing.
 - Keep service credentials and connection settings in the compose files'
   `environment:` blocks, so opening the devcontainer is the only setup
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/README.md
   step. A value one fragment owns and another needs (e.g. Postgres's
   password) goes in `.env` once, referenced from both, rather than
   hardcoded a second time.
@@ -131,6 +132,16 @@ process itself starts with anyway.
   `stack/postgres/postgres.env` and friends), those paths are written in
   — and so resolve against — this directory, and need the full
   `./stack/<name>/<file>` form instead.
+=======
+  step.
+- Commit `devcontainer-lock.json` in the same change as any feature
+  edit in `devcontainer.json`. Regenerate it with
+  `npx @devcontainers/cli upgrade --workspace-folder .`, or by
+  rebuilding the devcontainer. Feature versions are bumped by hand,
+  not by Renovate: Renovate can't regenerate this file, so
+  `../.github/renovate.json` turns its devcontainer feature updates
+  off rather than let them merge with a stale lockfile.
+>>>>>>> /tmp/template-new/.devcontainer/README.md
 
 ## Don't
 

@@ -11,6 +11,12 @@
     {
       "matchUpdateTypes": ["major"],
       "groupName": "major updates"
+    },
+    {
+      "description": "Renovate can't regenerate .devcontainer/devcontainer-lock.json, so features are bumped by hand together with it (see .devcontainer/README.md).",
+      "matchManagers": ["devcontainer"],
+      "matchDepTypes": ["feature"],
+      "enabled": false
     }
   ],
   "customManagers": [
