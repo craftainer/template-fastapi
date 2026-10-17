@@ -34,6 +34,7 @@ replace:
   # them, so a sync can overwrite them safely.
   - .claude/hooks/self-check.sh
   - .claude/skills/
+  - .claude/agents/
   - .devcontainer/compose.yml
   - .devcontainer/devcontainer-lock.json
   - .devcontainer/resolve-ssh-agent.sh

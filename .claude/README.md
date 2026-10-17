@@ -28,6 +28,12 @@ this directory).
   caught and auto-fixed immediately instead of first at commit time.
   mypy/pytest/`uv lock --check` stay pre-push-only — too slow to run
   after every edit.
+- `agents/plan-executor.md` — the subagent that executes one work item
+  of a `docs/plans/` plan on a faster model (`model: sonnet`), under
+  the main session as orchestrator (see `../CLAUDE.md`, "Execute
+  multi-item work as an orchestrator"). It holds the executor's side of
+  the protocol: what a brief contains, the write-set and no-push rules,
+  the escalation triggers, and the report format.
 - The `PreToolUse` hook on `Bash` runs `snip hook`, the
   [snip](https://github.com/edouard-claude/snip) token-filtering proxy:
   it rewrites supported commands (this repo's stack — `pytest`, `ruff`,

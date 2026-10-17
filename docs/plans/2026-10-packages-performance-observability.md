@@ -1,0 +1,790 @@
+# Extract crud/health packages, then improve throughput and observability
+
+## Status
+
+Draft
+
+## Goal
+
+Raise how much sustained load the `runner` image can serve on fixed
+hardware, using only configuration, existing library APIs, and changes
+to this repo's own code, never by reimplementing FastAPI, Starlette,
+uvicorn, SQLAlchemy, Pydantic or PyJWT internals. Put a measurement
+method and CI wiring in place first, so every change below is accepted
+or rejected on numbers rather than folklore. Make the app's
+configuration and telemetry ready for a later Kubernetes deployment
+(HA Postgres operator; OpenTelemetry metrics and traces feeding
+Prometheus and similar tools), so it can be observed in production too.
+Before any of that, move the generic `crud` and `health` packages out
+of this repo into their own published Python packages, built from a
+new reusable Python package template. All of this lands as one batch
+of changes, run as parallel waves of Sonnet 5.5 agents under an Opus
+5.5 orchestrator (see "Execution" below).
+
+## Background: what the $12-server challenge showed
+
+Source: "I Asked Expert Programmers to Max Out a $12 Server"
+(Arjay McCandless, <https://www.youtube.com/watch?v=QGWKCaglSBI>), and
+its submissions repo
+<https://github.com/arjaythedev/twelve-dollar-server-challenge> (k6
+script in `bench/load.js`, Python entry in
+`submissions/python-fastapi-cknutson12/`). Setup: 1 shared vCPU, 2 GB
+RAM, in-process SQLite. A user count passes if it holds for 5 minutes
+with p95 < 500ms, p99 < 1s and errors < 1%.
+
+Python results:
+
+| Variant | Sustained users |
+| --- | --- |
+| Original video: FastAPI + Postgres + Nginx | ~2,150 |
+| Plain FastAPI + SQLite + uvloop + orjson | ~11,000 |
+| Same app, profiled, framework layers stripped (no Pydantic models, no DI, raw `Response`) | ~22,000 (CPU at 91%) |
+
+Techniques that recurred across the fastest submissions in every
+language, and whether each one transfers here:
+
+| Technique | Transfers? | Why |
+| --- | --- | --- |
+| Reuse one DB connection and prepare queries once | **Yes, highest value** | We use `NullPool` (`src/crud/models/base.py`, `NFR-0016`), so every request opens a new asyncpg connection and loses asyncpg's per-connection prepared-statement cache. See Phase 3. |
+| Fast event loop and HTTP parser (uvloop, httptools) | Yes, verify only | `uvicorn[standard]` already installs both. Pin them explicitly so a missing wheel fails loudly instead of silently falling back. |
+| Serve directly, no Nginx | Already true | `runner.sh` serves uvicorn directly. |
+| Strip per-request work the API doesn't need (access log, proxy headers, DI layers) | Partly | Flags and cheap code-level wins, yes. Bypassing FastAPI routing/DI to reach the handler, no: that is reimplementing the framework. |
+| Lightweight JSON | Yes, via the framework | FastAPI's docs: with a return type or `response_model`, "Pydantic uses the same underlying Rust mechanisms as `orjson`", while a `response_class`/`jsonable_encoder` path is slower. Make sure hot routes take that path rather than adding orjson. |
+| GC tuning (`gc.freeze()` after startup, higher gen-0 threshold) | Yes, cheap | Three stdlib lines. Measure memory and latency together. |
+| Database builds the JSON (`json_agg`) | No | Bypasses `crud.views`' `from_attributes` views and the generic CRUD layering (`ADR-0001`, `NFR-0004`). |
+| Group commit (batch many requests' writes into one transaction) | No | Needs a custom write queue, and one failed batch fails every waiting request. Reimplements what Postgres does internally. |
+| Weaker durability (`synchronous=NORMAL`; Postgres analogue `synchronous_commit=off`) | No | Acknowledged writes can be lost on power loss. |
+| Hand-rolled JWT verification, io_uring, custom HTTP parser | No | Out of scope by definition, and a security regression risk. |
+
+## Execution
+
+This plan follows the standing rule in `CLAUDE.md` ("Execute multi-item
+work as an orchestrator") and the layout in `README.md`'s "Execution
+section". Executors are `plan-executor` subagents: their brief, rules,
+escalation triggers and report format live in
+`.claude/agents/plan-executor.md` and aren't repeated here.
+Plan-specific settings:
+
+- **Orchestrator:** Claude Opus 5.5 in the main session.
+  **Executors:** `plan-executor` on Sonnet 5.5, each in its own worktree
+  (`isolation: "worktree"`) on branch `wip/<id>`.
+- **Concurrency:** at most 18 agents at once. The waves below are sized
+  to stay under that.
+- **"Done when" for every brief:** `ruff check`, `ruff format --check`,
+  `mypy --strict`, and the unit tests touching the write set all pass
+  in the worktree.
+- **Library docs:** context7 is authorized, for executors and the
+  orchestrator alike.
+
+### Serialized lanes (shared resources, never parallel)
+
+- **Verification lane (orchestrator):** after each `wip/<id>` branch is
+  merged into the integration branch, run the full
+  `prek run --all-files --hook-stage manual`, including integration and
+  e2e, one merge at a time. These suites share the devcontainer's
+  Postgres, Redis, S3 and Keycloak, and e2e starts its own app process
+  on a fixed port, so parallel runs would interfere with each other. A
+  red result goes back to the owning agent as an escalation-style
+  message.
+- **Bench lane (one long-lived Sonnet agent, `L1`):** runs every
+  Phase 0–5 measurement against images built from specific commits.
+  Measurements run only in quiet windows, when the orchestrator has no
+  other agents running builds or tests, because CPU contention from
+  parallel agents would distort the numbers. Alternatively, they run
+  through `perf.yml` on a pushed branch on a dedicated runner, after
+  gate G6. `L1` reports numbers; the orchestrator accepts or reverts
+  each change.
+
+### User gates (the orchestrator asks; nothing proceeds without a yes)
+
+| Gate | Before |
+| --- | --- |
+| G0 | Kickoff: create integration branch `feat/packages-perf-obs` from `main`, allow agent commits on `wip/*` branches, run up to 18 parallel agents (cost) |
+| G1 | Creating `craftainer/template-python-package` from template-base |
+| G2 | Opening the template-base PR (A2). Merging and releasing base is the user's call. |
+| G3 | Creating `craftainer/tool-crud` and `craftainer/tool-health` |
+| G4 | The user registers pending trusted publishers on TestPyPI and PyPI. This is in their web UI, so only the user can do it. |
+| G5 | Tagging and releasing `0.1.0` (TestPyPI first, then PyPI) |
+| G6 | Pushing the integration branch or opening the PR into `main`. Also needed before any CI-based bench run. |
+
+### Waves
+
+Each wave's items have disjoint write sets. The orchestrator merges
+them in table order. A later wave starts only when everything it
+depends on is merged and verified.
+
+**Wave 0: serial foundation (1 agent, after G0).** It touches nearly
+every file, so it runs alone and first.
+
+| ID | Item | Write set |
+| --- | --- | --- |
+| W0 | A4 rename in place (`crud` → `craftainer_tool_crud`, `health` → `craftainer_tool_health`). Add every new dependency for the whole plan in one go (`pytest-benchmark`, `pytest-codspeed`, `py-spy`, `pyinstrument`, `opentelemetry-instrumentation-fastapi`/`-sqlalchemy` at `0.65b0`, `granian`) plus `uv lock`. Add `--ignore=tests/bench` to pytest `addopts`. This means no later item edits `pyproject.toml` dependencies or `uv.lock`. | `src/`, `tests/`, `alembic/env.py`, `pyproject.toml`, `uv.lock`, living `README.md`s |
+
+**Wave 1: fan-out (17 agents, after W0 is verified, plus G1 and G2 for
+T1–T3 and B1).**
+
+| ID | Item | Write set |
+| --- | --- | --- |
+| T1 | A1 template: scaffold (pyproject, `src/`, `tests/`, prek, import-linter, coverage gate) | template repo: those paths |
+| T2 | A1 template: release `Makefile` + release-check script | template repo: `Makefile`, `scripts/release-check*` |
+| T3 | A1 template: README, `docs/TEMPLATE.md` notes, ADR, Renovate, sync-manifest entries, CodSpeed workflow | template repo: docs, `.github/` |
+| B1 | A2: `id-token: write` on template-base's publish job | template-base: `release.yml` |
+| D1 | A3: decouple crud (settings and engine injection, move `xml_codec`/`web_components` in, rate-limit decorator injection, extras), plus independence contracts for crud and health | `src/craftainer_tool_crud/`, `src/app/{main.py,crud_1/,xml_codec.py,web_components.py}`, moved tests, pyproject `[tool.importlinter]` only |
+| P1 | Phase 0.1/0.4/0.5: `compose.perf.yml` (caps, `SYS_PTRACE`), docker-stats sampler, py-spy profile script | `compose.perf.yml`, `tests/perf/{stats,profile}.*` |
+| P2 | Phase 0.2/0.3: Locust capacity mode (`LoadTestShape`), `--processes`, JSON summary | `tests/perf/locustfile.py`, `tests/perf/README.md` |
+| P3 | Phase 0.6: app-level microbenchmarks (token verify, ASGI round trip) | `tests/bench/` |
+| P5 | CI: capped stack + relative-baseline check in `perf.yml`, capacity job, CodSpeed workflow for this repo | `.github/workflows/{perf,codspeed}.yml`, `.github/workflows/README.md` |
+| S1 | Phase 3/4 settings: `DB_POOL_*`, `POSTGRES_SSLMODE` + production guardrail, `DB_*_TIMEOUT`, `RUN_MIGRATIONS_ON_STARTUP` (fields, validation, tests only; no consumers yet) | `src/app/config.py`, its unit tests, `src/app/README.md` config section |
+| R1 | Phase 1: `runner.sh` flags, `--limit-concurrency`, Phase 7.1 `--timeout-graceful-shutdown`, `APP_SERVER` switch (uvicorn/granian) + a lifespan check under Granian, `UV_COMPILE_BYTECODE` (code only; measured in the bench lane) | `runner.sh`, `app.Dockerfile` builder stage, `scripts/builder-sync-*.sh` |
+| R2 | Phase 2: JWKS prefetch at startup + off-loop cache-miss path | `src/app/oidc.py`, its tests |
+| O1 | Phase 5.2–5.4, 5.6: tracer and meter providers, `instrument_app()` / `instrument_engine()` / pool-gauge helpers, trace-id log correlation, in-memory-exporter tests (not wired into `main.py`); Phase 7.4 scaling-metric docs | `src/app/telemetry.py`, its tests, `src/app/README.md` telemetry section |
+| X1 | ADR drafts: perf CI and benchmarks (amends 0010), package extraction, OTel + NFR superseding 0023 | `docs/adrs/`, `docs/nfrs/` (new files only) |
+| X2 | ADR + NFR superseding 0016 for `DB_POOL_MODE`, and the Phase 6 caching ADR, with measured numbers left as `TBD` | `docs/adrs/`, `docs/nfrs/` (new files only) |
+| Q1 | Read-only audit: response path, `jsonable_encoder`, double validation in the crud router | none (report only) |
+| Q2 | Read-only audit: N+1 and `count()` patterns in repositories; confirm slowapi's sync Redis call on the event loop | none (report only) |
+
+Pre-assigned numbers, because ADRs and NFRs are numbered sequentially
+and X1 and X2 run in parallel:
+- X1 gets ADR 0019 (perf CI and benchmarks), 0020 (package extraction)
+  and 0021 (OTel), plus NFR-0025 (observability scope).
+- X2 gets ADR 0022 (pool modes), ADR 0023 (caching) and NFR-0026
+  (pooling).
+- ADR 0024 is reserved for the server choice, written in Wave 4 only
+  if Granian wins.
+
+Shared living docs (`src/app/README.md`, `.github/workflows/README.md`)
+may be edited by more than one item, but only in separate sections. The
+orchestrator resolves any merge overlap.
+
+`L1` starts in parallel with Wave 1: it measures the baseline on an
+image built from `main` before Wave 0, using P1/P2's harness once
+those are merged (Phase 0.7).
+
+**Wave 2: integration (8 agents, after D1, S1 and O1 are merged).**
+
+| ID | Item | Write set |
+| --- | --- | --- |
+| E1 | Phase 3.1 + Phase 4: `app/db.py` engine factory (all three pool modes, SSL, timeouts, pre-ping), unit tests + an integration test for `local` | `src/app/db.py`, its tests |
+| M1 | `main.py` wiring: `app.db` engine (interface fixed in E1's brief), `RUN_MIGRATIONS_ON_STARTUP`, `gc.freeze()`, `instrument_app`/`instrument_engine`, docs routes off in production, Phase 7.2 `engine.dispose()` on lifespan shutdown | `src/app/main.py`, its tests |
+| H1 | Phase 7.3: SSE stream vs `SIGTERM` integration test (uvicorn subprocess, exit within timeout, lossless `Last-Event-ID` resume). Report-only if it fails; no code change without escalation. | a new `tests/integration/test_graceful_shutdown.py` |
+| F1 | Phase 2 fixes from Q1 | `src/craftainer_tool_crud/controllers/{crud_router,crud_actions}.py` |
+| C2 | Phase 6.2: cache protocol + optional cache param on the stats/predict routes; `app.cache` (Redis, event-driven invalidation, TTL). `main.py` wiring goes through M1, with the interface fixed in both briefs. | `src/craftainer_tool_crud/controllers/crud_stats.py`, a new `src/craftainer_tool_crud/interfaces/cache.py`, `src/app/cache.py`, their tests |
+| F2 | Phase 2 fixes from Q2 (repositories) | `src/craftainer_tool_crud/repositories/` |
+| F3 | Async rate-limit storage, only if Q2 confirmed the blocking call | `src/app/rate_limit.py`, its tests |
+| L1 | A/B runs, one at a time: each R1 flag, bytecode (startup time), `--limit-concurrency` under overload, uvicorn vs Granian, R2, F1–F3, `null` vs `local` | none (report only) |
+
+**Wave 2b (1 agent, after F1 is merged, because it shares
+`crud_router.py`).**
+
+| ID | Item | Write set |
+| --- | --- | --- |
+| C1 | Phase 6.1: `ETag`/`304`/`If-Match`/`412` on JSON, XML and web routes, plus a revalidating Locust task | `src/craftainer_tool_crud/controllers/crud_router.py`, its tests, `tests/perf/locustfile.py` |
+| L1 | A/B: C1 revalidation, C2 stats cache hit/miss | none (report only) |
+
+**Wave 3: packages (after T1–T3, B1 synced, D1/F1/F2/C1/C2 merged, and
+G3 and G4).**
+
+| ID | Item | Write set |
+| --- | --- | --- |
+| K1 | A5 for `tool-crud`: `git filter-repo` history, move code and tests, Postgres via `compose.instance.yml`, `0.1.0` (release after G5) | `tool-crud` repo |
+| K2 | A5 for `tool-health` | `tool-health` repo |
+| L1 | Phase 5.7 OTel overhead (unset / 100% / 10% sampling); `gc` variants | none (report only) |
+
+**Wave 4: switch and close (serial, after G5).**
+
+| ID | Item | Write set |
+| --- | --- | --- |
+| A6 | Switch this repo to the published `0.1.0` pins; delete `src/craftainer_tool_*` and the moved tests | `pyproject.toml`, `uv.lock`, `src/`, `tests/` |
+| L1 | Final capacity run versus the baseline; Phase 7.6 shutdown-under-load run | none (report only) |
+| X3 | Fold Phase 4's environment-variable table and Phase 7's deployment notes into a "Kubernetes deployment (future)" section of `docs/architecture.md`, so they outlive this plan | `docs/architecture.md` |
+| X2 | Fill in the `TBD` numbers in the ADRs/NFRs from `L1`'s reports | its ADR/NFR files |
+
+Then the orchestrator runs the verification lane one last time and,
+per `docs/plans/README.md`, folds this plan into the ADRs written above
+and deletes it. G6 covers pushing and the PR.
+
+## Approach
+
+### Part A: Python package template, then extract `crud` and `health`
+
+Today `crud` and `health` are generic, but they ship only inside this
+repo's image (`pyproject.toml`'s hatch `packages`). Publishing them lets
+other apps reuse them, and lets each have its own release cycle, tests
+and benchmarks.
+
+**A1. New template repo: `craftainer/template-python-package`.** An
+instance of `craftainer/template-base` (`ADR-0018`), the same way
+`template-fastapi`, `template-react` and `template-axum` are. Like
+`template-fastapi`, it is itself a template, so `crud`, `health` and
+future libraries are created from it and receive fixes through template
+sync. Contents:
+
+- `src/<import_name>/` layout with a `py.typed` marker, hatchling
+  build, and `uv`.
+- This repo's quality bar, copied:
+  - strict `ruff` + `mypy --strict` config;
+  - `pytest` with a 100% coverage gate;
+  - `import-linter` for internal layering;
+  - `pip-audit`;
+  - all of it under `prek`.
+- A `Makefile` implementing template-base's release contract
+  (`docs/TEMPLATE.md`, "Release: a Makefile contract"):
+
+  | Target | Package implementation |
+  | --- | --- |
+  | `release-arches` | `["amd64"]`: a pure-Python wheel is built once |
+  | `build` | `uv build` → sdist and wheel in `dist/` |
+  | `sbom` | Syft over the built wheel (same pinned Syft as this repo's `Makefile`) → SPDX JSON in `dist/` |
+  | `release-assets` | Assert that the sdist, wheel and SBOM exist |
+  | `publish` | `uv publish --trusted-publishing always`. Skipped with a message when the `PYPI_PUBLISH` repo variable isn't set, mirroring this repo's `OCI_REGISTRY` skip. |
+  | `release-check` | Install the built wheel into a fresh venv and import it. If PyPI publishing is on, also `pip install` the published version from PyPI. |
+  | `finalize` | No-op |
+
+- Publishing uses PyPI **trusted publishing** (GitHub OIDC, no stored
+  token). Each package registers a PyPI "pending publisher" (repo +
+  `release.yml`) before its first release, and the first release goes
+  to TestPyPI as a dry run.
+- An optional CodSpeed benchmark workflow (see "CI" below), so each
+  package benchmarks its own hot paths in its own repo.
+- GPL-3.0 license (decided), matching this repo, so `release.yml`'s
+  SBOM and the package metadata carry the same license as the apps
+  using them.
+- Renovate config, an ADR recording the template, and `docs/TEMPLATE.md`
+  extension notes (e.g. how a package adds backing services through
+  template-base's `compose.instance.yml` hook).
+
+**A2. One template-base change.** Its `release.yml` (`replace` tier, so
+only base can change it) grants only `contents: write`, and trusted
+publishing needs `id-token: write`. Add that to the per-arch job that
+runs `make publish`, PR it into template-base, and let it reach the
+package template and this repo through the normal sync. For repos that
+don't publish to PyPI, the grant is unused.
+
+**A3. Decouple `crud` and `health` from `app`, in place.** `health`
+already imports only FastAPI and the stdlib. `crud` imports five things
+back from `app`:
+
+| `crud` imports | Change |
+| --- | --- |
+| `app.config.get_settings`: `database_url` (engine), `mode` (mock repository switch), `mqtt_*` (event sink), `bulk_action_max_matched`, `rate_limit_bulk_action`, `sse_keepalive_seconds` | `crud` stops reading settings. `app` creates the engine and session factory and passes them in, together with a small `crud`-owned config object (limits, SSE keepalive, MQTT connection details, and which repository to use), built from `app`'s `Settings`. |
+| `app.xml_codec` | Moves into `crud`. Only `crud`'s router factories use it. |
+| `app.web_components` | Moves into `crud`, same reason. |
+| `app.rate_limit.limiter` | Stays in `app` (it holds the Redis-backed `slowapi` limiter). The router factories take an optional rate-limit decorator instead, so `crud` doesn't depend on `slowapi`. |
+
+- Optional dependencies become extras: `craftainer-tool-crud[mqtt]`
+  (`aiomqtt`) and `[xml]` (`defusedxml`).
+- Migrations stay app-owned. `crud.models.revision`'s table is
+  registered on the shared `Base.metadata` that `app`'s Alembic
+  autogenerates against, as today. `crud`'s README must state that a
+  release changing its models needs a new app-side migration
+  (`NFR-0019`).
+- Add an `import-linter` independence contract: `crud` and `health`
+  must never import `app`. It's enforced here before the move, and
+  becomes impossible to break after it.
+- Unit tests of `crud`/`health`, and `test_xml_codec.py` /
+  `test_web_components.py`, move alongside the code in A5. The e2e
+  suite stays here as the integration test of the published packages.
+
+**A4. Names (decided).**
+
+| | crud | health |
+| --- | --- | --- |
+| GitHub repo | `craftainer/tool-crud` | `craftainer/tool-health` |
+| PyPI distribution | `craftainer-tool-crud` | `craftainer-tool-health` |
+| Import package | `craftainer_tool_crud` | `craftainer_tool_health` |
+
+All of these were free on 2026-10-17. The bare names (`crud`, `health`,
+`fastapi-crud`, `fastapi-health`) are taken on PyPI. A published
+library also shouldn't claim a generic top-level import name that
+another installed package could shadow. `tool-*` is the org's repo
+prefix for reusable libraries, next to `template-*`. In this repo the
+rename is mechanical: imports, `import-linter` `root_packages`,
+coverage `source`, `alembic/env.py`, the hatch `packages` list, and the
+living `README.md`s. Accepted ADRs stay as written, because they're
+historical records. Wave 0 below does the rename first, so every later
+change is written against the final names. Paths elsewhere in this plan
+use the pre-rename names (`src/crud/...`).
+
+**A5. Create the package repos and move the code.**
+`craftainer/tool-crud` and `craftainer/tool-health` are created from
+`template-python-package`. Use `git filter-repo` limited to each
+package's paths to keep their history. `crud`'s repo adds Postgres
+through `compose.instance.yml`, for its integration tests. Release
+`0.1.0` of each: TestPyPI first, then PyPI. Version as SemVer, staying
+in `0.x` until the public API settles.
+
+**A6. Switch this repo to the packages.**
+- Depend on `craftainer-tool-crud[mqtt,xml]==0.1.0` and
+  `craftainer-tool-health==0.1.0`. Renovate's PyPI manager bumps the pins
+  from then on.
+- Delete `src/crud`, `src/health` and their moved tests, and drop them
+  from hatch `packages`, coverage and the `crud`/`health`
+  `import-linter` contracts (those contracts now live in the package
+  repos).
+- `src/` is synced to this template's instances, so they receive the
+  deletion and the new pins in their next sync PR. Say so in the
+  release notes.
+- For editing a package and the app together, document a local-only
+  `uv` path override (`[tool.uv.sources]` editable path), never
+  committed.
+- Run the full check suite plus the Phase 0 perf baseline: no runtime
+  change expected.
+
+### Phase 0: measure before changing anything
+
+1. **Make load numbers reproducible.** Add a perf-only compose override
+   (`compose.perf.yml`, layered on the repo-root `compose.yml`) that
+   caps `api` at `cpus: "1"` and `mem_limit: 2g`, matching the
+   challenge box. This is the reference budget that all capacity numbers
+   in this plan refer to. That way the app is the bottleneck, and
+   numbers compare across machines and runners. Backing services stay
+   uncapped so they don't become the limit.
+2. **Add a capacity mode to `tests/perf/locustfile.py`**, alongside the
+   existing fixed-20-user `NFR-0024` check. A Locust `LoadTestShape`
+   steps users up (hold each step N minutes, discard a warm-up window)
+   and records the highest step whose p95, p99 and error rate stay
+   within `NFR-0024`'s ceilings. That number is the headline metric,
+   the same way the video measured capacity. The fixed check still
+   answers "did we regress?", and capacity answers "how far can we go?".
+3. **Make sure the load generator isn't the bottleneck.** The video's
+   own k6 machine ran out of RAM first. Run Locust with
+   `--processes -1` (one worker per core), watch its CPU warning, and
+   report generator CPU next to results.
+4. **Record more than latency.** Each run stores p50/p95/p99, RPS,
+   error rate, and `api` container CPU and RSS (sampled with
+   `docker stats --no-stream` during the hold), in one JSON summary
+   beside Locust's CSV/HTML.
+5. **Profile under load.** Add `py-spy` to the `dev` group and attach it
+   to the uvicorn PID during a capacity run:
+   `py-spy record --pid <pid> --format speedscope --duration 60`. It
+   attaches from outside, so no app changes are needed, but the
+   container needs `SYS_PTRACE`, granted only in `compose.perf.yml`.
+   Use `pyinstrument` ad hoc for single-request call trees. Phases 1–3
+   are ordered by expected value, but the flame graph decides the real
+   order.
+6. **Benchmark the hot paths offline.** Add `pytest-benchmark` cases
+   that run without network or DB: `decode_bearer_token` with a
+   pre-loaded key, view serialization (`model_dump_json`), and
+   `xml_codec` encoding. Add one in-process ASGI benchmark (`httpx`
+   `ASGITransport`, `MODE=mock`) that isolates framework and app
+   overhead from Postgres. These live under `tests/bench/`, a fifth
+   suite that the default `pytest` run doesn't collect. Collecting it
+   would distort the 100% coverage gate and slow every run.
+7. **Establish the baseline.** Run capacity mode at least 3 times on
+   the current `main` and record the median and spread. Every later
+   change is one variable at a time, A/B against that baseline. A
+   change counts only if it improves the median by more than the
+   spread.
+
+### Phase 1: configuration only (no code paths change)
+
+Each item is one A/B run:
+
+- `runner.sh`: add explicit `--loop uvloop --http httptools`,
+  `--no-access-log` (if `ADR-0007`'s structured logging doesn't depend
+  on uvicorn's access log; check first), `--no-proxy-headers` unless a
+  proxy is in front, a higher `--backlog`, and a
+  `--timeout-keep-alive` longer than the clients' idle gap.
+- Disable `/docs`, `/redoc` and `/openapi.json` under `MODE=production`
+  if nothing consumes them. This is mostly hardening; the throughput
+  effect is minimal.
+- Workers: `runner.sh` starts one process. On hosts with more than one
+  core, `--workers N` (N = cores) is the largest single lever. The
+  rate limiter is already Redis-backed, so it's multi-worker safe. On
+  the 1-CPU budget, measure that 1 worker beats 2.
+- Log level: confirm `MODE=production` doesn't emit per-request
+  INFO/DEBUG records through the JSON formatter.
+- **Precompile bytecode:** set `UV_COMPILE_BYTECODE=1` in
+  `app.Dockerfile`'s builder stage. Today neither
+  `scripts/builder-sync-*.sh` compiles, and the runner sets
+  `PYTHONDONTWRITEBYTECODE=1`, so every container start recompiles
+  every imported module (FastAPI, Pydantic, SQLAlchemy, boto3, OTel).
+  This affects startup, not throughput: deploys, autoscaling, and pod
+  restarts after a DB failover. Add time-to-`/health/ready` from
+  container start to the Phase 0 metrics, and A/B it.
+- **Load shedding:** expose uvicorn's `--limit-concurrency` through
+  `runner.sh` (env-driven, unset by default). Size it from the capacity
+  number, so overload fails fast with 503s instead of falling off the
+  latency cliff the video saw in every entry. Uvicorn sends its own
+  plain 503 before the app runs, so this response can't be RFC 9457
+  problem details. Document that rather than adding middleware.
+- **Server A/B, Granian:** `runner.sh` picks the server from an
+  `APP_SERVER` variable (`uvicorn` default, `granian`). Granian is an
+  ASGI server with its HTTP layer in Rust (BSD-3-Clause, in production
+  use, with built-in backpressure, worker RSS limits, and access log
+  off by default). Its own benchmarks show large wins on bare
+  endpoints, while independent ones are mixed and shrink once a
+  database is involved. Before measuring, verify that lifespan runs
+  under `--interface asgi`, since startup migrations depend on it.
+  Switch the default only if it wins capacity at the reference budget,
+  and record that in its own ADR.
+- **Not now (decided):** Python 3.14's JIT (experimental, −10% to +20%
+  depending on workload), the free-threaded build (disables the JIT,
+  compatibility risk for asyncpg and uvloop, no gain at 1 vCPU), and
+  gzip in the app (it costs CPU on the single core; the ingress should
+  compress).
+
+### Phase 2: code changes inside the framework's own APIs
+
+- **Response path:** check that every JSON CRUD route returns a typed
+  view (return annotation or `response_model`), so FastAPI serializes
+  in Pydantic's Rust core, and that no hot route returns a plain
+  `dict` or goes through `jsonable_encoder`. Avoid double validation
+  (constructing a view and then having FastAPI validate it again
+  against the same model).
+- **GC:** after lifespan startup, `gc.collect(); gc.freeze()`, and
+  measure `gc.set_threshold(...)` variants. Reject if RSS grows without
+  a latency win.
+- **Blocking calls on the event loop** (find with py-spy):
+  - `_get_jwks_client().get_signing_key_from_jwt(...)` runs synchronous
+    PyJWT code inside the async `get_current_claims`. On a JWKS cache
+    hit this is CPU only. On a cache miss (key rotation) it performs
+    blocking HTTP on the event loop and stalls every in-flight request.
+    Prefetch the JWKS at startup, and run the miss path through
+    `run_in_threadpool`.
+  - slowapi's `limiter.limit(...)` is backed by the synchronous `limits`
+    Redis storage, so each rate-limited update/delete does a blocking
+    Redis round trip on the event loop. If the flame graph confirms it,
+    switch to `limits`' async Redis storage (its own documented API) or
+    move the check off-loop.
+- **RS256 verification cost:** don't cache verified tokens, and don't
+  hand-roll a verifier. PyJWT's `jwt.decode` with RS256 (2048-bit key,
+  audience and issuer checks) measured about 48 µs per call in the
+  devcontainer. At the reference budget that's under 5% of one CPU at
+  1,000 req/s, which is small next to a Postgres round trip. A
+  verified-claims cache would save at most that, while adding stale
+  trust after key rotation or a role change, and cache-key pitfalls:
+  different encodings of the same token produce different string keys.
+  Revisit only if the flame graph shows verification above about 10%
+  of CPU.
+- **Query shape:** check the generic repository for N+1 queries and
+  `count()` calls that run alongside every list. Any fix must stay
+  generic (`NFR-0004`).
+
+### Phase 3: connection modes, switchable by setting (needs an ADR)
+
+`NullPool` costs a TCP handshake, Postgres auth, backend fork and
+statement re-preparation on every request. That is exactly the cost the
+challenge's fastest entries avoided by reusing one connection.
+`NFR-0016` already names the sanctioned fix, an external pooler, and
+`ADR-0010` built the perf suite partly to measure this trade-off.
+
+The right pooling choice depends on where the app is deployed, not on
+the code, so make it deployment configuration. Add one setting,
+`DB_POOL_MODE` (`Settings.db_pool_mode`, set from the environment per
+`NFR-0017`), which `crud/models/base.py` reads when it builds the
+engine:
+
+| `DB_POOL_MODE` | Engine | Use when |
+| --- | --- | --- |
+| `null` (default) | `NullPool`, as today | Tests, `dev`, `mock`. Behavior stays the same until a deployment opts in. |
+| `local` | `AsyncAdaptedQueuePool` with `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE`, `pool_pre_ping=True` | The app connects straight to Postgres (repo-root `compose.yml`, or a CloudNativePG `<cluster>-rw` service) and the connection budget below fits |
+| `external` | `NullPool` + `connect_args={"prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__"}` | Behind PgBouncer in transaction mode, e.g. a CloudNativePG `Pooler`. This is SQLAlchemy's documented asyncpg-behind-PgBouncer recipe: asyncpg's default numbered statement names collide across clients that share a server connection. |
+
+**Choosing `local` vs `external` (connection budget):** replicas ×
+workers × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) must stay below
+Postgres's `max_connections`, minus reserved slots and headroom for
+migrations and admin sessions. While it fits, use `local`: it's one
+fewer network hop, and no extra process takes CPU. On the 1-vCPU
+budget, PgBouncer would compete with the app for the same core, the
+same reason the challenge's fastest entries dropped Nginx. Switch to
+`external` once replica autoscaling pushes the total past that limit,
+which is the problem PgBouncer exists to solve.
+
+1. Add the setting and an engine factory. Unit-test that each mode
+   produces the right pool class and `connect_args`. Integration-test
+   `local` against the devcontainer's Postgres inside one event loop.
+2. Measure `null` vs `local` in capacity mode at the reference budget
+   to size the win. The repo-root `compose.yml` sets
+   `DB_POOL_MODE=local`, so `perf.yml` measures the mode a direct
+   deployment would use.
+3. `external` is covered only by step 1's unit tests. No PgBouncer
+   service is added to any stack in this repo. Live-test it on the
+   first deployment that actually sits behind a pooler: run PgBouncer in
+   transaction mode with an explicit non-zero `max_prepared_statements`
+   (the default changed across versions), and check that prepared
+   statements don't pile up on server connections.
+4. Write an ADR and an NFR superseding `NFR-0016`: pooling becomes
+   per-deployment configuration, `NullPool` stays the default and test
+   mode, and the ADR records the budget formula and step 2's numbers.
+
+### Phase 4: environment variables ready for an HA Postgres operator
+
+Scope: only settings the app reads from its environment (`NFR-0017`),
+so a later deployment behind an operator is pure configuration.
+Nothing operator-related goes into the devcontainer, `compose.yml`, CI
+or Kubernetes manifests. CloudNativePG (CNPG) is the operator kept in
+mind. Zalando, Crunchy PGO, Percona and StackGres expose the same
+shape: a service pointing at the primary, an optional PgBouncer, and a
+credentials secret. None of the variables below is CNPG-specific.
+
+Every new variable defaults to today's behavior, so nothing changes
+for the devcontainer or existing deployments:
+
+| Variable | Default | Purpose | Later, under CNPG |
+| --- | --- | --- | --- |
+| `POSTGRES_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_DB` | as today | Already exist | From the `<cluster>-app` secret via `secretKeyRef`. Host is `<cluster>-rw`, or the `Pooler`'s service name. Check the secret's key names with `kubectl` then. |
+| `DB_POOL_MODE` | `null` | Phase 3 | `local` against `<cluster>-rw`, `external` behind a CNPG `Pooler` (PgBouncer, transaction mode) |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_RECYCLE` | SQLAlchemy defaults | `local`-mode pool sizing | Sized against the connection budget in Phase 3 |
+| `POSTGRES_SSLMODE` | unset (no TLS, as today) | Passed through to asyncpg's `ssl` | `require` or `verify-full` (CNPG manages server certificates). Add a production guardrail requiring it, matching the existing OIDC, S3, Redis and MQTT TLS guardrails in `config.py`. |
+| `DB_CONNECT_TIMEOUT` / `DB_COMMAND_TIMEOUT` | asyncpg defaults | asyncpg `timeout` / `command_timeout` | Short values, so requests fail fast during a failover (CNPG drops the old primary's connections; node-failure detection takes about 40–55s by default) instead of hanging |
+| `RUN_MIGRATIONS_ON_STARTUP` | `true` | Lets `app.main`'s lifespan skip `alembic upgrade head` | `false` once several replicas would race, or when connecting through PgBouncer. Migrations then run from a separate step against `<cluster>-rw` directly. That step belongs to the future deployment, not this repo. |
+
+Each variable gets a unit test of its parsing and its effect on the
+engine or lifespan, plus a row in `src/app/README.md`'s configuration
+docs.
+
+**Not in scope now; notes for when deployment happens:** map
+lost-connection errors to 503 + `Retry-After` and never auto-retry
+writes. Confirm `/health/live` doesn't touch the database
+(`NFR-0008`), so a database failover doesn't restart app pods. Keep all
+traffic on `-rw`, not `-ro` replicas, because the CRUD layer assumes it
+reads its own writes and replication lag would break that.
+
+### Phase 5: optional OpenTelemetry metrics and traces (needs an ADR)
+
+Today only logs are exported over OTLP, and only when
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set (`ADR-0007`, `NFR-0023`). Extend
+that to all three signals with the same switch, and with no
+behavior change when it's unset.
+
+1. **Decision records:** a new ADR superseding `ADR-0007`'s
+   "logs only" decision, and an NFR superseding `NFR-0023`. Keep
+   `ADR-0007`'s other rule: OTel's own standard environment variables
+   are the only configuration, never re-modeled on `Settings`. That
+   gives per-signal on/off with `OTEL_TRACES_EXPORTER` /
+   `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER` (`otlp` or `none`),
+   sampling with `OTEL_TRACES_SAMPLER` (+ `_ARG`), the export interval
+   with `OTEL_METRIC_EXPORT_INTERVAL`, a full kill switch with
+   `OTEL_SDK_DISABLED`, and excluded routes with
+   `OTEL_PYTHON_FASTAPI_EXCLUDED_URLS` (exclude `/health/.*`, so probes
+   don't flood traces).
+2. **Wiring in `app.telemetry`:** next to the existing
+   `LoggerProvider`, set up a `TracerProvider` (batch span processor,
+   OTLP/HTTP span exporter) and a `MeterProvider`
+   (`PeriodicExportingMetricReader`, OTLP/HTTP metric exporter). Both
+   exporters ship in `opentelemetry-exporter-otlp-proto-http`, which is
+   already a dependency. All three share one `Resource`
+   (`service.name`, plus `service.version` and
+   `deployment.environment` from `OTEL_RESOURCE_ATTRIBUTES`).
+3. **Instrumentation, using OTel's packages only:**
+   - `opentelemetry-instrumentation-fastapi`: server spans and HTTP
+     request-duration histograms per route.
+   - `opentelemetry-instrumentation-sqlalchemy`, attached to
+     `engine.sync_engine`: query spans, and connection-pool metrics if
+     the package emits them. Otherwise add a few observable gauges
+     reading `engine.pool.status()` (checked out, overflow), which is
+     how the Phase 3 pooling change gets verified in production.
+   - Pin instrumentation versions to the existing
+     `opentelemetry-instrumentation-logging` release line.
+4. **Log/trace correlation:** add `trace_id` / `span_id` to every
+   `_JSONFormatter` line when a span is active, so a slow trace can be
+   found from its logs and the other way round.
+5. **No `/metrics` endpoint.** Metrics are pushed over OTLP. In
+   Kubernetes they go to an OTel Collector, or straight to Prometheus
+   3's OTLP receiver (`--web.enable-otlp-receiver`, HTTP only, served at
+   `/api/v1/otlp/v1/metrics`). This avoids the scraped endpoint's
+   multi-worker problem (`prometheus_client` multiprocess mode), and
+   OTel's Python docs recommend OTLP push for forking servers.
+   Kubernetes deployments run one worker per pod anyway, and scale by
+   adding pods. Add a scrape endpoint only if the eventual cluster has
+   neither a collector nor an OTLP receiver.
+6. **Tests:** unit tests use OTel's in-memory span and metric
+   exporters to assert that spans exist for a request and a query, that
+   health routes are excluded, and that log lines carry the trace ID. No
+   collector is added to the devcontainer or `compose.yml`.
+7. **Overhead budget:** with the Phase 0 harness at the 1 vCPU / 2 GB
+   budget, run capacity mode three ways: telemetry unset, enabled with
+   sampling at 100%, and enabled with sampling at 10%. Record the cost
+   in the ADR, and pick a default sampling recommendation from it.
+   Telemetry that eats the capacity it's meant to watch is a
+   regression too.
+
+### Phase 6: caching (needs an ADR)
+
+Rule: share cached data across users only when it isn't per-user.
+Heroes are owner-scoped (`ADR-0011`), so a shared cache of lists or
+records would need the user and their roles in every key, and one
+mistake there leaks data. On 1 vCPU, a Redis round trip also costs
+about as much as the indexed query it would replace.
+
+1. **Conditional GETs (`ETag` / `304`), in the crud router:**
+   - Single-record GETs get an `ETag` derived from the record's id and
+     `updated_at` (or its latest revision).
+   - List GETs get a weak `ETag` over the ids and `updated_at` values of
+     the page.
+   - Honor `If-None-Match` with a `304` and no body, and send
+     `Cache-Control: private, no-cache`: browsers may revalidate, shared
+     proxies never store.
+   - The same `ETag`s enable `If-Match` on `PATCH`/`DELETE` (`412` on
+     mismatch): optimistic concurrency control, so concurrent edits
+     can't silently overwrite each other.
+   - Keep JSON, XML and web parity (`ADR-0005`, `ADR-0017`).
+   - Measure the saving in the bench lane with a Locust task that
+     revalidates. The query still runs, so the saving is serialization
+     and bandwidth.
+2. **Server-side cache for `/stats` and `/predict`:**
+   - Whole-table aggregates are the most expensive reads, and they
+     aren't per-record.
+   - `crud` defines a small cache protocol, and the router factories
+     take an optional cache. `crud` itself never depends on Redis.
+   - `app.cache` implements the protocol with `redis.asyncio`, which is
+     already a dependency.
+   - Keys include the resource, query parameters, and the caller's
+     role/ownership scope.
+   - Invalidate on writes through the CRUD event stream the app already
+     publishes (`ADR-0015`), with a short TTL as the safety net.
+   - Off unless `STATS_CACHE_TTL_SECONDS` is set.
+   - Before writing a helper, check that `fastapi-cache2` is still
+     maintained and fits.
+3. **Already covered elsewhere:** the JWKS and settings caches,
+   SQLAlchemy's compiled-statement cache, and asyncpg's
+   prepared-statement reuse (Phase 3).
+
+### Phase 7: autoscaling readiness
+
+Same scope as Phase 4: app-side changes and environment variables
+only, with no manifests, operators or autoscalers in this repo. The goal
+is that HPA, KEDA, VPA and a node autoscaler (Karpenter or Cluster
+Autoscaler) can drive this app later through configuration alone.
+
+**Already in place, or covered by other phases:**
+
+- **Stateless pods.** Rate limiting and the Phase 6 stats cache are in
+  Redis, auth is stateless JWT, files are in S3, and the JWKS cache is
+  per pod by design.
+- **Signal handling.** `runner.sh` `exec`s uvicorn under an exec-form
+  `ENTRYPOINT`, so the server is PID 1, receives `SIGTERM`, stops
+  accepting connections, and finishes the requests in flight.
+- **Startup.** Phase 1 precompiles bytecode, Phase 4 can move migrations
+  out of startup, and Phase 0 measures time-to-ready.
+- **Per-pod capacity.** The 1 vCPU / 2 GB reference budget is also the
+  pod size, so Phase 0's capacity number is exactly what a scaling
+  target is derived from.
+- **Scaling metrics.** Phase 5's FastAPI instrumentation emits the
+  standard `http.server.active_requests` and
+  `http.server.request.duration`.
+
+**App-side work:**
+
+1. **Shutdown timeout:** `runner.sh` passes
+   `--timeout-graceful-shutdown` from `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`
+   (unset by default, which keeps uvicorn's behavior). This bounds how
+   long a scale-down waits for open connections.
+2. **Lifespan shutdown:** today `app.main`'s lifespan does nothing
+   after `yield`. Dispose the engine there (`await engine.dispose()`),
+   so `local`-mode pool connections close cleanly instead of being cut
+   when the process exits.
+3. **SSE streams on scale-down:** `/events` streams never end on their
+   own, so they hold a terminating pod open until the shutdown timeout
+   cancels them. That's acceptable only if clients resume losslessly
+   elsewhere. The router already resumes from `Last-Event-ID` through
+   the broker's persistent MQTT session. Add an integration test: open
+   an SSE stream against a uvicorn subprocess, send `SIGTERM`, and
+   assert that the process exits within the timeout plus a margin, and
+   that a reconnect with the last event id loses no events. Add code (a
+   router-factory shutdown hook) only if that test fails, and escalate
+   first (trigger 4): it means hooking into the server's shutdown.
+4. **Scaling-metric docs:** document that deployments set
+   `OTEL_RESOURCE_ATTRIBUTES=k8s.pod.name=$(POD_NAME)` (Downward API),
+   so metrics can be split per pod. Include an example PromQL for KEDA's
+   Prometheus scaler: average in-flight requests per pod, from
+   `http_server_active_requests` after Prometheus's OTLP name
+   translation. Target about 60–70% of the measured per-pod capacity.
+5. **Connection budget vs replicas:** Phase 3's formula sets the upper
+   bound on the autoscaler's `maxReplicas` (pods × workers ×
+   (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) < `max_connections` − reserve).
+   Above that bound, use `DB_POOL_MODE=external`.
+6. **Shutdown under load (bench lane):** run sustained load against one
+   instance, send `SIGTERM` mid-run, and assert that every request
+   accepted before the signal completes without a 5xx. New connections
+   being refused is expected. A multi-replica rolling-restart test needs
+   a load balancer and belongs to the eventual deployment, not this
+   repo.
+
+**Deployment notes for later (not implemented here):**
+
+| Concern | Setting |
+| --- | --- |
+| Pod autoscaling | KEDA `ScaledObject` with the Prometheus scaler on in-flight requests per pod, or plain HPA on CPU as the simpler start. `minReplicaCount` ≥ 2. |
+| Scale to zero | No. Every first request would wait for a cold start, KEDA's HTTP add-on puts its proxy in front of all traffic, and long-lived SSE connections don't fit. |
+| Requests and limits | CPU request = 1, memory request = memory limit = 2Gi (the reference budget). No CPU limit, or one equal to the request: CFS throttling hurts tail latency. |
+| VPA | Recommendation-only (`updateMode: "Off"`) to validate requests. Never VPA and HPA on the same CPU/memory metric. In-place resize (stable since Kubernetes 1.35) can't shrink a Python process's memory without a restart. |
+| Node autoscaling | Karpenter or Cluster Autoscaler size nodes from *requests*, so accurate requests matter. Add a PodDisruptionBudget (e.g. `maxUnavailable: 1`), because consolidation evicts pods. |
+| Termination | `preStop` sleep of about 5–10 s (built-in `sleep` action, Kubernetes 1.30+) so endpoint removal propagates before shutdown starts. `terminationGracePeriodSeconds` > preStop + `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`. |
+| Probes | `startupProbe` and `readinessProbe` on `/health/ready`, `livenessProbe` on `/health/live` (never touching the database, `NFR-0008`). |
+
+### Testing this properly (summary of Phase 0 rules)
+
+- Test the production image (`runner`) against real backing services,
+  never `MODE=mock` or `--reload` (`ADR-0010`). The `MODE=mock` ASGI
+  microbenchmark is the only exception, because it measures framework
+  overhead.
+- Pin the hardware (CPU and memory caps), warm up, hold each load step
+  for minutes rather than seconds, and repeat runs.
+- Judge on p95/p99 and error rate at a fixed load (regression), plus
+  max sustained users within the SLO (capacity). Average latency hides
+  the tail that fails first, which is what the video saw at every
+  cliff.
+- Report app CPU and RSS with every result. Hitting the same capacity
+  at half the CPU is a real improvement.
+- Change one variable per run, and keep a flame graph with every
+  accepted change.
+
+### CI
+
+Keep the split from `ADR-0010`: noisy wall-clock load tests don't gate
+PRs. Add a low-noise per-PR layer.
+
+| Layer | Trigger | Tool | Gate |
+| --- | --- | --- | --- |
+| Microbenchmarks (`tests/bench/`) | every PR and push to `main` | `pytest-benchmark` run through [CodSpeed](https://codspeed.io/) simulation mode, which counts instructions instead of wall-clock time, so shared-runner noise mostly disappears | CodSpeed's PR regression report. Fail above a set percentage. |
+| Fixed-load regression (existing `perf.yml`) | weekly + `workflow_dispatch` + PRs labelled `perf` | Locust, against the CPU-capped stack from `compose.perf.yml` | `NFR-0024` absolute ceilings (as today), plus a relative check against the latest `main` run's JSON summary, downloaded as an artifact (fail if p95 is more than X% worse). |
+| Capacity search | `workflow_dispatch` only | Locust `LoadTestShape` | None (report only). Publishes max users, CPU, RSS and the py-spy flame graph as artifacts. |
+
+Notes:
+
+- `perf.yml` already honours `vars.CI_RUNNER`. A dedicated self-hosted
+  runner, even a small fixed VM, makes the relative check far more
+  trustworthy than shared `ubuntu-24.04` runners.
+- **CodSpeed (decided):** the requirement was a service with a good
+  long-term track record among open-source projects. CodSpeed has run since
+  2022, and Pydantic and Astral (ruff, uv) use it in CI. Its Free plan
+  is "forever free" with unlimited users for open-source projects (this
+  repo is public), and its client tooling (`CodSpeedHQ/action`,
+  `pytest-codspeed`) is MIT-licensed. Lock-in is low: benchmarks stay
+  plain `pytest-benchmark` tests, so dropping CodSpeed means swapping
+  the CI step, not rewriting tests.
+- **Fallbacks if CodSpeed ever stops fitting, in order:** [Bencher](https://bencher.dev/) (since 2020,
+  core MIT/Apache-2.0 with a proprietary "plus" tier, self-hostable,
+  smaller adoption, with Rustls and Diesel as case studies), then
+  `pytest-benchmark --benchmark-compare` with `github-action-benchmark`
+  (no external service, wall-clock, needs generous thresholds).
+- Adding a per-PR benchmark job and a fifth test suite amends
+  `ADR-0010`: record it as a new ADR rather than editing the accepted
+  one.
+- After Part A, `crud`'s and `health`'s microbenchmarks (repository
+  filtering, router factories, health registry) live and run in their
+  own repos through the package template's CodSpeed workflow. This
+  repo's `tests/bench/` keeps the app-level ones (token verification,
+  the ASGI round trip).
+
+## Decision log
+
+Decisions already made, so executing agents don't reopen them. The
+orchestrator appends to this list as it resolves escalations.
+
+| Date | Decision |
+| --- | --- |
+| 2026-10-17 | 1 vCPU / 2 GB is the reference budget for all capacity numbers. |
+| 2026-10-17 | No caching of verified tokens. RS256 verification is ~48 µs, and the security cost outweighs that. |
+| 2026-10-17 | CodSpeed for per-PR microbenchmarks. Bencher, then `github-action-benchmark`, are fallbacks only. |
+| 2026-10-17 | `DB_POOL_MODE` (`null`/`local`/`external`), default `null`. |
+| 2026-10-17 | CloudNativePG is kept in mind as a target only: env variables in the app, nothing operator-related in the devcontainer, compose or CI. |
+| 2026-10-17 | OTel metrics and traces pushed over OTLP. No `/metrics` endpoint. |
+| 2026-10-17 | Packages and the package template are GPL-3.0 for now. |
+| 2026-10-17 | Names: `template-python-package`, `tool-crud` / `tool-health` repos, `craftainer-tool-*` on PyPI, `craftainer_tool_*` imports. |
+| 2026-10-17 | Shared server-side caching only for non-per-user aggregates (`/stats`, `/predict`). Per-user responses get `ETag`/`304` with `Cache-Control: private` only. |
+| 2026-10-17 | uvicorn stays the default server. Granian replaces it only if it wins the capacity A/B at the reference budget. |
+| 2026-10-17 | Not now: Python JIT, free-threaded build, gzip in the app. |
+| 2026-10-17 | Autoscaling: app-side readiness only in this repo. No scale to zero, at least 2 replicas, KEDA on in-flight requests preferred over CPU-only HPA, never VPA and HPA on the same metric. |

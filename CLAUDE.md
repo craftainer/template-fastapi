@@ -81,12 +81,22 @@ Practices below are distilled from Anthropic's own Claude Code guidance
 - **Course-correct early.** If the same correction has to be made
   twice on one approach, stop and reconsider the approach itself
   rather than trying a third variation.
-- **Resolve test coverage gaps in parallel.** When closing multiple
-  test coverage gaps, first plan out which gaps are independent (touch
-  disjoint files/modules with no shared state or ordering dependency),
-  then dispatch one subagent per independent gap to write/fix its tests
-  concurrently rather than working through the list serially. Gaps that
-  share a file or depend on each other's changes stay sequential.
+- **Execute multi-item work as an orchestrator.** When executing a
+  `docs/plans/` plan, or any task that splits into several independent
+  items (closing multiple test coverage gaps, for example), the main
+  session orchestrates rather than implementing: it briefs one
+  `plan-executor` subagent (`.claude/agents/plan-executor.md`, a
+  faster model) per item, each in its own worktree with an explicit
+  write set. It runs items with disjoint write sets in parallel and
+  keeps items that share a file or depend on each other sequential. It
+  merges and verifies the results, and asks the user at every gate. When
+  a subagent escalates, the orchestrator researches, decides, records
+  the decision in the plan's Decision log, and resumes that same
+  subagent; decisions that are really the user's go to the user. Checks
+  that share devcontainer services (integration/e2e suites, load tests)
+  run one at a time in the orchestrator's own lane, never in parallel
+  subagents. See [`docs/plans/README.md`](docs/plans/README.md) for how
+  a plan lays this out.
 - **Flag devcontainer changes as needing a rebuild.** Editing anything
   under `.devcontainer/` (compose files, `stack/`, Dockerfiles) doesn't
   take effect in the running container — tell the user a rebuild is
