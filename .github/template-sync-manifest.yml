@@ -75,6 +75,7 @@ replace:
   - .devcontainer/compose.instance.yml
   - .devcontainer/stack/
   - .vscode/launch.json
+  - .github/workflows/codspeed.yml
   - .github/workflows/perf.yml
   - .github/workflows/smoke.yml
   - .github/workflows/migration-compat.yml

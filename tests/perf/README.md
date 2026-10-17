@@ -198,3 +198,8 @@ in both modes, when the run quits (not written by distributed workers):
   there as root; `SYS_PTRACE` from `compose.perf.yml` permits the attach.
   It uses `--nonblocking` so sampling doesn't pause the app under load. Run it
   during a capacity run's hold phase, and open the file in speedscope.
+- `compare_summary.py --baseline A.json --current B.json
+  [--max-regression-percent 20]` compares two `--summary-json` files' aggregate
+  p95 and exits 1 if the current one is worse by more than the limit (0 with no
+  usable baseline); `.github/workflows/perf.yml` uses it against the latest
+  `main` run's summary.
