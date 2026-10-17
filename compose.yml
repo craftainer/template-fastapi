@@ -173,6 +173,11 @@ services:
       # dependencies, not MODE=mock's in-memory fakes.
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      # Satisfies the production postgres_sslmode guardrail; the postgres
+      # service above serves TLS with the smoke-tls cert. `require`, not
+      # verify-full: asyncpg only verifies against a separately supplied CA
+      # file, which no setting provides yet.
+      POSTGRES_SSLMODE: require
       # OTel service.name, read by craftainer_tool_observability.logs's
       # Resource.create() (OTEL_SERVICE_NAME is OTel's own env var).
       OTEL_SERVICE_NAME: template-fastapi
