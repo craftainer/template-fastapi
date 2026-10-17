@@ -44,6 +44,34 @@ In progress (2026-09-24).
   - The checks run (`devcontainers/ci` builds the devcontainer and runs
     `prek run --all-files --hook-stage manual`) passes on amd64 and
     arm64. A local rebuild is up to the user.
+- C (2026-10-09): both repos' changes were prepared and pre-checked
+  locally on template-base `main`. Repos not created yet.
+  - Infra: `10-tofu.sh` (OpenTofu 1.13.1), `main.tf`, a `tofu-fmt` hook,
+    and local manifest `"*.tf"`.
+  - Go: `10-go.sh` (Go 1.27.2), `cmd/hello`, `app.Dockerfile`, a
+    two-arch `Makefile`, `gofmt`/`go vet` hooks, and local manifest
+    `go.mod`, `cmd/`, `app.Dockerfile`.
+  - Both `develop` images build (arm64), and `tofu version` and
+    `go version` work. Every new hook passes.
+  - **Blocker:** `devcontainer-lock` fails on template-base `main` itself.
+    Renovate #6 bumped `docker-in-docker` 4.1.1 → 4.1.2 in
+    `devcontainer.json` but not in the lockfile. Fix branch
+    `fix/devcontainer-lock-dind-4.1.2` (regenerated lockfile) is
+    template-base#8, with prek passing on both arches. After it: a
+    `v1.2.4` release to create the C repos from.
+  - Finding: CI stayed green on `main` with the stale lockfile (runs after
+    #6 and #7), so CI doesn't catch this drift; only the local pre-commit
+    hook does. Likely cause: building the devcontainer in CI rewrites the
+    lockfile in the checkout before prek runs.
+  - 2026-10-17: #8 merged, but Renovate #9 (merged just before it)
+    bumped `docker-in-docker` again (4.1.2 → 4.1.3), so `main`'s lockfile
+    is stale again. Renovate's devcontainer manager doesn't update
+    `devcontainer-lock.json`. Decision: turn off Renovate's devcontainer
+    feature updates until it supports the lockfile. Branch
+    `chore/renovate-skip-devcontainer-features` (`b05c71e`) adds the
+    package rule, locks 4.1.3, and fixes the docs that assumed a red
+    check blocks automerge. The Renovate validator and prek pass.
+    template-base PR, then `v1.2.4`.
 
 Step 7 of the sequence in
 [`2026-09-template-base-extraction.md`](2026-09-template-base-extraction.md)'s
