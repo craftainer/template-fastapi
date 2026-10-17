@@ -11,3 +11,9 @@ services:
     mem_limit: 2g
     cap_add:
       - SYS_PTRACE
+    # Every Locust user shares one client IP, and the bulk-action limit is
+    # per IP (app.rate_limit, default 20/minute), so the default would turn
+    # PATCH/DELETE into 429s at any real load. Raise only the threshold: the
+    # limiter's Redis round trip still runs on every request being measured.
+    environment:
+      RATE_LIMIT_BULK_ACTION: "1000000/minute"
