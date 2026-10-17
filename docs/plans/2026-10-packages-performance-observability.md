@@ -1,4 +1,4 @@
-# Extract crud/health packages, then improve throughput and observability
+# Extract crud and observability packages, then improve throughput and observability
 
 ## Status
 
@@ -15,7 +15,8 @@ or rejected on numbers rather than folklore. Make the app's
 configuration and telemetry ready for a later Kubernetes deployment
 (HA Postgres operator; OpenTelemetry metrics and traces feeding
 Prometheus and similar tools), so it can be observed in production too.
-Before any of that, move the generic `crud` and `health` packages out
+Before any of that, move the generic `crud` package, and `health` grown into a
+broader observability package, out
 of this repo into their own published Python packages, built from a
 new reusable Python package template. All of this lands as one batch
 of changes, run as parallel waves of Sonnet 5.5 agents under an Opus
@@ -97,6 +98,9 @@ Plan-specific settings:
 
 ### Pre-flight: what the user sets up before kickoff
 
+Step-by-step version for the user to work through:
+[`2026-10-packages-performance-observability-preflight.md`](2026-10-packages-performance-observability-preflight.md).
+
 Everything here is either something only the user can do (org admin
 rights, third-party web UIs, rebuilding the devcontainer) or a decision
 that would otherwise stop execution midway. Once all of it is done,
@@ -106,8 +110,8 @@ execution needs only the remaining gates below.
 
 1. **PyPI and TestPyPI:** accounts with 2FA. Register a *pending
    trusted publisher* on both for `craftainer-tool-crud` and
-   `craftainer-tool-health`: owner `craftainer`, repos `tool-crud` /
-   `tool-health`, workflow `release.yml`, no environment. Pending
+   `craftainer-tool-observability`: owner `craftainer`, repos `tool-crud` /
+   `tool-observability`, workflow `release.yml`, no environment. Pending
    publishers work before the repos and projects exist.
 2. **Org-level secrets and variables** (they need `admin:org`, which the
    orchestrator's token doesn't have, so new repos inherit them):
@@ -149,7 +153,7 @@ execution needs only the remaining gates below.
 10. **Standing approvals (granted 2026-10-17):** the orchestrator may,
     without asking:
     - create `craftainer/template-python-package`, `craftainer/tool-crud`
-      and `craftainer/tool-health`;
+      and `craftainer/tool-observability`;
     - push branches and open PRs in those repos, in template-base, and
       here;
     - trigger template-base's `release.yml`.
@@ -175,7 +179,7 @@ the same kind that fall in one wave are batched into a single request:
 | --- | --- |
 | G0 | Kickoff: confirm pre-flight items 1–9 are done. |
 | G-pr | Merging any PR (user approves and merges): the template repo and package-repo scaffolding, template-base changes (B1), the package moves, and the integration branch into `main`. Each wave's PRs are raised together. |
-| G-rel | Triggering `release.yml` in `tool-crud`/`tool-health` (TestPyPI dry run first, then PyPI), and in `template-python-package`. |
+| G-rel | Triggering `release.yml` in `tool-crud`/`tool-observability` (TestPyPI dry run first, then PyPI), and in `template-python-package`. |
 | G-esc | Any escalation whose decision is really the user's: scope, security trade-offs, deleting anything outside this plan's own branches and repos. |
 | G-final | Deleting this plan file and closing out (after X2/X3 have folded it into ADRs and docs). |
 
@@ -196,7 +200,7 @@ during pre-flight (items 5–7), before the devcontainer rebuild.
 | ID | Item | Write set |
 | --- | --- | --- |
 | W0a | **One top-level Dockerfile** (decided; base side is `craftainer/template-base#12`). In the sync PR to the base release containing #12, do the one-time upgrade: rename `app.Dockerfile` → `Dockerfile` and `app.Dockerfile.dockerignore` → `.dockerignore`, overwriting base's old root files. Update every reference: `Makefile` (`-f app.Dockerfile`), the repo-root `compose.yml`, `scripts/check-dockerfile-versions.sh` (now compares `.devcontainer/Dockerfile` with `Dockerfile`) and its README, `docs/TEMPLATE.md`, `docs/architecture.md`, and this repo's sync manifest (`Dockerfile`/`.dockerignore` stay `replace` for template-fastapi's own instances; `app.Dockerfile*` entries go). Accepted ADRs keep their old wording. | those files |
-| W0 | A4 rename in place (`crud` → `craftainer_tool_crud`, `health` → `craftainer_tool_health`). Add every new dependency for the whole plan in one go (`pytest-benchmark`, `pytest-codspeed`, `py-spy`, `pyinstrument`, `opentelemetry-instrumentation-fastapi`/`-sqlalchemy` at `0.65b0`, `granian`) plus `uv lock`. Add `--ignore=tests/bench` to pytest `addopts`. This means no later item edits `pyproject.toml` dependencies or `uv.lock`. | `src/`, `tests/`, `alembic/env.py`, `pyproject.toml`, `uv.lock`, living `README.md`s |
+| W0 | A4 rename in place (`crud` → `craftainer_tool_crud`, `health` → `craftainer_tool_observability.health`), and move `app/telemetry.py`'s logging (JSON formatter, redaction, OTLP log bridge) to `craftainer_tool_observability.logs`, with the service name taken from `OTEL_SERVICE_NAME` instead of `settings.app_name` (A3). Add every new dependency for the whole plan in one go (`pytest-benchmark`, `pytest-codspeed`, `py-spy`, `pyinstrument`, `opentelemetry-instrumentation-fastapi`/`-sqlalchemy` at `0.65b0`, `granian`, `squawk-cli`) plus `uv lock`. Add `--ignore=tests/bench` to pytest `addopts`. This means no later item edits `pyproject.toml` dependencies or `uv.lock`. | `src/`, `tests/`, `alembic/env.py`, `pyproject.toml`, `uv.lock`, living `README.md`s, `compose.yml`/`.devcontainer/compose.instance.yml` env (`OTEL_SERVICE_NAME`) |
 
 **Wave 1: fan-out (17 agents, after W0 is verified; T1–T3 and B1 run
 under the standing approvals).**
@@ -207,7 +211,7 @@ under the standing approvals).**
 | T2 | A1 template: release `Makefile` + release-check script | template repo: `Makefile`, `scripts/release-check*` |
 | T3 | A1 template: README, `docs/TEMPLATE.md` notes, ADR, Renovate, sync-manifest entries, CodSpeed workflow | template repo: docs, `.github/` |
 | B1 | A2: `id-token: write` on template-base's publish job | template-base: `release.yml` |
-| D1 | A3: decouple crud (settings and engine injection, move `xml_codec`/`web_components` in, rate-limit decorator injection, extras), plus independence contracts for crud and health | `src/craftainer_tool_crud/`, `src/app/{main.py,crud_1/,xml_codec.py,web_components.py}`, moved tests, pyproject `[tool.importlinter]` only |
+| D1 | A3: decouple crud (settings and engine injection, move `xml_codec`/`web_components` in, rate-limit decorator injection, extras), plus independence contracts for crud and observability | `src/craftainer_tool_crud/`, `src/app/{main.py,crud_1/,xml_codec.py,web_components.py}`, moved tests, pyproject `[tool.importlinter]` only |
 | P1 | Phase 0.1/0.4/0.5: `compose.perf.yml` (caps, `SYS_PTRACE`), docker-stats sampler, py-spy profile script | `compose.perf.yml`, `tests/perf/{stats,profile}.*` |
 | P2 | Phase 0.2/0.3: Locust capacity mode (`LoadTestShape`), `--processes`, JSON summary | `tests/perf/locustfile.py`, `tests/perf/README.md` |
 | P3 | Phase 0.6: app-level microbenchmarks (token verify, ASGI round trip) | `tests/bench/` |
@@ -215,18 +219,19 @@ under the standing approvals).**
 | S1 | Phase 3/4 settings: `DB_POOL_*`, `POSTGRES_SSLMODE` + production guardrail, `DB_*_TIMEOUT`, `RUN_MIGRATIONS_ON_STARTUP` (fields, validation, tests only; no consumers yet) | `src/app/config.py`, its unit tests, `src/app/README.md` config section |
 | R1 | Phase 1: `runner.sh` flags, `--limit-concurrency`, Phase 7.1 `--timeout-graceful-shutdown`, `APP_SERVER` switch (uvicorn/granian) + a lifespan check under Granian, `UV_COMPILE_BYTECODE` (code only; measured in the bench lane) | `runner.sh`, `Dockerfile` builder stage, `scripts/builder-sync-*.sh` |
 | R2 | Phase 2: JWKS prefetch at startup + off-loop cache-miss path | `src/app/oidc.py`, its tests |
-| O1 | Phase 5.2–5.4, 5.6: tracer and meter providers, `instrument_app()` / `instrument_engine()` / pool-gauge helpers, trace-id log correlation, in-memory-exporter tests (not wired into `main.py`); Phase 7.4 scaling-metric docs | `src/app/telemetry.py`, its tests, `src/app/README.md` telemetry section |
-| X1 | ADR drafts: perf CI and benchmarks (amends 0010), package extraction, OTel + NFR superseding 0023 | `docs/adrs/`, `docs/nfrs/` (new files only) |
-| X2 | ADR + NFR superseding 0016 for `DB_POOL_MODE`, and the Phase 6 caching ADR, with measured numbers left as `TBD` | `docs/adrs/`, `docs/nfrs/` (new files only) |
-| Q1 | Read-only audit: response path, `jsonable_encoder`, double validation in the crud router | none (report only) |
-| Q2 | Read-only audit: N+1 and `count()` patterns in repositories; confirm slowapi's sync Redis call on the event loop | none (report only) |
+| O1 | Phase 5.2–5.4, 5.6, in the package's `[otel]` extra: tracer and meter providers, `instrument_app()` / `instrument_engine()` / pool-gauge helpers, trace-id log correlation, in-memory-exporter tests (not wired into `main.py`); Phase 7.4 scaling-metric docs; Phase 8.5 `service.version` from the release version + per-version query docs | `src/craftainer_tool_observability/{otel.py,logs.py}`, their tests, the package `README.md` telemetry section |
+| D2 | A3 for observability: generic dependency checks (`PostgresCheck(engine)`, `RedisCheck(url)`, `S3Check(...)`, `HTTPCheck(url)` for OIDC discovery) into `health/checks/` behind extras; `app/health_checks.py` keeps only the registry wiring from `Settings` | `src/craftainer_tool_observability/health/checks/`, `src/app/health_checks.py`, their unit tests |
+| N1 | A3b new package features: request-ID middleware, opt-in `/health/info`, opt-in profiling hook | `src/craftainer_tool_observability/{middleware.py,profiling.py,health/router.py}`, their tests |
+| Q1 | Read-only audits, reported as two findings lists: (a) response path, `jsonable_encoder`, double validation in the crud router; (b) N+1 and `count()` patterns in repositories, and confirm slowapi's sync Redis call on the event loop | none (report only) |
+| V1 | Phase 8.2–8.4: NFR-0027 (expand/contract), `migration-compat.yml` (N-1 check, skips until the first release with `RUN_MIGRATIONS_ON_STARTUP`), Squawk `prek` hook over rendered migration SQL | `docs/nfrs/NFR-0027-*.md`, `.github/workflows/migration-compat.yml`, `.github/workflows/README.md` (its section), `.pre-commit-config.yaml` (its hook), a new `scripts/lint-migrations.sh` |
 
 Pre-assigned numbers, because ADRs and NFRs are numbered sequentially
-and X1 and X2 run in parallel:
-- X1 gets ADR 0019 (perf CI and benchmarks), 0020 (package extraction)
-  and 0021 (OTel), plus NFR-0025 (observability scope).
+and X1 and X2 (Wave 2) run in parallel:
+- X1 gets ADR 0019 (perf CI and benchmarks), 0020 (package extraction,
+  including the observability package's scope) and 0021 (OTel), plus NFR-0025 (observability scope).
 - X2 gets ADR 0022 (pool modes), ADR 0023 (caching) and NFR-0026
   (pooling).
+- V1 (Wave 1) gets NFR-0027 (expand/contract migrations).
 - ADR 0024 is reserved for the server choice, written in Wave 4 only
   if Granian wins.
 
@@ -238,17 +243,19 @@ orchestrator resolves any merge overlap.
 image built from `main` before Wave 0, using P1/P2's harness once
 those are merged (Phase 0.7).
 
-**Wave 2: integration (8 agents, after D1, S1 and O1 are merged).**
+**Wave 2: integration (10 agents, after D1, D2, S1 and O1 are merged).**
 
 | ID | Item | Write set |
 | --- | --- | --- |
 | E1 | Phase 3.1 + Phase 4: `app/db.py` engine factory (all three pool modes, SSL, timeouts, pre-ping), unit tests + an integration test for `local` | `src/app/db.py`, its tests |
-| M1 | `main.py` wiring: `app.db` engine (interface fixed in E1's brief), `RUN_MIGRATIONS_ON_STARTUP`, `gc.freeze()`, `instrument_app`/`instrument_engine`, docs routes off in production, Phase 7.2 `engine.dispose()` on lifespan shutdown | `src/app/main.py`, its tests |
+| M1 | `main.py` wiring: `app.db` engine (interface fixed in E1's brief), `RUN_MIGRATIONS_ON_STARTUP`, `gc.freeze()`, `instrument_app`/`instrument_engine`, N1's request-ID middleware, docs routes off in production, Phase 7.2 `engine.dispose()` on lifespan shutdown | `src/app/main.py`, its tests |
 | H1 | Phase 7.3: SSE stream vs `SIGTERM` integration test (uvicorn subprocess, exit within timeout, lossless `Last-Event-ID` resume). Report-only if it fails; no code change without escalation. | a new `tests/integration/test_graceful_shutdown.py` |
-| F1 | Phase 2 fixes from Q1 | `src/craftainer_tool_crud/controllers/{crud_router,crud_actions}.py` |
-| C2 | Phase 6.2: cache protocol + optional cache param on the stats/predict routes; `app.cache` (Redis, event-driven invalidation, TTL). `main.py` wiring goes through M1, with the interface fixed in both briefs. | `src/craftainer_tool_crud/controllers/crud_stats.py`, a new `src/craftainer_tool_crud/interfaces/cache.py`, `src/app/cache.py`, their tests |
-| F2 | Phase 2 fixes from Q2 (repositories) | `src/craftainer_tool_crud/repositories/` |
-| F3 | Async rate-limit storage, only if Q2 confirmed the blocking call | `src/app/rate_limit.py`, its tests |
+| F1 | Phase 2 fixes from Q1(a) | `src/craftainer_tool_crud/controllers/{crud_router,crud_actions}.py` |
+| C2 | Phase 6.2: cache protocol + optional cache param on the stats/predict routes; `app.cache` (Redis, event-driven invalidation, TTL). Keys include the app version (Phase 8.6). `main.py` wiring goes through M1, with the interface fixed in both briefs. | `src/craftainer_tool_crud/controllers/crud_stats.py`, a new `src/craftainer_tool_crud/interfaces/cache.py`, `src/app/cache.py`, their tests |
+| F2 | Phase 2 fixes from Q1(b) (repositories) | `src/craftainer_tool_crud/repositories/` |
+| F3 | Async rate-limit storage, only if Q1(b) confirmed the blocking call | `src/app/rate_limit.py`, its tests |
+| X1 | ADR drafts: perf CI and benchmarks (amends 0010), package extraction, OTel + NFR superseding 0023 | `docs/adrs/`, `docs/nfrs/` (new files only) |
+| X2 | ADR + NFR superseding 0016 for `DB_POOL_MODE`, and the Phase 6 caching ADR, with measured numbers left as `TBD` | `docs/adrs/`, `docs/nfrs/` (new files only) |
 | L1 | A/B runs, one at a time: each R1 flag, bytecode (startup time), `--limit-concurrency` under overload, uvicorn vs Granian, R2, F1–F3, `null` vs `local` | none (report only) |
 
 **Wave 2b (1 agent, after F1 is merged, because it shares
@@ -259,13 +266,13 @@ those are merged (Phase 0.7).
 | C1 | Phase 6.1: `ETag`/`304`/`If-Match`/`412` on JSON, XML and web routes, plus a revalidating Locust task | `src/craftainer_tool_crud/controllers/crud_router.py`, its tests, `tests/perf/locustfile.py` |
 | L1 | A/B: C1 revalidation, C2 stats cache hit/miss | none (report only) |
 
-**Wave 3: packages (after T1–T3, B1 synced, D1/F1/F2/C1/C2 merged, and
+**Wave 3: packages (after T1–T3, B1 synced, D1/D2/N1/O1/F1/F2/C1/C2 merged, and
 pre-flight item 1).**
 
 | ID | Item | Write set |
 | --- | --- | --- |
 | K1 | A5 for `tool-crud`: `git filter-repo` history, move code and tests, Postgres via `compose.instance.yml`, `0.1.0` (PR merged by the user, then released via `release.yml` after G-rel) | `tool-crud` repo |
-| K2 | A5 for `tool-health` | `tool-health` repo |
+| K2 | A5 for `tool-observability` | `tool-observability` repo |
 | L1 | Phase 5.7 OTel overhead (unset / 100% / 10% sampling); `gc` variants | none (report only) |
 
 **Wave 4: switch and close (serial, after both `0.1.0` releases are on PyPI).**
@@ -274,7 +281,7 @@ pre-flight item 1).**
 | --- | --- | --- |
 | A6 | Switch this repo to the published `0.1.0` pins; delete `src/craftainer_tool_*` and the moved tests | `pyproject.toml`, `uv.lock`, `src/`, `tests/` |
 | L1 | Final capacity run versus the baseline; Phase 7.6 shutdown-under-load run | none (report only) |
-| X3 | Fold Phase 4's environment-variable table and Phase 7's deployment notes into a "Kubernetes deployment (future)" section of `docs/architecture.md`, so they outlive this plan | `docs/architecture.md` |
+| X3 | Fold Phase 4's environment-variable table, Phase 7's and Phase 8's deployment notes, and the Phase 8 migration rules into a "Kubernetes deployment (future)" section of `docs/architecture.md`, so they outlive this plan | `docs/architecture.md` |
 | X2 | Fill in the `TBD` numbers in the ADRs/NFRs from `L1`'s reports | its ADR/NFR files |
 
 Then the orchestrator runs the verification lane one last time and,
@@ -283,17 +290,35 @@ and deletes it after G-final. The orchestrator pushes the integration branch and
 
 ## Approach
 
-### Part A: Python package template, then extract `crud` and `health`
+### Part A: Python package template, then extract `crud` and observability
 
 Today `crud` and `health` are generic, but they ship only inside this
 repo's image (`pyproject.toml`'s hatch `packages`). Publishing them lets
 other apps reuse them, and lets each have its own release cycle, tests
-and benchmarks.
+and benchmarks. `health` alone would be a very small package, so it
+grows into **`craftainer-tool-observability`**: everything a service
+needs to be operable, in one package with optional extras.
+
+| Module | Contents | Extra |
+| --- | --- | --- |
+| `health` | Today's `src/health/` (registry, router, `/health/live`, `/health/ready`) | core (FastAPI only) |
+| `health.checks` | Generic dependency checks taking an engine, URL or client, moved from `app/health_checks.py` | `[sqlalchemy]`, `[redis]`, `[s3]`, `[http]` |
+| `logs` | JSON formatter, credential redaction, optional OTLP log bridge, moved from `app/telemetry.py` | core; OTLP part in `[otel]` |
+| `otel` | Phase 5: tracer and meter providers, `instrument_app()`, `instrument_engine()`, pool gauges, trace-id log correlation | `[otel]` (+ `[sqlalchemy]` for the engine parts) |
+| `middleware` | Request-ID middleware (pure ASGI): read or create `X-Request-ID`, validate it (length and charset, so it can't inject into logs), echo it, and attach it to log lines and the active span | core |
+| `health` (opt-in) | `/health/info`: app version and commit from env/package metadata. Off by default, because it discloses the version. | core |
+| `profiling` | Opt-in pyinstrument hook. Off unless an env variable enables it, and refused under `MODE=production`. | `[profiling]` |
+
+Not in the package: RFC 9457 problem details (API errors, not
+observability), a Prometheus `/metrics` endpoint (Decision log), and a
+"readiness drain" on shutdown. Kubernetes already removes terminating
+pods from Service endpoints, and Phase 7's `preStop` sleep covers the
+propagation delay.
 
 **A1. New template repo: `craftainer/template-python-package`.** An
 instance of `craftainer/template-base` (`ADR-0018`), the same way
 `template-fastapi`, `template-react` and `template-axum` are. Like
-`template-fastapi`, it is itself a template, so `crud`, `health` and
+`template-fastapi`, it is itself a template, so `crud`, observability and
 future libraries are created from it and receive fixes through template
 sync. Contents:
 
@@ -341,9 +366,16 @@ runs `make publish`, PR it into template-base, and let it reach the
 package template and this repo through the normal sync. For repos that
 don't publish to PyPI, the grant is unused.
 
-**A3. Decouple `crud` and `health` from `app`, in place.** `health`
-already imports only FastAPI and the stdlib. `crud` imports five things
-back from `app`:
+**A3. Decouple `crud` and observability from `app`, in place.**
+`health` already imports only FastAPI and the stdlib. The observability
+modules moving out of `app` need these changes:
+
+| Today | Change |
+| --- | --- |
+| `app/telemetry.py` reads `settings.app_name` for the OTel resource | Use OTel's standard `OTEL_SERVICE_NAME` (set in compose and deployment env), so the module has no settings dependency at all (W0). |
+| `app/health_checks.py`: Postgres/Redis/S3/OIDC check classes read `Settings` and import `crud`'s engine | The check classes take an engine, URL or client as constructor arguments and move into `health.checks` (D2). `app/health_checks.py` keeps only building the registry from `Settings`, including the `MODE=mock` fakes. |
+
+`crud` imports five things back from `app`:
 
 | `crud` imports | Change |
 | --- | --- |
@@ -359,20 +391,24 @@ back from `app`:
   autogenerates against, as today. `crud`'s README must state that a
   release changing its models needs a new app-side migration
   (`NFR-0019`).
-- Add an `import-linter` independence contract: `crud` and `health`
-  must never import `app`. It's enforced here before the move, and
+- Add an `import-linter` independence contract: `crud` and
+  observability must never import `app`, and observability never
+  imports `crud`. It's enforced here before the move, and
   becomes impossible to break after it.
-- Unit tests of `crud`/`health`, and `test_xml_codec.py` /
+- Unit tests of `crud`/observability, and `test_xml_codec.py` /
   `test_web_components.py`, move alongside the code in A5. The e2e
-  suite stays here as the integration test of the published packages.
+  suite, and `tests/integration/test_health_checks.py` against the real
+  backing services, stay here as the integration tests of the published
+  packages, so the observability repo needs no backing services of its
+  own.
 
 **A4. Names (decided).**
 
-| | crud | health |
+| | crud | observability |
 | --- | --- | --- |
-| GitHub repo | `craftainer/tool-crud` | `craftainer/tool-health` |
-| PyPI distribution | `craftainer-tool-crud` | `craftainer-tool-health` |
-| Import package | `craftainer_tool_crud` | `craftainer_tool_health` |
+| GitHub repo | `craftainer/tool-crud` | `craftainer/tool-observability` |
+| PyPI distribution | `craftainer-tool-crud` | `craftainer-tool-observability` |
+| Import package | `craftainer_tool_crud` | `craftainer_tool_observability` |
 
 All of these were free on 2026-10-17. The bare names (`crud`, `health`,
 `fastapi-crud`, `fastapi-health`) are taken on PyPI. A published
@@ -387,7 +423,7 @@ change is written against the final names. Paths elsewhere in this plan
 use the pre-rename names (`src/crud/...`).
 
 **A5. Create the package repos and move the code.**
-`craftainer/tool-crud` and `craftainer/tool-health` are created from
+`craftainer/tool-crud` and `craftainer/tool-observability` are created from
 `template-python-package`. Use `git filter-repo` limited to each
 package's paths to keep their history. `crud`'s repo adds Postgres
 through `compose.instance.yml`, for its integration tests. Release
@@ -396,10 +432,12 @@ in `0.x` until the public API settles.
 
 **A6. Switch this repo to the packages.**
 - Depend on `craftainer-tool-crud[mqtt,xml]==0.1.0` and
-  `craftainer-tool-health==0.1.0`. Renovate's PyPI manager bumps the pins
+  `craftainer-tool-observability[otel,sqlalchemy,redis,s3,http]==0.1.0`.
+  Renovate's PyPI manager bumps the pins
   from then on.
-- Delete `src/crud`, `src/health` and their moved tests, and drop them
-  from hatch `packages`, coverage and the `crud`/`health`
+- Delete `src/craftainer_tool_crud`, `src/craftainer_tool_observability`
+  and their moved tests, and drop them from hatch `packages`, coverage
+  and the `crud`/observability
   `import-linter` contracts (those contracts now live in the package
   repos).
 - `src/` is synced to this template's instances, so they receive the
@@ -641,7 +679,8 @@ behavior change when it's unset.
    `OTEL_SDK_DISABLED`, and excluded routes with
    `OTEL_PYTHON_FASTAPI_EXCLUDED_URLS` (exclude `/health/.*`, so probes
    don't flood traces).
-2. **Wiring in `app.telemetry`:** next to the existing
+2. **Wiring in `craftainer_tool_observability.otel`** (`[otel]` extra;
+   `app.main` only calls it): next to the existing
    `LoggerProvider`, set up a `TracerProvider` (batch span processor,
    OTLP/HTTP span exporter) and a `MeterProvider`
    (`PeriodicExportingMetricReader`, OTLP/HTTP metric exporter). Both
@@ -660,7 +699,7 @@ behavior change when it's unset.
    - Pin instrumentation versions to the existing
      `opentelemetry-instrumentation-logging` release line.
 4. **Log/trace correlation:** add `trace_id` / `span_id` to every
-   `_JSONFormatter` line when a span is active, so a slow trace can be
+   JSON log line (`craftainer_tool_observability.logs`) when a span is active, so a slow trace can be
    found from its logs and the other way round.
 5. **No `/metrics` endpoint.** Metrics are pushed over OTLP. In
    Kubernetes they go to an OTel Collector, or straight to Prometheus
@@ -796,6 +835,82 @@ Autoscaler) can drive this app later through configuration alone.
 | Termination | `preStop` sleep of about 5–10 s (built-in `sleep` action, Kubernetes 1.30+) so endpoint removal propagates before shutdown starts. `terminationGracePeriodSeconds` > preStop + `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`. |
 | Probes | `startupProbe` and `readinessProbe` on `/health/ready`, `livenessProbe` on `/health/live` (never touching the database, `NFR-0008`). |
 
+### Phase 8: canary readiness (needs an NFR)
+
+Same scope as Phases 4 and 7: app-side rules, checks and environment
+variables only. The goal is that a progressive-delivery controller
+(Argo Rollouts or Flagger, splitting traffic through an ingress, the
+Gateway API or a mesh) can run old and new versions side by side
+against one database, compare them in Prometheus, and roll back
+automatically.
+
+**Already in place:** stateless pods (Phase 7), and parallel API
+versions over one current-shape model (`ADR-0002`, `NFR-0003`).
+
+**App-side work:**
+
+1. **Migrations never run from a canary pod.** Phase 4's
+   `RUN_MIGRATIONS_ON_STARTUP=false` stops pods from migrating the
+   shared database at startup. Otherwise the first canary pod would
+   change the schema under the stable version, and a rollback wouldn't
+   undo it. Migrations run as a separate step before the rollout.
+2. **Expand/contract migrations (new NFR-0027):**
+   - Every migration must work with the *previous* release's code.
+   - Breaking changes are split up: *expand* (add columns or tables,
+     backfill in batches), switch the code over, then *contract* (drop
+     the old structures) in a later release, after the previous one is
+     fully rolled out.
+   - Past one-step conversions such as
+     `convert_hero_superpower_to_powers_list` are the pattern this
+     forbids from now on. Applied migrations stay untouched
+     (`NFR-0019`).
+3. **N-1 compatibility check in CI:** a new `migration-compat.yml`,
+   run on PRs touching `alembic/versions/` or models, inside the
+   devcontainer like `checks.yml`:
+   - migrate a fresh database to the PR's head;
+   - check out the latest release tag into a worktree;
+   - run that tag's integration and e2e suites against the migrated
+     database, with `RUN_MIGRATIONS_ON_STARTUP=false`.
+
+   Older code must not try to migrate a database whose revision it
+   doesn't know, so the check only applies from the first release that
+   contains `RUN_MIGRATIONS_ON_STARTUP`; until then it reports and skips.
+4. **Squawk migration linter (development and CI only):** a `prek` hook
+   renders new revisions to SQL (`alembic upgrade <prev>:<rev> --sql`)
+   and lints them with `squawk-cli` (Apache-2.0/MIT, pinned in the
+   `dev` group). It flags locking and rewriting operations (adding a
+   NOT NULL column without a default, non-concurrent index creation,
+   type changes) that would stall a live database during a rollout.
+   Squawk never runs in operations and isn't a runtime dependency. It's
+   Postgres-specific, which matches the app: Postgres is the only
+   supported database (Decision log).
+5. **Version on all telemetry:** set `service.version` from the release
+   version, passed into the image as a build arg and env variable,
+   alongside the OCI version label. `/health/info` (N1) shows the same
+   value. Document the per-version error-ratio and p95 queries the
+   canary analysis uses, split by `service_version`.
+6. **Cross-version data:**
+   - MQTT event payloads only ever gain fields, never rename or remove
+     them, because events are read by both versions (`ADR-0015`,
+     `ADR-0017`).
+   - Phase 6 cache keys include the app version wherever a cached
+     response's shape can change between versions.
+7. **Web UI version skew:** a page served by one version may submit to
+   the other. Keep form fields and web-component endpoints compatible
+   across one release. Where that isn't possible, the deployment pins
+   web traffic per user with a header or cookie match (both controllers
+   support it).
+
+**Deployment notes for later (not implemented here):**
+
+| Concern | Setting |
+| --- | --- |
+| Controller | Argo Rollouts (with Argo CD) or Flagger (with Flux). Pick whichever matches the GitOps tool in use. |
+| Traffic split | Ingress or Gateway API weights, or a mesh (e.g. Istio) when header/cookie pinning is needed |
+| Steps | e.g. 5% → 25% → 50% → 100%, each held for several analysis intervals |
+| Analysis | Prometheus: error ratio and p95 of `http.server.request.duration` per `service.version`. Roll back automatically on breach. |
+| Migrations | A migration Job before the first canary step, against `<cluster>-rw` directly (Phase 4). Contract migrations ship only in a later release. |
+
 ### Testing this properly (summary of Phase 0 rules)
 
 - Test the production image (`runner`) against real backing services,
@@ -845,8 +960,8 @@ Notes:
 - Adding a per-PR benchmark job and a fifth test suite amends
   `ADR-0010`: record it as a new ADR rather than editing the accepted
   one.
-- After Part A, `crud`'s and `health`'s microbenchmarks (repository
-  filtering, router factories, health registry) live and run in their
+- After Part A, `crud`'s and observability's microbenchmarks (repository
+  filtering, router factories, health registry, log formatting) live and run in their
   own repos through the package template's CodSpeed workflow. This
   repo's `tests/bench/` keeps the app-level ones (token verification,
   the ASGI round trip).
@@ -865,7 +980,11 @@ orchestrator appends to this list as it resolves escalations.
 | 2026-10-17 | CloudNativePG is kept in mind as a target only: env variables in the app, nothing operator-related in the devcontainer, compose or CI. |
 | 2026-10-17 | OTel metrics and traces pushed over OTLP. No `/metrics` endpoint. |
 | 2026-10-17 | Packages and the package template are GPL-3.0 for now. |
-| 2026-10-17 | Names: `template-python-package`, `tool-crud` / `tool-health` repos, `craftainer-tool-*` on PyPI, `craftainer_tool_*` imports. |
+| 2026-10-17 | Names: `template-python-package`, `tool-crud` / `tool-observability` repos, `craftainer-tool-*` on PyPI, `craftainer_tool_*` imports. |
+| 2026-10-17 | Postgres is the only supported database (asyncpg driver, `ARRAY`/`JSONB` types). Supporting MariaDB, Oracle etc. would be a separate portability project. |
+| 2026-10-17 | Squawk lints migrations in development and CI only; it is never a runtime or operations dependency. |
+| 2026-10-17 | Canary readiness: app-side only. Expand/contract migrations, N-1 compatibility check, `service.version` on telemetry; no rollout controller in this repo. |
+| 2026-10-17 | `health` grows into `craftainer-tool-observability`: health, dependency checks, logging, OTel, request IDs, opt-in info/profiling, with extras. No readiness drain (Kubernetes handles it), no problem details, no `/metrics`. |
 | 2026-10-17 | Shared server-side caching only for non-per-user aggregates (`/stats`, `/predict`). Per-user responses get `ETag`/`304` with `Cache-Control: private` only. |
 | 2026-10-17 | uvicorn stays the default server. Granian replaces it only if it wins the capacity A/B at the reference budget. |
 | 2026-10-17 | Not now: Python JIT, free-threaded build, gzip in the app. |
