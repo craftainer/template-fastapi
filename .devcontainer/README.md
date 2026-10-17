@@ -166,20 +166,12 @@ need the window reconnected, not a fresh image.
 
 ## Don't
 
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/README.md
 - Bind- or volume-mount the venv, or anything else you don't want a host
   antivirus/DLP tool scanning or syncing — the venv lives purely in the
-  container's writable layer instead. (`claude-config` is a deliberate,
-  narrow exception — see `compose.yml`'s comment on that volume.)
+  container's writable layer instead. (`claude-config` and `gh-config`
+  are deliberate, narrow exceptions — small login and session state; see
+  `compose.yml`'s comments on those volumes.)
 - Add a `ports:` mapping or a `networks:` block anywhere here — see
   `stack/README.md`'s "Devcontainer stack pattern" section.
-=======
-- Bind- or volume-mount a language runtime's dependency tree, or anything
-  else you don't want a host antivirus/DLP tool scanning or syncing — it
-  lives purely in the container's writable layer instead. (`claude-config`
-  and `gh-config` are deliberate, narrow exceptions — small login and
-  session state; see `compose.yml`'s comments on those volumes.)
-- Add a `ports:` mapping or a `networks:` block anywhere here.
->>>>>>> /tmp/template-new/.devcontainer/README.md
 - Pin a feature or image version as `latest` — pin the exact version so
   Renovate can bump it deliberately.

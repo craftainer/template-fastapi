@@ -260,7 +260,6 @@ instance by hand, once:
 ## Versions and config
 
 Every version and config value is defined in exactly one place; nothing
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
 duplicates or re-pins it elsewhere:
 
 - Python/Debian base image versions: the `PYTHON_VERSION`/`DEBIAN_VERSION`
@@ -285,7 +284,8 @@ duplicates or re-pins it elsewhere:
   development-related; if a future group needs another group's packages,
   reference it as a self-referential extra (e.g. `"template-fastapi[dev]"`,
   per PEP 621) instead of re-pinning the same package a second time.
-- Everything else pinned (base images, Actions, hook revisions, Node.js):
+- Everything else pinned (base images, Actions, hook revisions, and the
+  devcontainer's `prek`/Claude Code CLI/`snip`/`gh`/`uv`/Node.js):
   pinned once, at its single point of use, to an exact patch version —
   never a floating range or `latest` — so Renovate can bump them one at a
   time and the diff shows exactly what changed. Node.js (`NODE_VERSION`
@@ -304,28 +304,6 @@ project root. Same reasoning as not bind-mounting the venv (see
 bind-mounted `/workspace` gets scanned file-by-file by host
 antivirus/malware tools on Windows and is painfully slow to write to. A
 new tool with its own on-disk cache follows the same pattern.
-=======
-duplicates or re-pins it elsewhere. Everything pinned here (base image,
-Actions, hook revisions, `prek`/Claude Code CLI/`snip`/`gh`/`uv`/Python/
-Node.js versions) is pinned once, at its single point of use, to an exact
-patch version — never a floating range or `latest` — so Renovate can
-bump them one at a time and the diff shows exactly what changed. An
-instance's own language runtime/package versions follow the same rule in
-its own Dockerfile/manifest.
-
-`python3` and Node.js, both installed by `scripts/develop.sh` and pinned
-via `.devcontainer/Dockerfile`'s `PYTHON_VERSION`/`NODE_VERSION` ARGs, are
-infrastructure tooling only — not an application runtime this template
-assumes. `python3` exists because `prek` needs an interpreter to build
-the venv for any `language: python` hook (`.pre-commit-config.yaml`'s
-`pre-commit-hooks` repo) and because `.github/scripts/*.py` need one
-directly; `uv` (its own `UV_VERSION` ARG) is only the mechanism used to
-install that exact, checksum-verified CPython build rather than an
-unpinned apt package, and stays on `PATH` afterward. Node.js exists
-because `npx` (the `clear-thought` MCP server in `.mcp.json`) needs it.
-An instance that adds Python or Node.js as its own application runtime
-can reuse these directly rather than installing a second copy.
->>>>>>> /tmp/template-new/docs/TEMPLATE.md
 
 ## Code style
 
