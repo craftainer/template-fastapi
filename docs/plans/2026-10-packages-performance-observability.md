@@ -146,13 +146,18 @@ execution needs only the remaining gates below.
 
 **Decisions made in advance** (recorded in the Decision log):
 
-10. **Standing approvals:** the orchestrator may do the following
-    without asking (see the Decision log):
-    - create the three new repos;
-    - push branches and open, and merge once CI is green, PRs in the
-      new repos, in template-base, and here into `main`;
-    - cut template-base releases;
-    - tag and publish `0.x` releases (TestPyPI first, then PyPI).
+10. **Standing approvals (granted 2026-10-17):** the orchestrator may,
+    without asking:
+    - create `craftainer/template-python-package`, `craftainer/tool-crud`
+      and `craftainer/tool-health`;
+    - push branches and open PRs in those repos, in template-base, and
+      here;
+    - trigger template-base's `release.yml`.
+
+    The user approves and merges every PR. Nothing is published to
+    PyPI or TestPyPI by hand: packages ship only through each repo's
+    `release.yml` (trusted publishing inside the workflow), and
+    triggering a `tool-*` release is a user gate.
 11. **Bench-lane acceptance rule:** a change is kept if its median
     capacity over 3 runs beats the baseline median by more than the
     larger run-to-run spread and by at least 3%. Otherwise it's
@@ -163,17 +168,20 @@ execution needs only the remaining gates below.
 
 ### Remaining gates (the orchestrator asks; nothing proceeds without a yes)
 
-With pre-flight done and item 10 granted, only these remain:
+With pre-flight done and item 10 granted, only these remain. Gates of
+the same kind that fall in one wave are batched into a single request:
 
 | Gate | Before |
 | --- | --- |
 | G0 | Kickoff: confirm pre-flight items 1–9 are done. |
+| G-pr | Merging any PR (user approves and merges): the template repo and package-repo scaffolding, template-base changes (B1), the package moves, and the integration branch into `main`. Each wave's PRs are raised together. |
+| G-rel | Triggering `release.yml` in `tool-crud`/`tool-health` (TestPyPI dry run first, then PyPI), and in `template-python-package`. |
 | G-esc | Any escalation whose decision is really the user's: scope, security trade-offs, deleting anything outside this plan's own branches and repos. |
 | G-final | Deleting this plan file and closing out (after X2/X3 have folded it into ADRs and docs). |
 
-Without item 10, the original per-step gates apply instead: creating the
-package template repo, the template-base PRs, creating the two package
-repos, the `0.1.0` release, and pushing or opening the PR here.
+Anything not covered by item 10 or these gates (e.g. deleting a repo or
+branch it didn't create, changing org settings) is asked for
+individually.
 
 ### Waves
 
@@ -256,7 +264,7 @@ pre-flight item 1).**
 
 | ID | Item | Write set |
 | --- | --- | --- |
-| K1 | A5 for `tool-crud`: `git filter-repo` history, move code and tests, Postgres via `compose.instance.yml`, `0.1.0` (released under the standing approvals) | `tool-crud` repo |
+| K1 | A5 for `tool-crud`: `git filter-repo` history, move code and tests, Postgres via `compose.instance.yml`, `0.1.0` (PR merged by the user, then released via `release.yml` after G-rel) | `tool-crud` repo |
 | K2 | A5 for `tool-health` | `tool-health` repo |
 | L1 | Phase 5.7 OTel overhead (unset / 100% / 10% sampling); `gc` variants | none (report only) |
 
@@ -271,7 +279,7 @@ pre-flight item 1).**
 
 Then the orchestrator runs the verification lane one last time and,
 per `docs/plans/README.md`, folds this plan into the ADRs written above
-and deletes it after G-final. Pushing and merging fall under the standing approvals.
+and deletes it after G-final. The orchestrator pushes the integration branch and opens its PR into `main`; the user merges it (G-pr).
 
 ## Approach
 
@@ -864,4 +872,5 @@ orchestrator appends to this list as it resolves escalations.
 | 2026-10-17 | At most one top-level `Dockerfile` per repo: the runtime image. A devcontainer-only Dockerfile lives in `.devcontainer/` (`template-base#12`). |
 | 2026-10-17 | Bench acceptance: keep a change only if its median capacity (3 runs) beats the baseline by more than the run-to-run spread and by ≥ 3%. |
 | 2026-10-17 | Non-blocking questions are batched per wave. |
+| 2026-10-17 | Standing approvals: create the three new repos; push branches and open PRs; trigger template-base releases. The user merges all PRs and approves `tool-*`/template releases. PyPI publishing happens only inside `release.yml`, never by hand. |
 | 2026-10-17 | Autoscaling: app-side readiness only in this repo. No scale to zero, at least 2 replicas, KEDA on in-flight requests preferred over CPU-only HPA, never VPA and HPA on the same metric. |
