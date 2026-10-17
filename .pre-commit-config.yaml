@@ -145,3 +145,13 @@ repos:
         files: ^(\.devcontainer/)?Dockerfile$
         pass_filenames: false
         stages: [pre-commit, manual]
+
+      - id: lint-migrations
+        name: lint-migrations (Squawk over new or changed Alembic revisions)
+        # --changed-only: applied migrations are frozen (NFR-0019), so only
+        # revisions that differ from the merge base with main are linted,
+        # even under --all-files.
+        entry: bash scripts/lint-migrations.sh --changed-only
+        language: system
+        files: ^alembic/versions/.+\.py$
+        stages: [pre-commit, manual]

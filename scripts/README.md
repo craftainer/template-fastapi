@@ -51,6 +51,16 @@ a binary directly:
   `../.devcontainer/Dockerfile` and `../Dockerfile` agree on
   `PYTHON_VERSION`/`DEBIAN_VERSION`.
 
+- `lint-migrations.sh` — the `lint-migrations` prek hook and
+  `../.github/workflows/migration-compat.yml`'s Squawk step (NFR-0027):
+  renders each given revision under `../alembic/versions/` to SQL with
+  `alembic upgrade <down_revision>:<revision> --sql` (offline, no
+  database) and lints it with `squawk`, which flags locking and rewriting
+  operations. `--changed-only` first narrows the files to those that
+  differ from the merge base with `origin/main`/`main` (applied
+  migrations are frozen, NFR-0019); without it every given file is
+  linted. `SQUAWK_ARGS` passes extra arguments to `squawk`.
+
 ## Do
 
 - Keep each script runnable and idempotent on its own (`bash
