@@ -34,7 +34,7 @@ LABELS := \
 	--label io.github.$(OWNER).sbom=$(RELEASE_URL)/$(IMAGE)-$(RELEASE_VERSION)-$(RELEASE_ARCH).spdx.json \
 	--label io.github.$(OWNER).coverage-report=$(RELEASE_URL)/coverage.xml
 
-BUILD := docker buildx build -f app.Dockerfile --target runner \
+BUILD := docker buildx build -f Dockerfile --target runner \
 	--platform linux/$(RELEASE_ARCH) $(LABELS) $(CACHE)
 
 release-arches:

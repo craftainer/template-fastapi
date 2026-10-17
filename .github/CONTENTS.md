@@ -6,7 +6,8 @@
 - `renovate.json` — weekly update PRs for Python deps (`pyproject.toml`),
   GitHub Actions, every Dockerfile/compose image tag repo-wide (scanned
   recursively, unlike Dependabot), and the `# renovate:` comment-annotated
-  version pins in the Dockerfile and `.claude/mcp/playwright_selenium_bridge.py`.
+  version pins in `.devcontainer/Dockerfile`, the top-level runtime
+  `Dockerfile` and `.claude/mcp/playwright_selenium_bridge.py`.
   All patch/minor updates are grouped into a single weekly PR that
   automerges once required checks pass; all major updates are grouped
   into a separate PR for manual review. Devcontainer features are

@@ -142,6 +142,6 @@ repos:
         name: check-dockerfile-versions (PYTHON/DEBIAN_VERSION match)
         entry: bash scripts/check-dockerfile-versions.sh
         language: system
-        files: ^(app\.)?Dockerfile$
+        files: ^(\.devcontainer/)?Dockerfile$
         pass_filenames: false
         stages: [pre-commit, manual]

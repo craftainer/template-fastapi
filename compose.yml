@@ -142,7 +142,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: app.Dockerfile
+      dockerfile: Dockerfile
       target: runner
     env_file:
       - ./.devcontainer/stack/postgres/postgres.env

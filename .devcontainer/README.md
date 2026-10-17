@@ -3,8 +3,12 @@
 - `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
   as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
   (features, mounts, forwarded ports, editor settings).
-- `compose.yml` — the dev service (`myapp`), built from the top-level
-  `Dockerfile`'s `develop` stage. Owned by template-base.
+- `Dockerfile` — the devcontainer image (a single `develop` stage), built
+  with the repo root as context; `Dockerfile.dockerignore` holds its
+  build-context excludes. Owned by template-base. The top-level
+  `../Dockerfile` is the app's runtime image (`../docs/TEMPLATE.md`).
+- `compose.yml` — the dev service (`myapp`), built from `Dockerfile`'s
+  `develop` stage. Owned by template-base.
 - `compose.instance.yml` — template-fastapi's layer on top of
   `compose.yml`: the `include:` list pulling in every `stack/` fragment,
   plus `services.myapp`'s stack credentials (`env_file:`), `depends_on`
@@ -112,6 +116,27 @@ same keys: its socket is an MSYS emulation, not a real Unix socket
 Docker Desktop can bind-mount into a Linux container, and `code .` run
 from a Git Bash prompt doesn't change what environment the VS Code GUI
 process itself starts with anyway.
+
+## After a rebuild
+
+"Dev Containers: Rebuild Container" reruns `postCreateCommand` from
+scratch (dependency installs, `prek install`, ...) — no manual setup
+step there. Still worth doing once the container is back:
+
+- Run `prek run --all-files --hook-stage manual` — the same check-suite
+  that gates CI (`checks.yml`) — to confirm whatever motivated the
+  rebuild (a `.devcontainer/Dockerfile`/`scripts/develop.sh` change, a new tool) works
+  end-to-end inside the container, not just that the image built.
+- If the change added, removed, or reordered a `mounts` entry, confirm
+  it actually took effect — mounts apply only at container creation, not
+  on every start (see "SSH agent forwarding" above for the concrete
+  case: a mount change needs a full rebuild, not just a restart).
+- If `forwardPorts`/`portsAttributes` changed, check the Ports panel
+  picked up the new list.
+
+A plain "Reopen in Container" (no rebuild) is enough for changes outside
+`.devcontainer/` and `scripts/develop.sh` — those only
+need the window reconnected, not a fresh image.
 
 ## Do
 

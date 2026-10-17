@@ -61,7 +61,7 @@ still overrides the single-runner jobs (`perf.yml`, `template-sync.yml`,
 and `release.yml`'s `version`/`manifest`/`release` jobs) that aren't
 matrixed by arch.
 
-The devcontainer used for local development (`Dockerfile`'s `develop`
+The devcontainer used for local development (`.devcontainer/Dockerfile`'s `develop`
 stage) is deliberately *not* pinned to a single platform — plain
 `docker build`/`docker compose build` already targets whichever
 architecture the host is on, so an arm64 contributor gets a native
@@ -164,7 +164,7 @@ branch/PR may already be gone via cleanup.
 **Environment.** All four Claude-invoking jobs run `claude` the same way
 `checks.yml` runs `prek`: inside the actual devcontainer (`develop`
 stage) via `devcontainers/ci`, so Claude runs the exact CLI build pinned
-in `Dockerfile`'s `CLAUDE_CODE_VERSION`. Each writes the
+in `.devcontainer/Dockerfile`'s `CLAUDE_CODE_VERSION`. Each writes the
 `ANTHROPIC_API_KEY` secret to `.secrets/claude.txt` first (matching
 `.secrets/README.md`'s "one file per secret" convention) and removes it
 in an `if: always()` step; `../scripts/run_claude.sh` reads it, sets a

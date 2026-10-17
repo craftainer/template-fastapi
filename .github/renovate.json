@@ -23,7 +23,8 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/^(app\\.)?Dockerfile$/"
+        "/^Dockerfile$/",
+        "/^\\.devcontainer/Dockerfile$/"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\nARG \\w+_VERSION=(?<currentValue>.*)\\s"

@@ -57,7 +57,8 @@ replace:
   - .github/PULL_REQUEST_TEMPLATE.md
 
   # Build/dependency/hook plumbing, all instance-agnostic.
-  - Dockerfile
+  - .devcontainer/Dockerfile
+  - .devcontainer/Dockerfile.dockerignore
   - .gitattributes
   - scripts/develop.sh
   - scripts/post-create.sh
@@ -76,6 +77,13 @@ replace:
   - .vscode/launch.json
   - .github/workflows/perf.yml
   - .github/workflows/smoke.yml
+  - Dockerfile
+  - .dockerignore
+  # Retired: the runtime image's pre-v1.3.0 (template-base) names. Kept
+  # listed with no file behind them, so a sync deletes them from instances
+  # created before the rename, while Dockerfile/.dockerignore above replace
+  # the old base-owned files at the same paths. Safe to drop once every
+  # instance has synced past this change.
   - app.Dockerfile
   - app.Dockerfile.dockerignore
   - Makefile
@@ -174,7 +182,6 @@ merge:
   - .pre-commit-config.yaml
   - .mcp.json
   - .gitignore
-  - .dockerignore
   - scripts/README.md
   - docs/TEMPLATE.md
 

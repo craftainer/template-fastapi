@@ -1,74 +1,89 @@
-# syntax=docker/dockerfile:1.28
-# Single-stage build: develop (devcontainer). A downstream instance adds its
-# own builder/runner stages on top of this same base image and
-# postCreateCommand structure -- see docs/TEMPLATE.md's "Contents" section.
+# syntax=docker/dockerfile:1.27
+# Runtime image (builder → runner), the repo's only top-level Dockerfile.
+# The devcontainer image is the base-owned .devcontainer/Dockerfile's
+# `develop` stage.
 
-ARG DEBIAN_VERSION=trixie
-
-# renovate: datasource=github-releases depName=j178/prek
-ARG PREK_VERSION=0.5.5
-
-# renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.296
-
-# renovate: datasource=github-releases depName=edouard-claude/snip
-ARG SNIP_VERSION=0.25.2
-
-# uv itself isn't a project dependency manager here -- it's only the
-# mechanism scripts/develop.sh uses to install an exact, checksum-verified
-# CPython build (see PYTHON_VERSION below) rather than an unpinned apt
-# package. Left on PATH afterward; harmless, and an instance that adds
-# Python as its own application runtime can reuse it directly.
-# renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.13.0
-
-# python3 is infrastructure tooling, not an application runtime this
-# template assumes: prek needs an interpreter to build the venv for any
-# "language: python" hook (.pre-commit-config.yaml's pre-commit-hooks
-# repo), and .github/scripts/*.py need one directly.
 # renovate: datasource=python-version depName=python
 ARG PYTHON_VERSION=3.14.8
+ARG DEBIAN_VERSION=trixie
 
-# Node.js is infrastructure tooling too, not an application runtime: npx
-# (the clear-thought MCP server in .mcp.json) is the only thing that
-# needs it.
-# renovate: datasource=node-version depName=node
-ARG NODE_VERSION=24.21.0
+# renovate: datasource=github-releases depName=astral-sh/uv
+ARG UV_VERSION=0.12.17
+
+ARG APP_UID=1000
 
 ARG SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ARG SSL_CERT_DIR=/etc/ssl/certs
 
 ########################################
-# develop — interactive devcontainer image, based on Microsoft's generic
-# base devcontainer image. No *application* language runtime is assumed
-# here — an instance adds its own (Python via uv, Rust via rustup, Go,
-# Node.js, OpenTofu/Ansible, ...) on top of this stage, following the same
-# ARG/scripts/develop.sh pattern established below. The Python and Node.js
-# this stage does install are infrastructure tooling only -- see the ARG
-# comments above.
+# builder — installs dependencies into a venv and installs the app
 ########################################
-FROM mcr.microsoft.com/devcontainers/base:${DEBIAN_VERSION} AS develop
-ARG PREK_VERSION
-ARG CLAUDE_CODE_VERSION
-ARG SNIP_VERSION
+FROM python:${PYTHON_VERSION}-slim-${DEBIAN_VERSION} AS builder
 ARG UV_VERSION
-ARG PYTHON_VERSION
-ARG NODE_VERSION
 ARG SSL_CERT_FILE
 ARG SSL_CERT_DIR
 
-ENV SSL_CERT_FILE=${SSL_CERT_FILE} \
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    SSL_CERT_FILE=${SSL_CERT_FILE} \
     SSL_CERT_DIR=${SSL_CERT_DIR} \
     REQUESTS_CA_BUNDLE=${SSL_CERT_FILE} \
     CURL_CA_BUNDLE=${SSL_CERT_FILE}
 
-COPY scripts/develop.sh /tmp/develop.sh
-RUN bash /tmp/develop.sh "$PREK_VERSION" "$CLAUDE_CODE_VERSION" "$SNIP_VERSION" "$UV_VERSION" "$PYTHON_VERSION" "$NODE_VERSION"
+COPY scripts/builder.sh /tmp/builder.sh
+RUN bash /tmp/builder.sh "$UV_VERSION"
 
-# Instance hook: scripts/develop.d/*.sh, see that directory's README.md.
-COPY scripts/develop.d/ /tmp/develop.d/
-RUN for f in /tmp/develop.d/*.sh; do [ -e "$f" ] || continue; echo "==> $f"; bash "$f" || exit 1; done
+WORKDIR /build
+COPY pyproject.toml uv.lock ./
+COPY scripts/builder-sync-deps.sh /tmp/builder-sync-deps.sh
+RUN --mount=type=cache,target=/root/.cache/uv \
+    bash /tmp/builder-sync-deps.sh
 
-USER vscode
-WORKDIR /workspace
-CMD ["sleep", "infinity"]
+COPY src ./src
+COPY scripts/builder-sync-app.sh /tmp/builder-sync-app.sh
+RUN --mount=type=cache,target=/root/.cache/uv \
+    bash /tmp/builder-sync-app.sh
+
+########################################
+# runner — minimal runtime image: just the venv, installed non-editable.
+# Runs under an arbitrary UID (e.g. OpenShift's restricted SCC) as well as
+# a fixed one — see runner-setup.sh and the --chown/--chmod below.
+########################################
+FROM python:${PYTHON_VERSION}-slim-${DEBIAN_VERSION} AS runner
+ARG APP_UID
+ARG SSL_CERT_FILE
+ARG SSL_CERT_DIR
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:${PATH}" \
+    HOME=/home/appuser \
+    SSL_CERT_FILE=${SSL_CERT_FILE} \
+    SSL_CERT_DIR=${SSL_CERT_DIR} \
+    REQUESTS_CA_BUNDLE=${SSL_CERT_FILE} \
+    CURL_CA_BUNDLE=${SSL_CERT_FILE} \
+    MODE=production
+
+COPY scripts/runner.sh /usr/local/bin/runner.sh
+# Group 0, not the numeric owner, is what an arbitrary UID actually gets
+# under OpenShift's restricted SCC — see runner-setup.sh's comment. Set
+# here rather than with a recursive RUN chmod, which would be slow over a
+# whole venv.
+COPY --from=builder --chown=${APP_UID}:0 --chmod=750 /opt/venv /opt/venv
+WORKDIR /app
+
+# alembic.ini/alembic/ aren't part of the installed app package (see src/README.md's
+# "Don't put fixtures/sample data/documentation here"), so they need copying in
+# explicitly for app.main's lifespan hook to find at its CWD-relative "alembic.ini"
+# and auto-apply pending migrations on startup -- see CLAUDE.md's "Alembic" section.
+COPY alembic.ini ./
+COPY alembic ./alembic/
+
+COPY scripts/runner-setup.sh /tmp/runner-setup.sh
+RUN bash /tmp/runner-setup.sh "$APP_UID"
+
+USER $APP_UID
+EXPOSE 8000
+ENTRYPOINT ["runner.sh"]
