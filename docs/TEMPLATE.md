@@ -24,10 +24,19 @@ this file current" for where a new convention belongs.
   exception, documenting the template itself rather than product/domain
   knowledge.
 - `.secrets/` — local secret files, never committed; see its `README.md`.
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
 - `Dockerfile` — a single `develop` stage (the devcontainer image),
   owned by template-base.
 - `app.Dockerfile` — the app image's `builder` and `runner` stages; see
   "Instance extension points" below.
+=======
+- `.devcontainer/Dockerfile` — a single `develop` stage (the devcontainer
+  image), with its build-context excludes in
+  `.devcontainer/Dockerfile.dockerignore`. The repo root has no
+  `Dockerfile`: that one name is reserved for an instance's own runtime
+  image (see "Instance extension points"), so a repo never has more than
+  one top-level Dockerfile.
+>>>>>>> /tmp/template-new/docs/TEMPLATE.md
 - `scripts/develop.sh`, `scripts/post-create.sh` — the `develop` stage's
   setup script and the devcontainer's `postCreateCommand`, each running
   an instance hook directory (`develop.d/`, `post-create.d/`); see
@@ -50,22 +59,36 @@ this file current" for where a new convention belongs.
 
 Base-owned files stay `replace` tier (a sync overwrites them) and expose
 hooks an instance fills with files it owns, so an instance never edits a
-base-owned file directly. Don't edit `Dockerfile`, `scripts/develop.sh`
+base-owned file directly. Don't edit `.devcontainer/Dockerfile`, `scripts/develop.sh`
 or `compose.yml` in an instance; use the hooks below.
 
 | Hook | Base side (template-owned) | Instance side (instance-owned) |
 |---|---|---|
-| Extra devcontainer tooling | `Dockerfile` `develop` stage runs every `scripts/develop.d/*.sh` after `develop.sh` | `scripts/develop.d/NN-name.sh` |
+| Extra devcontainer tooling | `.devcontainer/Dockerfile` `develop` stage runs every `scripts/develop.d/*.sh` after `develop.sh` | `scripts/develop.d/NN-name.sh` |
 | Extra post-create steps | `scripts/post-create.sh`, run by `devcontainer.json`'s `postCreateCommand`, runs every `scripts/post-create.d/*.sh` | `scripts/post-create.d/NN-name.sh` |
 | Extra compose services / dev-service settings | `devcontainer.json` `"dockerComposeFile": ["compose.yml", "compose.instance.yml"]` | `.devcontainer/compose.instance.yml` (base ships a stub, `ignore` tier) |
-| Runtime image | nothing (base `Dockerfile` is `develop`-only) | `app.Dockerfile` + `app.Dockerfile.dockerignore` |
+| Runtime image | nothing (the devcontainer image lives in `.devcontainer/`) | top-level `Dockerfile` + `.dockerignore`, listed in `.github/template-sync-manifest.local.yml`'s `ignore:` |
 
 Files with no include mechanism of their own (JSON configs,
 `.pre-commit-config.yaml` — prek has no include) are `merge` tier, so an
-instance's additions survive a sync. The runtime image goes in its own
-`app.Dockerfile` so it never collides with the template-owned
-`Dockerfile`; BuildKit picks up `app.Dockerfile.dockerignore`
-automatically for `-f app.Dockerfile`.
+instance's additions survive a sync. The runtime image is the
+top-level `Dockerfile` with a plain `.dockerignore`, both instance-owned:
+base keeps the devcontainer image and its excludes under
+`.devcontainer/`, where BuildKit picks up
+`.devcontainer/Dockerfile.dockerignore` for that build automatically.
+
+**One-time upgrade (instances synced from before this layout).** A sync
+adds `.devcontainer/Dockerfile` but can't delete the old top-level
+`Dockerfile`/`.dockerignore`: from this release on, base's manifest no
+longer classifies those paths, and a merge-tier file is never deleted
+automatically. In the sync PR, by hand:
+
+- With a runtime image: rename `app.Dockerfile` → `Dockerfile` and
+  `app.Dockerfile.dockerignore` → `.dockerignore`, overwriting the old
+  base files. Update every reference (`-f app.Dockerfile` in the
+  `Makefile`, `dockerfile:` in compose files, CI, docs) and list both
+  paths under `ignore:` in `.github/template-sync-manifest.local.yml`.
+- Without one: delete the old top-level `Dockerfile` and `.dockerignore`.
 
 ## Getting started
 
@@ -239,6 +262,7 @@ instance by hand, once:
 ## Versions and config
 
 Every version and config value is defined in exactly one place; nothing
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
 duplicates or re-pins it elsewhere:
 
 - Python/Debian base image versions: the `PYTHON_VERSION`/`DEBIAN_VERSION`
@@ -280,6 +304,28 @@ project root. Same reasoning as not bind-mounting the venv (see
 bind-mounted `/workspace` gets scanned file-by-file by host
 antivirus/malware tools on Windows and is painfully slow to write to. A
 new tool with its own on-disk cache follows the same pattern.
+=======
+duplicates or re-pins it elsewhere. Everything pinned here (base image,
+Actions, hook revisions, `prek`/Claude Code CLI/`snip`/`uv`/Python/
+Node.js versions) is pinned once, at its single point of use, to an exact
+patch version — never a floating range or `latest` — so Renovate can
+bump them one at a time and the diff shows exactly what changed. An
+instance's own language runtime/package versions follow the same rule in
+its own Dockerfile/manifest.
+
+`python3` and Node.js, both installed by `scripts/develop.sh` and pinned
+via `.devcontainer/Dockerfile`'s `PYTHON_VERSION`/`NODE_VERSION` ARGs, are
+infrastructure tooling only — not an application runtime this template
+assumes. `python3` exists because `prek` needs an interpreter to build
+the venv for any `language: python` hook (`.pre-commit-config.yaml`'s
+`pre-commit-hooks` repo) and because `.github/scripts/*.py` need one
+directly; `uv` (its own `UV_VERSION` ARG) is only the mechanism used to
+install that exact, checksum-verified CPython build rather than an
+unpinned apt package, and stays on `PATH` afterward. Node.js exists
+because `npx` (the `clear-thought` MCP server in `.mcp.json`) needs it.
+An instance that adds Python or Node.js as its own application runtime
+can reuse these directly rather than installing a second copy.
+>>>>>>> /tmp/template-new/docs/TEMPLATE.md
 
 ## Code style
 

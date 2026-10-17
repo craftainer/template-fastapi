@@ -44,7 +44,7 @@ ln -s "$python_bin" /usr/local/bin/python
 # directly from nodejs.org's own release tarballs (checksum-verified
 # against that release's published SHASUMS256.txt) rather than a
 # devcontainer feature, so every tool this stage installs is pinned the
-# same way, in the same place -- see the Dockerfile's NODE_VERSION ARG.
+# same way, in the same place -- see .devcontainer/Dockerfile's NODE_VERSION ARG.
 node_dpkg_arch="$(dpkg --print-architecture)"
 case "$node_dpkg_arch" in
     amd64) node_arch=x64 ;;
