@@ -1,16 +1,16 @@
 # System design
 
-Application-level view of `src/app/` and `src/crud/`: layering, request
+Application-level view of `src/app/` and `src/craftainer_tool_crud/`: layering, request
 flow, the multi-format representation pattern, and auth. For the
 infrastructure/deployment view (services, networking, healthchecks), see
 [architecture.md](architecture.md). This is a summary that must stay
 consistent with [src/app/README.md](../src/app/README.md)'s and
-[src/crud/README.md](../src/crud/README.md)'s own "Layering" sections
+[src/craftainer_tool_crud/README.md](../src/craftainer_tool_crud/README.md)'s own "Layering" sections
 and diagrams, which remain authoritative for the exact import order.
 
 ## Layering
 
-The generic CRUD framework lives in `src/crud/`, laid out as its own
+The generic CRUD framework lives in `src/craftainer_tool_crud/`, laid out as its own
 MVC-ish split under one strict, one-directional import order — a lower
 layer never imports from a higher one, enforced by `import-linter`'s
 `"crud layers"` contract in CI (see
@@ -33,7 +33,7 @@ graph LR
   adding a resource needs only a model, a view, and a controller, never
   new CRUD code.
 - `controllers/` — the generic CRUD router factories, the highest layer
-  in this package, may import from any other `crud/` subpackage.
+  in this package, may import from any other `craftainer_tool_crud/` subpackage.
 
 `src/app/` is laid out the same MVC-ish way, but holds only
 resource-specific code (a resource's own model/views/router) plus
@@ -42,53 +42,53 @@ contract:
 
 ```mermaid
 graph LR
-    config --> health_checks --> telemetry --> problem_details --> oidc
+    config --> health_checks --> rate_limit --> problem_details --> oidc
     oidc --> models --> views --> web_components --> xml_codec
     xml_codec --> http_headers --> controllers --> crud_1 --> main
 ```
 
 - `models/` — a resource's own SQLAlchemy model (e.g. `hero.py`), built
-  on `crud.models`.
-- `views/` — a resource's own Pydantic schemas, built on `crud.views`.
+  on `craftainer_tool_crud.models`.
+- `views/` — a resource's own Pydantic schemas, built on `craftainer_tool_crud.views`.
 - `controllers/` — FastAPI routers with no resource of their own
   (audit/mock).
 - `crud_1/` — one subpackage per resource, combining its router (built
-  from `crud.controllers`'s factories) into the single router `main.py`
+  from `craftainer_tool_crud.controllers`'s factories) into the single router `main.py`
   mounts.
 
 The generic health check framework (interface, registry, and router
 factory backing `/health/live`/`/health/ready`) lives in its own
-sibling `src/health/` package, laid out the same MVC-ish way under its
+sibling `src/craftainer_tool_observability/health/` package, laid out the same MVC-ish way under its
 own `"health layers"` contract — no external dependency beyond FastAPI
 itself. `app/health_checks.py`'s concrete, service-specific checks
 (Postgres, Redis, S3, OIDC) build on that interface and wire into a
-registry `main.py` passes to `health.router.build_health_router` the
+registry `main.py` passes to `craftainer_tool_observability.health.router.build_health_router` the
 same way it uses `crud_1`'s finished router — see
-[src/health/README.md](../src/health/README.md) and
+[src/craftainer_tool_observability/README.md](../src/craftainer_tool_observability/README.md) and
 [src/app/README.md](../src/app/README.md).
 
-`config.py`/`telemetry.py`/`problem_details.py`/`oidc.py`/
+`config.py`/`problem_details.py`/`oidc.py`/
 `http_headers.py`/`xml_codec.py`/`web_components.py`/`health_checks.py`/
 `main.py` stay flat,
 outside any subpackage. See
 [src/app/README.md](../src/app/README.md) for what each one does, and
-[src/crud/README.md](../src/crud/README.md)'s own "Layering" section for
-why `crud.controllers` importing back from `app`'s lowest flat modules
+[src/craftainer_tool_crud/README.md](../src/craftainer_tool_crud/README.md)'s own "Layering" section for
+why `craftainer_tool_crud.controllers` importing back from `app`'s lowest flat modules
 doesn't create a cycle between the two packages.
 
 ## Request flow
 
 A resource's CRUD routes are one declarative call each
 (`build_json_router`/`build_xml_router`/`build_web_router` in
-`crud/controllers/crud_router.py`), sharing the same underlying
+`craftainer_tool_crud/controllers/crud_router.py`), sharing the same underlying
 `CRUDInterface`/`CRUDLike` dependency regardless of format:
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant Controller as app/crud_1/
-    participant CRUD as crud/interfaces/ (CRUDInterface)
-    participant Repo as crud/repositories/
+    participant CRUD as craftainer_tool_crud/interfaces/ (CRUDInterface)
+    participant Repo as craftainer_tool_crud/repositories/
     participant Model as app/models/ (Postgres, or in-memory under MODE=mock)
 
     Client->>Controller: HTTP request
@@ -112,7 +112,7 @@ dedicated router factories, rather than by content negotiation inside
 one route — each format shares the same `CRUDLike` dependency, so none
 can drift in what data it exposes or what validation it applies. See
 [docs/adrs/0005](adrs/0005-multi-format-representations-via-sibling-routers.md)
-and [src/crud/controllers/README.md](../src/crud/controllers/README.md)'s
+and [src/craftainer_tool_crud/controllers/README.md](../src/craftainer_tool_crud/controllers/README.md)'s
 "Multi-format CRUD"/"Generic CRUD router factories" sections for the
 mechanics.
 
@@ -139,7 +139,7 @@ production)" section.
 - Base any change to this document on
   [src/README.md](../src/README.md)/
   [src/app/README.md](../src/app/README.md)/
-  [src/crud/README.md](../src/crud/README.md) and their subpackage
+  [src/craftainer_tool_crud/README.md](../src/craftainer_tool_crud/README.md) and their subpackage
   `README.md`s — those stay authoritative for exact layering and
   mechanics; this document is the higher-level summary.
 - Link to the relevant ADR in [docs/adrs/](adrs/) instead of restating

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.config import get_settings
 from app.health_checks import DatabaseHealthCheck, OIDCHealthCheck, RedisHealthCheck, S3HealthCheck
 from app.main import app
-from crud.models.base import engine
+from craftainer_tool_crud.models.base import engine
 
 client = TestClient(app)
 

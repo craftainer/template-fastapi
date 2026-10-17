@@ -5,31 +5,31 @@ split across subpackages, each with its own `README.md`:
 
 - `models/` — the Model layer: each resource's own SQLAlchemy ORM model
   (e.g. `hero.py`). The generic base/mixins/revision model live in
-  `../crud/models/` instead — see "Example CRUD resource: Hero" below.
+  `../craftainer_tool_crud/models/` instead — see "Example CRUD resource: Hero" below.
 - `views/` — the View layer: each resource's own Pydantic schemas (e.g.
   `hero_v1.py`/`hero_v2.py`). The generic view bases live in
-  `../crud/views/` instead.
+  `../craftainer_tool_crud/views/` instead.
 - `controllers/` — FastAPI routers with no resource of their own
   (audit/mock). The generic CRUD router factories a resource builds on
-  live in `../crud/controllers/` instead.
+  live in `../craftainer_tool_crud/controllers/` instead.
 - `crud_1/` — one subpackage per resource (e.g. `heroes/`), each
-  combining its versioned sibling routers (built from `../crud/
+  combining its versioned sibling routers (built from `../craftainer_tool_crud/
   controllers/`'s factories) into one router, all combined into the
   single router `main.py` mounts at `/crud/v{ROUTER_VERSION}`; see its
   own `README.md`.
 
 The generic CRUD framework itself — router factories, the interface,
 storage-agnostic repositories, and model/view bases — lives in the
-sibling `../crud/` package, not here; see its own `README.md`. A
+sibling `../craftainer_tool_crud/` package, not here; see its own `README.md`. A
 resource's own model/view/router (Hero's, e.g.) stays in `app/` and
-imports from `crud.*` to build on that framework. The generic health
+imports from `craftainer_tool_crud.*` to build on that framework. The generic health
 check framework (interface, registry, and router factory) similarly
-lives in the sibling `../health/` package, not here — see its own
+lives in the sibling `../craftainer_tool_observability/health/` package, not here — see its own
 `README.md` — with `health_checks.py`'s concrete checks and wiring
 (below) built on top of it, the same split as a resource's own
-model/view/router built on `crud.*`.
+model/view/router built on `craftainer_tool_crud.*`.
 
-`config.py`/`main.py`/`oidc.py`/`telemetry.py`/`problem_details.py`/
+`config.py`/`main.py`/`oidc.py`/`problem_details.py`/
 `rate_limit.py`/`http_headers.py`/`xml_codec.py`/`web_components.py`/
 `maintenance.py`/`health_checks.py` stay flat, outside any subpackage —
 a flat module has no resource-specific code and no state of its own
@@ -42,8 +42,6 @@ beyond what it's explicitly passed or reads from `app.config`.
   migrations" below.
 - `oidc.py` — provider-agnostic OIDC bearer-token validation (PKCE-
   compatible; not Keycloak-specific); see "OIDC / auth" below.
-- `telemetry.py` — structured JSON logging setup; see "Structured
-  logging / OTEL" below.
 - `problem_details.py` — RFC 9457 error responses; see below.
 - `rate_limit.py` — the Redis-backed `slowapi` limiter applied to
   `POST /mock/token` and each resource's bulk update/delete routes; see
@@ -53,26 +51,26 @@ beyond what it's explicitly passed or reads from `app.config`.
   headers" below.
 - `xml_codec.py` / `web_components.py` — the generic XML and HTML-form
   rendering pieces a resource's sibling routers reuse; see
-  `../crud/controllers/README.md`'s "Generic CRUD router factories" section for
+  `../craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories" section for
   the pattern.
 - `maintenance.py` — `purge_archived`, the out-of-request-path job that
   hard-deletes rows past `Settings.archive_purge_after_days` for every
-  model carrying `crud.models.mixins.Archivable`; invoked externally
+  model carrying `craftainer_tool_crud.models.mixins.Archivable`; invoked externally
   (`python -m app.maintenance`) by a host/k8s `CronJob`, never from
   `main.py` — see "Example CRUD resource: Hero" below and its own module
   docstring.
 - `health_checks.py` — this app's concrete `HealthCheck`s (Postgres,
-  Redis, S3, OIDC) built on `health.base`, and `get_health_registry`,
+  Redis, S3, OIDC) built on `craftainer_tool_observability.health.base`, and `get_health_registry`,
   the `lru_cache`d factory (matching `app.config.get_settings`'s
-  pattern) that wires them into a `health.registry.HealthRegistry`;
-  `main.py` passes it to `health.router.build_health_router` to mount
+  pattern) that wires them into a `craftainer_tool_observability.health.registry.HealthRegistry`;
+  `main.py` passes it to `craftainer_tool_observability.health.router.build_health_router` to mount
   `/health`.
 
 ## Layering
 
 Import order between all of the above is strict and one-directional —
 lower layers never import from higher ones (`config` → `health_checks`
-→ `rate_limit` → `telemetry` → `problem_details` → `oidc` → `models` →
+→ `rate_limit` → `problem_details` → `oidc` → `models` →
 `maintenance` → `views` → `web_components` → `xml_codec` →
 `http_headers` → `controllers` → `crud_1` → `main`) — enforced by
 `import-linter`'s `"app layers"` contract in `../../pyproject.toml`'s
@@ -81,37 +79,37 @@ lower layers never import from higher ones (`config` → `health_checks`
 A new subpackage or flat module gets added to that `layers` list at the
 point matching its real dependencies, not appended blindly to one end --
 `maintenance` sits directly above `models` (the only layer it imports from,
-besides `config`/`oidc`/`problem_details`/`telemetry`/`rate_limit` below
+besides `config`/`oidc`/`problem_details`/`rate_limit` below
 that) since nothing else in `app/` imports it back (it's invoked externally,
 `python -m app.maintenance`, never from `main.py`); `health_checks` sits
 directly above `config` for the same reason -- its only dependency
-within `app/` is `config` (its other imports, `crud.models.base`'s
-engine and `health.base`/`health.registry`, are outside this container
+within `app/` is `config` (its other imports, `craftainer_tool_crud.models.base`'s
+engine and `craftainer_tool_observability.health.base`/`craftainer_tool_observability.health.registry`, are outside this container
 entirely) and nothing else in `app/` imports it back (only `main.py`
 does, to build the health router).
 `crud_1` sits between `controllers` and `main` specifically because a
-resource package imports `../crud/controllers/crud_router.py`'s
+resource package imports `../craftainer_tool_crud/controllers/crud_router.py`'s
 factories to build its own routers, and `main` imports the finished
 combined router from `crud_1` rather than reaching into `controllers`
 for it. This contract covers only ordering *within* `app/` itself — the
-generic CRUD framework in `../crud/` has its own separate
+generic CRUD framework in `../craftainer_tool_crud/` has its own separate
 `"crud layers"` contract and its own import order, documented in its
 own `README.md`; `app/`'s resource-specific modules (`models/hero.py`,
-`views/hero_v1.py`/`hero_v2.py`, `crud_1/`) import from `crud.*` freely,
-but nothing in `crud/` ever imports back from `app/`'s resource-specific
+`views/hero_v1.py`/`hero_v2.py`, `crud_1/`) import from `craftainer_tool_crud.*` freely,
+but nothing in `craftainer_tool_crud/` ever imports back from `app/`'s resource-specific
 modules (only from its flat `config`/`rate_limit`/`web_components`/
 `xml_codec` modules, which sit below everything resource-specific
-anyway). The sibling `../health/` package has its own separate
+anyway). The sibling `../craftainer_tool_observability/health/` package has its own separate
 `"health layers"` contract too, documented in its own `README.md`;
-`health_checks.py` imports from it freely (`health.base`/
-`health.registry`), and `main.py` builds the finished router by calling
-`health.router.build_health_router(get_health_registry)` the same way
+`health_checks.py` imports from it freely (`craftainer_tool_observability.health.base`/
+`craftainer_tool_observability.health.registry`), and `main.py` builds the finished router by calling
+`craftainer_tool_observability.health.router.build_health_router(get_health_registry)` the same way
 it imports `crud_1`'s finished router.
 
 ```mermaid
 graph LR
-    config --> health_checks --> rate_limit --> telemetry
-    telemetry --> problem_details --> oidc --> models --> maintenance
+    config --> health_checks --> rate_limit --> problem_details
+    problem_details --> oidc --> models --> maintenance
     maintenance --> views --> web_components --> xml_codec
     xml_codec --> http_headers --> controllers --> crud_1 --> main
 ```
@@ -185,7 +183,7 @@ local/devcontainer default values.
 `oidc.py` logs a `WARNING` (with the request path) on every rejected
 bearer token, and `require_roles` logs one (path + subject + the roles
 that were required) on every `403` — both to make brute-force/enumeration
-attempts against protected routes detectable (see `telemetry.py`'s
+attempts against protected routes detectable (see
 "Structured logging / OTEL" below for where that log line ends up).
 
 ### RBAC
@@ -199,7 +197,7 @@ client-role claim shape specifically, not something assumed present on
 every provider's token (unlike `get_current_claims`, which stays
 provider-agnostic). Add a role requirement to a route with
 `dependencies=[Depends(require_roles("editor", "maintainer"))]` — see
-`../crud/controllers/README.md` for the reusable-constant pattern. A new
+`../craftainer_tool_crud/controllers/README.md` for the reusable-constant pattern. A new
 resource's routes pick their own role names/mapping; there's no fixed
 role list beyond what `realm-export.json` defines.
 
@@ -237,17 +235,17 @@ not a per-request one.
   default.
 
 A resource that wants `MODE=mock` support builds its CRUD dependency from
-`crud.interfaces.dependency.build_repository_provider(Model)` the way
+`craftainer_tool_crud.interfaces.dependency.build_repository_provider(Model)` the way
 `crud_1.heroes.heroes_v2.get_hero_crud` does — keep the dependency's signature
 identical across modes (an unused `AsyncSession`'s `commit()` never opens
-a connection, so taking `crud.models.base.DBSession` unconditionally and letting
+a connection, so taking `craftainer_tool_crud.models.base.DBSession` unconditionally and letting
 `build_repository_provider` branch on `settings.mode` internally is both
 simpler and satisfies mypy's identical-conditional-signature check, versus
 two differently-signatured functions).
 
 ## Structured logging / OTEL
 
-`telemetry.py`'s `configure_logging()` (called once from `main.py`, at
+`craftainer_tool_observability.logs.configure_logging()` (called once from `main.py`, at
 import time) attaches a JSON-formatting handler to the root logger
 unconditionally — every log call (including uvicorn's own) prints one
 structured JSON line to stdout. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set,
@@ -256,7 +254,11 @@ only, deliberately — no tracing/metrics instrumentation. OTEL's own env
 vars (endpoint, headers, protocol, compression, certificate) are read
 directly by `OTLPLogExporter()` itself, never re-modeled as `Settings`
 fields — OTEL's env-var convention is already the single source of
-truth for those.
+truth for those, including the exported `service.name`, which comes
+from `OTEL_SERVICE_NAME` (set in `compose.yml` and
+`.devcontainer/compose.instance.yml`), not from `Settings.app_name`. The
+module itself lives in `../craftainer_tool_observability/logs.py` and imports
+nothing from `app`.
 
 Every non-reserved `LogRecord` attribute (i.e. anything passed via a call's
 own `extra={...}`) is redacted to `"[REDACTED]"` before being serialized if
@@ -327,21 +329,21 @@ against a throwaway `Limiter` instead.
 worked example of the generic CRUD interface, wired up as
 `/crud/v1/heroes/v2/json` (list/create/get/update/delete — see
 `crud_1/heroes/heroes_v2.py`; `/xml` and `/web` siblings also exist, see
-`../crud/controllers/README.md`'s "Generic CRUD router factories"). Adding
+`../craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories"). Adding
 another resource follows the same three-file shape: an `IdentifiedBase`
-subclass (from `../crud/models/base.py`) in `models/`, an `ORMView`
-subclass (from `../crud/views/base.py`, plus `*Create`/`*Update`
+subclass (from `../craftainer_tool_crud/models/base.py`) in `models/`, an `ORMView`
+subclass (from `../craftainer_tool_crud/views/base.py`, plus `*Create`/`*Update`
 variants) in `views/`, and a router in `crud_1/` that builds a
 `CRUDInterface(schema=<View>, repository=SQLAlchemyRepository(session,
-<Model>))` per request — see `../crud/interfaces/README.md` and
-`../crud/repositories/README.md` for what each side of that call does.
+<Model>))` per request — see `../craftainer_tool_crud/interfaces/README.md` and
+`../craftainer_tool_crud/repositories/README.md` for what each side of that call does.
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant Controller as crud_1/heroes/heroes_v2.py
-    participant CRUD as crud/interfaces/base.py (CRUDInterface)
-    participant Repo as crud/repositories/sqlalchemy.py
+    participant CRUD as craftainer_tool_crud/interfaces/base.py (CRUDInterface)
+    participant Repo as craftainer_tool_crud/repositories/sqlalchemy.py
     participant DB as Postgres
 
     Client->>Controller: GET /crud/v1/heroes/v2/json?id={id}
@@ -355,40 +357,40 @@ sequenceDiagram
 ```
 
 Under `MODE=mock`, `Repo`/`DB` are replaced by
-`crud.repositories.memory`'s `InMemoryRepository`, with no other layer
+`craftainer_tool_crud.repositories.memory`'s `InMemoryRepository`, with no other layer
 changing — see "MODE (dev / mock / production)" above.
 
 `/crud/v1/heroes/v2/json` also supports schema-driven filtering/sorting
 (e.g. `?name__icontains=man&sort=-created_at`) and bulk update/delete
 over a filter set (`PATCH`/`DELETE` with no `id`) — see
-`../crud/controllers/README.md`'s "Generic CRUD router factories" and
+`../craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories" and
 `docs/adrs/0008-generic-schema-driven-query-and-bulk-actions.md` for why
 that logic lives in the shared repository/CRUD layers rather than in
 `heroes.py` itself.
 
 Hero also carries a deprecated `/crud/v1/heroes/v1` sibling version,
-backed by the same data — see `../crud/controllers/README.md`'s "API and model
+backed by the same data — see `../craftainer_tool_crud/controllers/README.md`'s "API and model
 versioning" and `docs/adrs/0009-explicit-crud-router-and-model-
 versioning-segments.md` for the path-segment versioning convention any
 future breaking resource change follows.
 
-Hero is also the worked example of `../crud/interfaces/base.py`'s opt-in
+Hero is also the worked example of `../craftainer_tool_crud/interfaces/base.py`'s opt-in
 `OwnerScope` hook: `get_hero_crud` passes `OwnerScope("owner_id",
 claims["sub"], read_scoped=False)`, so every authenticated caller still
 reads every hero (`read_scoped=False` keeps list/get shared, same as
 before this was added), but `update`/`delete` — single or bulk — only
 ever reach heroes the caller themselves created. See
 `docs/adrs/0011-owner-scoped-crud-example-resource.md` for why this
-shape was chosen and `../crud/interfaces/README.md`'s `OwnerScope` paragraph for
+shape was chosen and `../craftainer_tool_crud/interfaces/README.md`'s `OwnerScope` paragraph for
 the mechanism a new per-user/per-tenant resource opts into the same way.
 
 ### Record-lifecycle mixins
 
 Hero also demonstrates every opt-in record-lifecycle mixin from
-`../crud/models/mixins.py`, on `/crud/v1/heroes/v2` only (not the deprecated `v1`
+`../craftainer_tool_crud/models/mixins.py`, on `/crud/v1/heroes/v2` only (not the deprecated `v1`
 sibling, matching how bulk actions were rolled out as a v2-only
 capability) — across all three of its `/json`, `/xml`, and `/web`
-sibling routers, not JSON-only (see `../crud/controllers/README.md`'s "Generic
+sibling routers, not JSON-only (see `../craftainer_tool_crud/controllers/README.md`'s "Generic
 CRUD router factories" for the XML hand-assembled-nesting/web
 generated-JS shape each takes):
 
@@ -401,7 +403,7 @@ generated-JS shape each takes):
   /publish?id=` re-validates the record against `HeroV2Create` (422,
   naming missing fields, if it still doesn't validate) and flips
   `is_draft=False`. A plain `GET` includes drafts by default — see
-  `../crud/models/mixins.py`'s `Draftable` docstring for why this default is
+  `../craftainer_tool_crud/models/mixins.py`'s `Draftable` docstring for why this default is
   provisional, pending a real (non-Hero) draftable resource.
 - **Scheduled publish/unpublish** (`Schedulable`): `publish_at`/
   `unpublish_at` are plain columns, set via a normal `PATCH`; a record
@@ -414,7 +416,7 @@ generated-JS shape each takes):
 - **Duplicate/clone**: `POST /clone?id=` — generic, no mixin needed;
   every resource gets it once it uses `build_json_router`.
 - **Lock/read-only** (`Lockable`): `is_locked` is a plain field, set via
-  a normal `PATCH`; while `True`, `crud.repositories`' `update`/`delete`
+  a normal `PATCH`; while `True`, `craftainer_tool_crud.repositories`' `update`/`delete`
   (single or bulk) raise `RecordLockedError`, surfaced as `423 Locked` —
   except a `PATCH` whose own body sets `is_locked=false`, which is
   always allowed through (so unlocking never needs a dedicated route,
@@ -422,7 +424,7 @@ generated-JS shape each takes):
 - **Revision history**: `get_hero_crud` passes
   `revisions=RepositoryRevisionSink(...)`/`resource="hero"`/`actor=...`
   to `CRUDInterface`; every create/update/update_many/delete/delete_many
-  is logged to the shared `revisions` table (`crud.models.revision.
+  is logged to the shared `revisions` table (`craftainer_tool_crud.models.revision.
   Revision`). `GET /revisions?id=` returns a record's history, newest
   first.
 - **Real-time event stream**: `get_hero_crud` passes
@@ -431,7 +433,7 @@ generated-JS shape each takes):
   restore/restore_many publishes an event. `GET /events` (added via
   `event_source_dependency=`) streams them back over Server-Sent Events,
   backed by MQTT (`.devcontainer/stack/mqtt/`) in dev/production or an
-  in-memory fan-out under `MODE=mock` — see `../crud/interfaces/README.md`'s
+  in-memory fan-out under `MODE=mock` — see `../craftainer_tool_crud/interfaces/README.md`'s
   `EventSink`/`EventSource` paragraph and
   `docs/adrs/0015-mqtt-for-crud-events.md` for the delivery-guarantee
   design (a subscriber that preserves its `subscriber_id` doesn't miss
@@ -445,8 +447,8 @@ generated-JS shape each takes):
   time-bucketed series, `?periods=` future buckets, `?field=` to target a
   numeric field's per-bucket sum instead of record count — always named
   `"linear_regression"` in the response, never mistaken for a trained
-  model). See `../crud/controllers/README.md`'s "Generic CRUD router factories"
-  for the full shape, `../crud/repositories/README.md`'s "Statistics" section for
+  model). See `../craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories"
+  for the full shape, `../craftainer_tool_crud/repositories/README.md`'s "Statistics" section for
   what the repository layer computes, and
   `docs/plans/2026-09-crud-stats-and-predictions.md` for the design.
 

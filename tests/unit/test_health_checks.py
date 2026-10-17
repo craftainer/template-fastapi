@@ -1,7 +1,8 @@
 """Unit test: each concrete health check's success/failure paths, services faked out.
 
 Also covers get_health_registry's MODE=mock wiring and the mounted /health routes
-built from it -- see health/'s own test_registry.py/test_router.py for the generic
+built from it -- see craftainer_tool_observability/health/'s own test_registry.py/test_router.py
+for the generic
 HealthRegistry/build_health_router framework, tested with fakes instead.
 """
 
@@ -26,8 +27,8 @@ from app.health_checks import (
     get_health_registry,
 )
 from app.main import app
-from health.base import HealthCheckResult
-from health.registry import HealthRegistry
+from craftainer_tool_observability.health.base import HealthCheckResult
+from craftainer_tool_observability.health.registry import HealthRegistry
 
 client = TestClient(app)
 
