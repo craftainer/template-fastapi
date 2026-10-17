@@ -13,7 +13,7 @@ RELEASE_URL := https://github.com/$(REPO)/releases/download/$(RELEASE_TAG)
 OCI_NAME := $(shell printf '%s' '$(or $(OCI_IMAGE_NAME),$(REPO))' | tr '[:upper:]' '[:lower:]')
 
 # renovate: datasource=docker depName=anchore/syft
-SYFT_VERSION := v1.52.0
+SYFT_VERSION := v1.54.1
 
 # Only set in CI, by crazy-max/ghaction-github-runtime in release.yml.
 ifdef ACTIONS_RUNTIME_TOKEN
