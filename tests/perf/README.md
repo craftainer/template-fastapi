@@ -75,6 +75,19 @@ Keycloak (password grant, same convention as `../e2e/conftest.py`'s
   there too; a run with that flag set measures the generator, not the
   api, so rerun it with more workers or a bigger box.
 
+### Authentication during long runs
+
+The realm's access tokens last 300s, so `locustfile.py` does not log in once
+per user. One expiry-aware token is shared by all users of a Locust process
+(same credentials; one Keycloak password grant per worker instead of one per
+user) and renewed once 80% of its `expires_in` has passed. As a safety net, a
+401 makes the user fetch a fresh token and retry that request once. Token
+requests go through httpx, not Locust's client, so they never show up in the
+stats; the 401 itself is recorded as a failure, so a run that needs the safety
+net (or whose login is broken, which raises instead of retrying in a loop) is
+visible. Each process logs `Token logins in this ... process: {...}` (counts
+of `login`, `refresh`, `relogin`) at quit.
+
 ### Capacity mode
 
 The default run above is the fixed-load `NFR-0024` check ("did we
@@ -108,15 +121,27 @@ passed (`max_users_passed` is 0).
 | `--capacity-max-users` | 200 | Last step's users (steps = ceil(max / step users)) |
 | `--capacity-spawn-rate` | 10 | Users spawned per second |
 | `--capacity-p99-factor` | 2.0 | p99 ceiling = factor x the endpoint's p95 ceiling (`NFR-0024` gives no p99) |
+| `--capacity-min-endpoint-samples` | 100 | Per-endpoint p95/p99 ceilings apply only to endpoints with at least this many requests in the step's window |
 | `--capacity-max-error-rate` | 0.0 | Highest error rate (0-1) in a passing step |
 | `--capacity-run-all-steps` | off | Keep going after the first failing step (default stops there) |
 
-A step passes when, over its post-warm-up window, every endpoint's p95
-is within `NFR-0024`'s ceiling (200ms; 50ms for `/health/live`), its
-p99 is within the derived ceiling, and the error rate is within
-`--capacity-max-error-rate`. The window starts at the first shape tick
-(about 1 Hz) after the warm-up, so it is accurate to about a second.
-`max_users_passed` is the highest passing step's users (0 if none).
+A step passes when, over its post-warm-up window:
+
+- the aggregate p95 is within the default endpoint ceiling (200ms,
+  `_DEFAULT_P95_LATENCY_MS_CEILING`), the aggregate p99 within that times
+  `--capacity-p99-factor`, and the aggregate error rate within
+  `--capacity-max-error-rate` (always checked);
+- every endpoint's error rate is within `--capacity-max-error-rate`
+  (always checked, however few requests it had);
+- every endpoint with at least `--capacity-min-endpoint-samples` requests
+  in the window has its p95 within `NFR-0024`'s ceiling (200ms; 50ms for
+  `/health/live`) and its p99 within the derived ceiling. Rarer endpoints
+  (a p95 over a handful of requests is noise) are skipped for latency.
+
+The window starts at the first shape tick (about 1 Hz) after the warm-up,
+so it is accurate to about a second. Each step in the summary says which
+endpoints had their latency checked (`checked`) and why a failing step
+failed (`failed_on`). `max_users_passed` is the highest passing step's users (0 if none).
 
 Tiny smoke run (two 40-second steps, 10-second warm-up):
 
@@ -143,7 +168,8 @@ in both modes, when the run quits (not written by distributed workers):
   "endpoints": {"GET /health/live": {"same keys as aggregate": 0}},
   "generator_cpu_percent": {"max": 0.0, "mean": 0.0, "samples": 0, "workers": 0, "cpu_warning": false},
   "steps": [{"users": 10, "p50": 0, "p95": 0, "p99": 0, "rps": 0.0,
-             "error_rate": 0.0, "passed": true, "endpoints": {}}],
+             "error_rate": 0.0, "passed": true, "failed_on": [],
+             "endpoints": {"POST /...": {"same keys as aggregate": 0, "checked": true}}}],
   "max_users_passed": 10,
   "api_resources": {}
 }
@@ -154,7 +180,10 @@ in both modes, when the run quits (not written by distributed workers):
   mode use `steps`, which only count each step's post-warm-up window.
 - `steps` and `max_users_passed` appear in capacity mode only. Each
   step's top-level numbers are the aggregate over all endpoints;
-  `endpoints` breaks them out per endpoint.
+  `endpoints` breaks them out per endpoint, with `checked` (bool: whether
+  the endpoint had enough samples for its latency ceilings to apply).
+  `failed_on` lists the breached ceilings, e.g. `"Aggregated p95 250ms >
+  200ms"` (empty when the step passed).
 - `generator_cpu_percent`: percent of one core, the busiest generator
   process (master or worker) per 5-second sample; `workers` is the peak
   number of workers connected during the run (0 without `--processes`). `null` values mean the

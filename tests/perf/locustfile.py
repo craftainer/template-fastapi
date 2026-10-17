@@ -8,9 +8,11 @@ runner (`uv run locust -f tests/perf/locustfile.py ...`).
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import secrets
+import threading
 import time
 import uuid
 from collections import Counter
@@ -24,6 +26,7 @@ from locust.argument_parser import LocustArgumentParser
 from locust.env import Environment
 from locust.runners import MasterRunner, WorkerRunner
 from locust.stats import StatsEntry, calculate_response_time_percentile
+from requests import Response
 
 from app.config import get_settings
 
@@ -38,6 +41,11 @@ _DEFAULT_P95_LATENCY_MS_CEILING = 200
 _DEFAULT_P99_FACTOR = 2.0
 # NFR-0024's error-rate ceiling (0%).
 _DEFAULT_MAX_ERROR_RATE = 0.0
+
+# Per-endpoint latency ceilings only apply to endpoints with at least this many requests
+# in the step's window (overridable with --capacity-min-endpoint-samples); a p95/p99 over a
+# handful of requests is noise. Error-rate ceilings apply regardless.
+_DEFAULT_MIN_ENDPOINT_SAMPLES = 100
 
 _MODE_FIXED = "fixed"
 _MODE_CAPACITY = "capacity"
@@ -89,6 +97,15 @@ def _add_arguments(parser: LocustArgumentParser) -> None:
         type=float,
         default=_DEFAULT_P99_FACTOR,
         help="p99 ceiling = this factor x the endpoint's NFR-0024 p95 ceiling",
+    )
+    parser.add_argument(
+        "--capacity-min-endpoint-samples",
+        type=int,
+        default=_DEFAULT_MIN_ENDPOINT_SAMPLES,
+        help=(
+            "Per-endpoint p95/p99 ceilings apply only to endpoints with at least this many "
+            "requests in the step's window (error rates always apply)"
+        ),
     )
     parser.add_argument(
         "--capacity-max-error-rate",
@@ -171,23 +188,39 @@ def _window(start: _Snapshot, end: _Snapshot, seconds: float) -> dict[str, dict[
     return result
 
 
-def _step_passed(environment: Environment, stats: dict[str, dict[str, float]]) -> bool:
-    """Whether a step stayed within NFR-0024's p95, the derived p99 and the error-rate ceilings."""
+def _evaluate_step(
+    environment: Environment, stats: dict[str, dict[str, float]]
+) -> tuple[list[str], dict[str, bool]]:
+    """Check a step's window against the ceilings.
+
+    Returns (failed_on, checked): `failed_on` lists every breached ceiling (empty = the step
+    passed) and `checked` says per endpoint whether its latency ceilings applied (it had at
+    least --capacity-min-endpoint-samples requests). The aggregate p95/p99 (the default
+    endpoint p95 ceiling, and that times --capacity-p99-factor) and error rate, and every
+    endpoint's error rate, apply regardless of sample count.
+    """
     if not stats:
-        return False
+        return ["no requests in the measurement window"], {}
     p99_factor = _option(environment, "capacity_p99_factor", _DEFAULT_P99_FACTOR)
     max_error = _option(environment, "capacity_max_error_rate", _DEFAULT_MAX_ERROR_RATE)
+    min_samples = _option(
+        environment, "capacity_min_endpoint_samples", _DEFAULT_MIN_ENDPOINT_SAMPLES
+    )
+    failed_on: list[str] = []
+    checked: dict[str, bool] = {}
     for path, entry in stats.items():
-        if path == "Aggregated":
-            continue
-        ceiling = _p95_ceiling(path)
-        if (
-            entry["p95"] > ceiling
-            or entry["p99"] > ceiling * p99_factor
-            or entry["error_rate"] > max_error
-        ):
-            return False
-    return stats["Aggregated"]["error_rate"] <= max_error
+        aggregate = path == "Aggregated"
+        ceiling = _DEFAULT_P95_LATENCY_MS_CEILING if aggregate else _p95_ceiling(path)
+        latency_applies = aggregate or entry["requests"] >= min_samples
+        if not aggregate:
+            checked[path] = latency_applies
+        if latency_applies and entry["p95"] > ceiling:
+            failed_on.append(f"{path} p95 {entry['p95']:.0f}ms > {ceiling}ms")
+        if latency_applies and entry["p99"] > ceiling * p99_factor:
+            failed_on.append(f"{path} p99 {entry['p99']:.0f}ms > {ceiling * p99_factor:g}ms")
+        if entry["error_rate"] > max_error:
+            failed_on.append(f"{path} error_rate {entry['error_rate']:.4f} > {max_error:g}")
+    return failed_on, checked
 
 
 class CapacityShape(LoadTestShape):
@@ -230,7 +263,8 @@ class CapacityShape(LoadTestShape):
         if self._window_start is not None:
             start, started_at = self._window_start
             stats = _window(start, _snapshot(self.environment), time.perf_counter() - started_at)
-        passed = _step_passed(self.environment, stats)
+        failed_on, checked = _evaluate_step(self.environment, stats)
+        passed = not failed_on
         aggregate = stats.get("Aggregated", {})
         self.steps.append(
             {
@@ -241,7 +275,10 @@ class CapacityShape(LoadTestShape):
                 "rps": aggregate.get("rps"),
                 "error_rate": aggregate.get("error_rate"),
                 "passed": passed,
-                "endpoints": {k: v for k, v in stats.items() if k != "Aggregated"},
+                "failed_on": failed_on,
+                "endpoints": {
+                    k: {**v, "checked": checked[k]} for k, v in stats.items() if k != "Aggregated"
+                },
             }
         )
         self._window_start = None
@@ -402,12 +439,13 @@ _CONNECT_ENV = "PERF_OIDC_CONNECT_URL"
 _HERO_LIST_PATH = "/crud/v1/heroes/v2/json"
 
 
-def _fetch_access_token() -> str:
-    """Log in `_LOGIN_USERNAME` against the real dev-realm Keycloak and return their token.
+def _fetch_access_token() -> tuple[str, float]:
+    """Log in `_LOGIN_USERNAME` against the real dev-realm Keycloak; return (token, expires_in s).
 
     Duplicates tests/e2e/conftest.py's access_token(dev) branch rather than importing
     it -- tests/e2e/README.md's "Don't" forbids importing across test suites, and this
-    suite isn't pytest-collected at all, so it can't share a fixture either way.
+    suite isn't pytest-collected at all, so it can't share a fixture either way. Goes
+    through httpx, not `HttpUser.client`, so logins are never recorded as Locust requests.
     """
     settings = get_settings()
     url = settings.oidc_token_url
@@ -434,7 +472,62 @@ def _fetch_access_token() -> str:
             extensions=extensions,
         )
     response.raise_for_status()
-    return response.json()["access_token"]  # type: ignore[no-any-return]
+    body = response.json()
+    return body["access_token"], float(body.get("expires_in", _FALLBACK_TOKEN_LIFETIME_S))
+
+
+class _TokenCache:
+    """One shared, expiry-aware access token per Locust process.
+
+    Every simulated user logs in with the same credentials, so one token serves them all:
+    this turns N logins per token lifetime into one per worker process (Keycloak's
+    password grant is expensive), and keeps re-logins from piling up when the token
+    expires. The token is renewed once `_REFRESH_FRACTION` of its `expires_in` has passed.
+    A failing login raises (nothing is cached), so broken auth stays visible as an error
+    instead of being retried in a loop.
+    """
+
+    def __init__(self) -> None:
+        """Start with no token and zeroed counters."""
+        self._lock = threading.Lock()
+        self._token = ""
+        self._refresh_at = 0.0
+        self.counts: Counter[str] = Counter()
+
+    def get(self, rejected: str | None = None) -> str:
+        """Return a token valid for now.
+
+        `rejected` is a token the api just answered 401 to: it is replaced even if it
+        hasn't reached its refresh time, unless another user already replaced it.
+        """
+        if self._usable(rejected):
+            return self._token
+        with self._lock:
+            if self._usable(rejected):  # another greenlet logged in while we waited
+                return self._token
+            kind = "relogin" if rejected is not None else "refresh" if self._token else "login"
+            self._token, expires_in = _fetch_access_token()
+            self._refresh_at = time.monotonic() + expires_in * _REFRESH_FRACTION
+            self.counts[kind] += 1
+            return self._token
+
+    def _usable(self, rejected: str | None) -> bool:
+        """Whether the cached token can be handed out as is."""
+        return bool(self._token) and self._token != rejected and time.monotonic() < self._refresh_at
+
+
+_FALLBACK_TOKEN_LIFETIME_S = 60.0
+_REFRESH_FRACTION = 0.8
+_tokens = _TokenCache()
+
+
+@events.quitting.add_listener  # type: ignore[untyped-decorator] # locust ships no py.typed marker
+def _log_token_counts(environment: Environment, **_: object) -> None:
+    """Log this process' login/refresh/re-login counts (one line per master/worker process)."""
+    kind = type(environment.runner).__name__ if environment.runner else "standalone"
+    logging.getLogger(__name__).info(
+        "Token logins in this %s process: %s", kind, dict(_tokens.counts) or "none"
+    )
 
 
 class HeroesUser(HttpUser):
@@ -443,9 +536,46 @@ class HeroesUser(HttpUser):
     wait_time = between(0.5, 2.0)
 
     def on_start(self) -> None:
-        """Log in once per simulated user and reuse the resulting bearer token."""
-        token = _fetch_access_token()
-        self.client.headers["Authorization"] = f"Bearer {token}"
+        """Get a bearer token up front, so a broken login fails the user immediately."""
+        _tokens.get()
+
+    def _call(
+        self,
+        method: str,
+        path: str,
+        *,
+        name: str | None = None,
+        expected: int | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> Response:
+        """Send an authenticated request; on an unexpected 401 re-login once and retry once.
+
+        Every attempt is recorded as a Locust request (a 401 as a failure, so the safety
+        net never hides a rejected token); the token request itself is not. A response is
+        a failure if its status is not `expected`, or, with none given, is >= 400.
+        """
+        token = _tokens.get()
+        for attempt in range(2):
+            with self.client.request(
+                method,
+                path,
+                name=name,
+                catch_response=True,
+                headers={"Authorization": f"Bearer {token}"},
+                json=json,
+            ) as response:
+                status = response.status_code
+                if status == 401 and attempt == 0:
+                    response.failure("401: token rejected, re-logging in")
+                elif (expected is not None and status != expected) or (
+                    expected is None and status >= 400
+                ):
+                    response.failure(f"unexpected status {status}")
+            if status != 401 or attempt == 1:
+                break
+            token = _tokens.get(rejected=token)
+        result: Response = response
+        return result
 
     def _create_hero(self) -> dict[str, Any] | None:
         """Create a throwaway Hero and return its JSON body, or None on failure."""
@@ -453,16 +583,15 @@ class HeroesUser(HttpUser):
             "name": f"locust-{uuid.uuid4().hex[:8]}",
             "powers": ["flight"],
         }
-        with self.client.post(_HERO_LIST_PATH, json=payload, catch_response=True) as response:
-            if response.status_code != 201:
-                response.failure(f"unexpected status {response.status_code}")
-                return None
-            return response.json()  # type: ignore[no-any-return]
+        response = self._call("POST", _HERO_LIST_PATH, json=payload, expected=201)
+        if response.status_code != 201:
+            return None
+        return response.json()  # type: ignore[no-any-return]
 
     @task(10)
     def list_heroes(self) -> None:
         """List heroes -- the read path most traffic is weighted toward."""
-        self.client.get(_HERO_LIST_PATH, name=_HERO_LIST_PATH)
+        self._call("GET", _HERO_LIST_PATH, name=_HERO_LIST_PATH)
 
     @task(5)
     def get_hero(self) -> None:
@@ -470,7 +599,7 @@ class HeroesUser(HttpUser):
         hero = self._create_hero()
         if hero is None:
             return
-        self.client.get(f"{_HERO_LIST_PATH}?id={hero['id']}", name=f"{_HERO_LIST_PATH}?id=")
+        self._call("GET", f"{_HERO_LIST_PATH}?id={hero['id']}", name=f"{_HERO_LIST_PATH}?id=")
 
     @task(3)
     def create_hero(self) -> None:
@@ -483,7 +612,8 @@ class HeroesUser(HttpUser):
         hero = self._create_hero()
         if hero is None:
             return
-        self.client.patch(
+        self._call(
+            "PATCH",
             f"{_HERO_LIST_PATH}?id={hero['id']}",
             json={"powers": [*hero["powers"], secrets.choice(["speed", "strength"])]},
             name=f"{_HERO_LIST_PATH}?id= [PATCH]",
@@ -495,11 +625,11 @@ class HeroesUser(HttpUser):
         hero = self._create_hero()
         if hero is None:
             return
-        self.client.delete(
-            f"{_HERO_LIST_PATH}?id={hero['id']}", name=f"{_HERO_LIST_PATH}?id= [DELETE]"
+        self._call(
+            "DELETE", f"{_HERO_LIST_PATH}?id={hero['id']}", name=f"{_HERO_LIST_PATH}?id= [DELETE]"
         )
 
     @task(8)
     def health_live(self) -> None:
         """Hit the liveness probe -- cheap, unauthenticated, high-frequency traffic."""
-        self.client.get("/health/live")
+        self._call("GET", "/health/live")
