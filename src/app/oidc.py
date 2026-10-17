@@ -21,6 +21,7 @@ from typing import Annotated, Any
 import httpx
 import jwt
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from jwt import PyJWKClient
 
@@ -93,6 +94,59 @@ def decode_bearer_token(token: str) -> dict[str, Any]:
         ) from exc
 
 
+def _jwks_is_warm(token: str) -> bool:
+    """True when verifying `token` needs no network I/O (so it may run on the event loop).
+
+    That holds when the JWKS client already exists (no OIDC discovery pending) and
+    its JWK-set cache holds a signing key for the token's `kid`. Anything else --
+    first discovery, an expired set, a rotated/unknown `kid` -- may make PyJWKClient
+    fetch over blocking HTTP. A token whose header can't even be parsed is "warm":
+    decode_bearer_token rejects it with a 401 before any network call.
+    """
+    if _get_jwks_client.cache_info().currsize == 0:
+        return False
+    try:
+        kid = jwt.get_unverified_header(token).get("kid")
+    except jwt.PyJWTError:
+        return True
+    jwk_set = _get_jwks_client().jwk_set_cache
+    cached = jwk_set.get() if jwk_set is not None else None
+    if cached is None:
+        return False
+    return any(key.key_id == kid for key in cached.keys if key.public_key_use in ("sig", None))
+
+
+async def decode_bearer_token_async(token: str) -> dict[str, Any]:
+    """decode_bearer_token without blocking the event loop on JWKS/discovery I/O.
+
+    The warm path (see _jwks_is_warm) is CPU-only and stays on the loop, avoiding a
+    thread hop per request; the miss path runs in the threadpool. MODE=mock does no
+    I/O either, so it also stays on the loop.
+    """
+    if settings.mode == "mock" or _jwks_is_warm(token):
+        return decode_bearer_token(token)
+    return await run_in_threadpool(decode_bearer_token, token)
+
+
+async def prefetch_jwks() -> None:
+    """Warm the OIDC discovery + JWKS cache at startup (call from the app lifespan).
+
+    No-op under MODE=mock. An unreachable IdP only logs a warning: startup must not
+    depend on it, and the lazy path in get_current_claims still works (and still
+    answers 503) once requests arrive.
+    """
+    if settings.mode == "mock":
+        return
+
+    def _prefetch() -> None:
+        _get_jwks_client().get_jwk_set()
+
+    try:
+        await run_in_threadpool(_prefetch)
+    except (HTTPException, jwt.PyJWTError) as exc:
+        logger.warning("JWKS prefetch failed; falling back to lazy fetch: %s", exc)
+
+
 async def get_current_claims(
     request: Request, token: Annotated[str, Depends(oauth2_scheme)]
 ) -> dict[str, Any]:
@@ -105,7 +159,7 @@ async def get_current_claims(
     (see app.problem_details for the matching unhandled-exception log).
     """
     try:
-        return decode_bearer_token(token)
+        return await decode_bearer_token_async(token)
     except HTTPException as exc:
         logger.warning(
             "Rejected bearer token for %s (status=%d)", request.url.path, exc.status_code

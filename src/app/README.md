@@ -185,6 +185,13 @@ Authorization Code + PKCE provider works by pointing
 Add auth to a route with `Depends(get_current_claims)`; routes that
 don't take that dependency stay public.
 
+JWKS I/O stays off the event loop: `get_current_claims` verifies on the
+loop only when the JWKS client exists and its JWK-set cache holds the
+token's `kid`; discovery, an expired set or a rotated `kid` runs in the
+threadpool (`decode_bearer_token_async`; sync `decode_bearer_token` is
+unchanged). `prefetch_jwks()` warms the cache at startup, only logging a
+warning if the IdP is down, and is a no-op under `MODE=mock`.
+
 `oidc_audience` (`OIDC_AUDIENCE`) is required — `config.py`'s validation
 refuses to construct `Settings` with `MODE=production` and no
 `oidc_audience` set — because `decode_bearer_token` only verifies the
