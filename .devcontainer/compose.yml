@@ -23,6 +23,7 @@ services:
       # README for its specific env var/path convention once an instance
       # adds one.
       - claude-config:/home/vscode/.claude
+      - gh-config:/home/vscode/.config/gh
     command: sleep infinity
     # No ports: mapping and no networks: block — see .devcontainer/
     # README.md's "Don't". An instance that needs host access adds
@@ -36,3 +37,6 @@ volumes:
   # runtime's dependency tree, so the DLP/malware-scanning concern above
   # doesn't apply the same way here.
   claude-config:
+  # Persists the GitHub CLI's login (`gh auth login`) across rebuilds, for
+  # the same reason.
+  gh-config:

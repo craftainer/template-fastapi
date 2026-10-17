@@ -168,8 +168,9 @@ need the window reconnected, not a fresh image.
 
 - Bind- or volume-mount the venv, or anything else you don't want a host
   antivirus/DLP tool scanning or syncing — the venv lives purely in the
-  container's writable layer instead. (`claude-config` is a deliberate,
-  narrow exception — see `compose.yml`'s comment on that volume.)
+  container's writable layer instead. (`claude-config` and `gh-config`
+  are deliberate, narrow exceptions — small login and session state; see
+  `compose.yml`'s comments on those volumes.)
 - Add a `ports:` mapping or a `networks:` block anywhere here — see
   `stack/README.md`'s "Devcontainer stack pattern" section.
 - Pin a feature or image version as `latest` — pin the exact version so

@@ -284,7 +284,8 @@ duplicates or re-pins it elsewhere:
   development-related; if a future group needs another group's packages,
   reference it as a self-referential extra (e.g. `"template-fastapi[dev]"`,
   per PEP 621) instead of re-pinning the same package a second time.
-- Everything else pinned (base images, Actions, hook revisions, Node.js):
+- Everything else pinned (base images, Actions, hook revisions, and the
+  devcontainer's `prek`/Claude Code CLI/`snip`/`gh`/`uv`/Node.js):
   pinned once, at its single point of use, to an exact patch version —
   never a floating range or `latest` — so Renovate can bump them one at a
   time and the diff shows exactly what changed. Node.js (`NODE_VERSION`

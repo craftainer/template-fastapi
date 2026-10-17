@@ -5,7 +5,7 @@ every RUN calls one of these (or loops over a hook directory below), never
 a binary directly:
 
 - `develop.sh` — `../.devcontainer/Dockerfile`'s `develop`-stage setup: installs `prek`,
-  the Claude Code CLI, and `snip`, the only tooling this template requires
+  the Claude Code CLI, `snip` and the GitHub CLI (`gh`), the only tooling this template requires
   regardless of instance language. An instance adds its own language
   runtime/tooling install on top, either by extending this script or
   copying its shape into a second script. Prefer the hook below over
