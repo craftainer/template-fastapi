@@ -47,6 +47,100 @@ Keycloak (password grant, same convention as `../e2e/conftest.py`'s
 - Reuse `app.config.get_settings()` for the OIDC token/client-id values
   (as `locustfile.py` already does) rather than hardcoding Keycloak's
   URL a second time.
+- Check the load generator isn't the bottleneck: add `--processes -1`
+  (one Locust worker per core, fork-based, so no Windows) to any command
+  here and read the `generator_cpu_percent` block of the summary (below).
+  Locust's own "CPU usage above 90%" warning sets `cpu_warning: true`
+  there too; a run with that flag set measures the generator, not the
+  api, so rerun it with more workers or a bigger box.
+
+### Capacity mode
+
+The default run above is the fixed-load `NFR-0024` check ("did we
+regress?"). Capacity mode answers "how far can we go?": it steps users up
+and reports the highest step that still met the ceilings. It is opt-in
+through one switch, `--perf-mode capacity` (env `LOCUST_PERF_MODE`); the
+default `--perf-mode fixed` is exactly the run above. In capacity mode
+`--users`/`--spawn-rate`/`--run-time` are ignored (the shape decides), and
+the fixed-mode p95 check is skipped, because later steps are expected to
+breach it. The shape class is `abstract` so Locust doesn't auto-pick it;
+the `init` listener installs it only for this mode.
+
+```bash
+uv run locust -f tests/perf/locustfile.py --headless --processes -1 \
+    --host http://localhost:8000 --perf-mode capacity \
+    --capacity-step-users 10 --capacity-step-duration 120 \
+    --capacity-warmup 30 --capacity-max-users 200 \
+    --csv tests/perf/.results/cap --html tests/perf/.results/cap.html \
+    --summary-json tests/perf/.results/cap.json
+```
+
+Do not add `--exit-code-on-error` here: the failing step produces
+errors by design. The run exits non-zero only if not even the first step
+passed (`max_users_passed` is 0).
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `--capacity-step-users` | 10 | Users added per step |
+| `--capacity-step-duration` | 120 | Seconds per step |
+| `--capacity-warmup` | 30 | Seconds at the start of each step discarded from that step's numbers; must cover the spawn ramp plus each new user's Keycloak login |
+| `--capacity-max-users` | 200 | Last step's users (steps = ceil(max / step users)) |
+| `--capacity-spawn-rate` | 10 | Users spawned per second |
+| `--capacity-p99-factor` | 2.0 | p99 ceiling = factor x the endpoint's p95 ceiling (`NFR-0024` gives no p99) |
+| `--capacity-max-error-rate` | 0.0 | Highest error rate (0-1) in a passing step |
+| `--capacity-run-all-steps` | off | Keep going after the first failing step (default stops there) |
+
+A step passes when, over its post-warm-up window, every endpoint's p95
+is within `NFR-0024`'s ceiling (200ms; 50ms for `/health/live`), its
+p99 is within the derived ceiling, and the error rate is within
+`--capacity-max-error-rate`. The window starts at the first shape tick
+(about 1 Hz) after the warm-up, so it is accurate to about a second.
+`max_users_passed` is the highest passing step's users (0 if none).
+
+Tiny smoke run (two 40-second steps, 10-second warm-up):
+
+```bash
+uv run locust -f tests/perf/locustfile.py --headless --host http://localhost:8000 \
+    --perf-mode capacity --capacity-step-users 5 --capacity-max-users 10 \
+    --capacity-step-duration 40 --capacity-warmup 10 \
+    --summary-json tests/perf/.results/smoke.json
+```
+
+Note that `locust --help` doesn't list these arguments (Locust 2.46
+builds the help text before it imports the locustfile); the table above
+is the reference.
+
+### JSON summary
+
+`--summary-json <path>` (default: none) writes one JSON file per run,
+in both modes, when the run quits (not written by distributed workers):
+
+```json
+{
+  "mode": "fixed | capacity",
+  "aggregate": {"requests": 0, "p50": 0, "p95": 0, "p99": 0, "rps": 0.0, "error_rate": 0.0},
+  "endpoints": {"GET /health/live": {"same keys as aggregate": 0}},
+  "generator_cpu_percent": {"max": 0.0, "mean": 0.0, "samples": 0, "workers": 0, "cpu_warning": false},
+  "steps": [{"users": 10, "p50": 0, "p95": 0, "p99": 0, "rps": 0.0,
+             "error_rate": 0.0, "passed": true, "endpoints": {}}],
+  "max_users_passed": 10,
+  "api_resources": {}
+}
+```
+
+- Latencies are in ms, `error_rate` is 0-1. `aggregate`/`endpoints` are
+  cumulative over the whole run (including ramp and warm-up); in capacity
+  mode use `steps`, which only count each step's post-warm-up window.
+- `steps` and `max_users_passed` appear in capacity mode only. Each
+  step's top-level numbers are the aggregate over all endpoints;
+  `endpoints` breaks them out per endpoint.
+- `generator_cpu_percent`: percent of one core, the busiest generator
+  process (master or worker) per 5-second sample. `null` values mean the
+  run was shorter than one sample.
+- `api_resources` is present only if `--stats-json <path>` names a file
+  that exists when the run quits. It embeds the `api` container sampler's
+  output as-is (`container`, `interval_s`, `samples`, and `summary` with
+  `cpu_percent` mean/p95/max and `mem_bytes` mean/max).
 
 ## Don't
 
