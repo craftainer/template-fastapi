@@ -18,9 +18,9 @@ from app.crud_1 import router as crud_v1_router
 from app.health_checks import get_health_registry
 from app.http_headers import add_security_headers
 from app.problem_details import register_problem_handlers
-from app.telemetry import configure_logging
-from crud.controllers.crud_router import ROUTER_VERSION
-from health.router import build_health_router
+from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION
+from craftainer_tool_observability.health.router import build_health_router
+from craftainer_tool_observability.logs import configure_logging
 
 settings = get_settings()
 configure_logging()
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Apply pending migrations before serving, then run normally until shutdown.
 
     MODE=mock skips migrations entirely -- there's no database to migrate against
-    (see crud.repositories.memory). `# pragma: no branch` below is for tests/e2e
+    (see craftainer_tool_crud.repositories.memory). `# pragma: no branch` below is for tests/e2e
     specifically: its one live process is always MODE=dev, so the other branch can
     never run there -- tests/unit/test_main.py exercises it directly and still
     counts toward its own 95% gate.

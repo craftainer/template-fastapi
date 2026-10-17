@@ -4,14 +4,14 @@ Source layout for the installable package.
 
 - `app/` — the FastAPI application package (`app.main:app`); see its own
   `README.md`.
-- `crud/` — the generic CRUD framework `app`'s resource packages build
+- `craftainer_tool_crud/` — the generic CRUD framework `app`'s resource packages build
   on (router factories, interface, repositories, model/view bases); see
   its own `README.md`.
-- `health/` — the generic health check framework (interface, registry,
-  and router factory) backing `/health/live`/`/health/ready`; no
-  external dependency beyond FastAPI itself. A resource's own concrete
-  checks (Postgres, Redis, etc.) stay in `app/` — see its own
-  `README.md`.
+- `craftainer_tool_observability/` — `health/` (the generic health check
+  framework backing `/health/live`/`/health/ready`; no external
+  dependency beyond FastAPI itself, a resource's own concrete checks
+  stay in `app/`) and `logs.py` (structured JSON logging, optional OTLP
+  export); see its own `README.md`.
 
 ## Keeping the system design doc current
 

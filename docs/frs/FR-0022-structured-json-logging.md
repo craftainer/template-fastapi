@@ -13,7 +13,7 @@ present.
 
 ## Source
 
-Operators/SRE. Implemented in `src/app/telemetry.py`.
+Operators/SRE. Implemented in `src/craftainer_tool_observability/logs.py`.
 
 ## Acceptance criteria
 

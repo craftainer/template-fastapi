@@ -8,7 +8,7 @@ that e2e (and other engineers' sessions) depend on, which isn't a trade worth
 making for a smoke-test suite -- tests/unit/test_health_checks.py fakes each
 client to exercise every failure branch instead, and still counts toward its own
 95% gate. MockHealthCheck is excluded from that same run for the same MODE-only
-reason as crud.repositories.memory -- see its module docstring.
+reason as craftainer_tool_crud.repositories.memory -- see its module docstring.
 """
 
 import asyncio
@@ -26,9 +26,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import get_settings
-from crud.models.base import engine
-from health.base import HealthCheckResult
-from health.registry import HealthRegistry
+from craftainer_tool_crud.models.base import engine
+from craftainer_tool_observability.health.base import HealthCheckResult
+from craftainer_tool_observability.health.registry import HealthRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,8 @@ def get_health_registry() -> HealthRegistry:
     """Return the process-wide cached HealthRegistry, with every external service registered.
 
     MODE=mock registers MockHealthCheck for every service instead of the real checks --
-    there's nothing real to reach (see crud.repositories.memory, app.oidc's mock decode path).
+    there's nothing real to reach (see craftainer_tool_crud.repositories.memory, app.oidc's mock
+    decode path).
     """
     settings = get_settings()
     registry = HealthRegistry()

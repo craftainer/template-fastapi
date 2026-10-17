@@ -156,6 +156,9 @@ services:
       # dependencies, not MODE=mock's in-memory fakes.
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      # OTel service.name, read by craftainer_tool_observability.logs's
+      # Resource.create() (OTEL_SERVICE_NAME is OTel's own env var).
+      OTEL_SERVICE_NAME: template-fastapi
       S3_ENDPOINT_URL: https://s3:9000
       REDIS_URL: rediss://redis:6380/0
       # Match the postgres/s3 overrides above -- see this file's header

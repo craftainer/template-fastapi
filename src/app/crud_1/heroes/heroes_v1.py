@@ -2,7 +2,7 @@
 
 Deprecated in favor of heroes_v2.py, which supports multiple powers per
 hero. Wraps the same CRUD heroes_v2.py already builds via
-crud.interfaces.compat.CompatCRUD, converting to/from the v1 view with
+craftainer_tool_crud.interfaces.compat.CompatCRUD, converting to/from the v1 view with
 app.views.hero_v1's converter functions -- no new persistence code, only the
 version-compatibility shape. `prefix=""` below: this router carries none of
 its own mount prefix -- `app.crud_1.heroes`'s `__init__.py` assigns
@@ -30,8 +30,8 @@ from app.views.hero_v1 import (
     hero_v2_to_v1,
 )
 from app.views.hero_v2 import HeroV2
-from crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
-from crud.interfaces.compat import CompatCRUD
+from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
+from craftainer_tool_crud.interfaces.compat import CompatCRUD
 
 SUNSET_AT = datetime(2027, 1, 1, tzinfo=UTC)
 _V2_PREFIX = f"/crud/v{ROUTER_VERSION}/heroes/v2"
