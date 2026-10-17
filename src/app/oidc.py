@@ -111,7 +111,10 @@ def _jwks_is_warm(token: str) -> bool:
         return True
     jwk_set = _get_jwks_client().jwk_set_cache
     cached = jwk_set.get() if jwk_set is not None else None
-    if cached is None:
+    # pragma: no cover below is for tests/e2e: its journeys finish well inside the JWK
+    # set's cache lifespan, so the set never expires there; tests/unit/test_oidc.py
+    # covers this branch directly.
+    if cached is None:  # pragma: no cover
         return False
     return any(key.key_id == kid for key in cached.keys if key.public_key_use in ("sig", None))
 
