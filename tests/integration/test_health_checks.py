@@ -3,40 +3,50 @@
 Also covers /health/ready end-to-end, via app.main's actually-wired registry.
 """
 
+import boto3
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.db import engine
-from app.health_checks import DatabaseHealthCheck, OIDCHealthCheck, RedisHealthCheck, S3HealthCheck
 from app.main import app
+from craftainer_tool_observability.health.checks.http import HTTPCheck
+from craftainer_tool_observability.health.checks.postgres import PostgresCheck
+from craftainer_tool_observability.health.checks.redis import RedisCheck
+from craftainer_tool_observability.health.checks.s3 import S3Check
 
 client = TestClient(app)
 
 
 async def test_database_check_against_real_postgres() -> None:
-    """DatabaseHealthCheck reports healthy against the live postgres stack service."""
-    result = await DatabaseHealthCheck(engine).check()
+    """PostgresCheck reports healthy against the live postgres stack service."""
+    result = await PostgresCheck(engine).check()
     assert result.healthy is True
 
 
 async def test_redis_check_against_real_redis() -> None:
-    """RedisHealthCheck reports healthy against the live redis stack service."""
-    result = await RedisHealthCheck(get_settings().redis_url).check()
+    """RedisCheck reports healthy against the live redis stack service."""
+    result = await RedisCheck(get_settings().redis_url).check()
     assert result.healthy is True
 
 
 async def test_s3_check_against_real_s3() -> None:
-    """S3HealthCheck reports healthy against the live s3 (RustFS) stack service."""
+    """S3Check reports healthy against the live s3 (RustFS) stack service."""
     settings = get_settings()
-    result = await S3HealthCheck(
-        settings.s3_endpoint_url, settings.s3_access_key, settings.s3_secret_key
-    ).check()
+    client = boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+    )
+    result = await S3Check(client).check()
     assert result.healthy is True
 
 
 async def test_oidc_check_against_real_keycloak() -> None:
-    """OIDCHealthCheck reports healthy against the live keycloak stack service."""
-    result = await OIDCHealthCheck(get_settings().oidc_issuer_url).check()
+    """HTTPCheck reports healthy against the live keycloak stack service."""
+    result = await HTTPCheck(
+        f"{get_settings().oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration"
+    ).check()
     assert result.healthy is True
 
 
