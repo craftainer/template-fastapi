@@ -88,6 +88,7 @@ replace:
   - app.Dockerfile.dockerignore
   - Makefile
   - compose.yml
+  - compose.perf.yml
   - scripts/builder.sh
   - scripts/builder-sync-app.sh
   - scripts/builder-sync-deps.sh
