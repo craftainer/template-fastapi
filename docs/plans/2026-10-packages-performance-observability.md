@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress (kickoff 2026-10-17, G0 granted; pre-flight steps 3–5 still with the user). Baseline commit: `07154b9` (full check suite green). Integration branch: `integration/packages-perf-observability`. Wave 0: W0a done in pre-flight; W0 running.
+In progress (kickoff 2026-10-17, G0 granted; pre-flight steps 3–5 still with the user). Baseline commit: `07154b9` (full check suite green). Integration branch: `integration/packages-perf-observability`. Wave 0: W0a done in pre-flight; W0 merged and verified (`b39c026`). Wave 1 in progress.
 
 ## Goal
 
@@ -1003,3 +1003,6 @@ orchestrator appends to this list as it resolves escalations.
 | 2026-10-17 | W0's write set also covers stale path references in `docs/system-design.md`, FR-0022, FR-0023 and `.devcontainer/stack/mqtt/README.md` (path-only edits). Accepted ADRs and NFR-0023 stay as written; X1 supersedes NFR-0023. |
 | 2026-10-17 | `pyinstrument` is a `dev` dependency only; N1's profiling hook imports it lazily (matches A6's pins, which omit `[profiling]`). |
 | 2026-10-17 | `OTEL_SERVICE_NAME=template-fastapi` (today's `Settings.app_name` default) in `compose.yml` and `.devcontainer/compose.instance.yml`; the devcontainer needs a rebuild for it to apply. |
+| 2026-10-17 | D1 creates `src/app/db.py` exposing module-level `engine: AsyncEngine` and `session_factory: async_sessionmaker[AsyncSession]` (`NullPool`, as today), placed between `health_checks` and `config` in the app layers contract. D2 and `app.maintenance` take the engine from there; E1 extends the same module in Wave 2. D1 may change the single `engine` import line in `app/health_checks.py` to `from app.db import engine`; D2 owns the rest of that file. |
+| 2026-10-17 | App version and commit reach the running image as env `APP_VERSION` / `APP_COMMIT` (R1: runner-stage `ARG`/`ENV` in `Dockerfile`, `--build-arg APP_VERSION=$(RELEASE_VERSION)` in `Makefile`, which joins R1's write set). O1 sets `service.version` from `APP_VERSION` unless `OTEL_RESOURCE_ATTRIBUTES` already sets it; N1's `/health/info` reads the same variables. |
+| 2026-10-17 | Executors run `pytest tests/unit` only, with `--cov-fail-under=0`, and report uncovered lines in their write set. A bare `pytest` also collects `tests/integration` against the shared services. The 100% gate is checked in the verification lane. |
