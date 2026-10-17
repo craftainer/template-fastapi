@@ -2,9 +2,11 @@
 
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import delete
+
 from app.maintenance import purge_archived
 from app.models.hero import Hero
-from crud.models.base import async_session_factory
+from crud.models.base import Base, async_session_factory
 from crud.repositories.sqlalchemy import SQLAlchemyRepository
 
 
@@ -14,8 +16,18 @@ async def test_purge_archived_deletes_only_rows_past_older_than() -> None:
     Runs inside one uncommitted session, same isolation as tests/integration/repositories/
     test_sqlalchemy.py -- closing the session without committing rolls back everything
     written here.
+
+    The shared dev database can already hold archived rows (e.g. left behind by an
+    e2e dev-leg run), which purge_archived would count too. They're deleted first,
+    with the same model discovery purge_archived uses, inside this same session --
+    so they're restored by the rollback along with everything else.
     """
     async with async_session_factory() as session:
+        for mapper in Base.registry.mappers:
+            model = mapper.class_
+            if hasattr(model, "archived_at"):
+                await session.execute(delete(model).where(model.archived_at.is_not(None)))
+
         repository = SQLAlchemyRepository(session, Hero)
 
         old_and_archived = await repository.create(
