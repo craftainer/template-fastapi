@@ -24,6 +24,8 @@
 x-smoke-postgres-password: &smoke_postgres_password smoke-only-postgres-pw
 x-smoke-s3-access-key: &smoke_s3_access_key smoke-only-access-key
 x-smoke-s3-secret-key: &smoke_s3_secret_key smoke-only-secret-key-000
+x-smoke-mqtt-user: &smoke_mqtt_user smoke-only-mqtt-user
+x-smoke-mqtt-password: &smoke_mqtt_password smoke-only-mqtt-pw
 
 services:
   # One-shot: generates a single self-signed cert (with SANs for every
@@ -49,7 +51,7 @@ services:
         openssl req -x509 -newkey rsa:2048 -nodes -days 1
         -keyout /tls/keycloak.key -out /tls/keycloak.crt
         -subj /CN=keycloak
-        -addext subjectAltName=DNS:keycloak,DNS:redis,DNS:s3,DNS:postgres
+        -addext subjectAltName=DNS:keycloak,DNS:redis,DNS:s3,DNS:postgres,DNS:mqtt
         && cp /tls/keycloak.crt /tls/rustfs_cert.pem
         && cp /tls/keycloak.key /tls/rustfs_key.pem
         && cp /tls/keycloak.key /tls/postgres.key
@@ -131,6 +133,45 @@ services:
       smoke-tls-cert:
         condition: service_completed_successfully
 
+  # Same image/pin as .devcontainer/stack/mqtt/, but with a TLS listener
+  # (the smoke-tls cert, SAN DNS:mqtt) and password auth instead of that
+  # fragment's anonymous plaintext one, so the production-mode api's
+  # MQTTEventSink/MQTTEventSource can really publish. Its own config is
+  # inline (configs: below) and the password file is built at startup from
+  # the smoke-only credentials, so no secret-shaped file is checked in.
+  mqtt:
+    image: eclipse-mosquitto:2.0.22
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        mosquitto_passwd -b -c /mosquitto/passwd
+        "$$MQTT_USERNAME" "$$MQTT_PASSWORD"
+        && chown mosquitto: /mosquitto/passwd
+        && exec mosquitto -c /mosquitto/config/mosquitto.conf
+    environment:
+      MQTT_USERNAME: *smoke_mqtt_user
+      MQTT_PASSWORD: *smoke_mqtt_password
+    configs:
+      - source: smoke-mosquitto-conf
+        target: /mosquitto/config/mosquitto.conf
+    volumes:
+      - smoke-tls:/tls:ro
+    # Authenticated TLS publish against the broker itself (-h mqtt, not
+    # localhost, so the hostname matches the cert's SAN).
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mosquitto_pub -h mqtt -p 8883 --cafile /tls/keycloak.crt
+          -u "$$MQTT_USERNAME" -P "$$MQTT_PASSWORD"
+          -t healthcheck -m ping -q 1 -i healthcheck
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      smoke-tls-cert:
+        condition: service_completed_successfully
+
   keycloak:
     extends:
       file: ./.devcontainer/stack/keycloak/compose.yml
@@ -204,17 +245,16 @@ services:
       # trusts the same self-signed cert instead of failing TLS
       # verification.
       AWS_CA_BUNDLE: /tls/keycloak.crt
-      # _require_mqtt_auth_in_production (config.py) refuses to construct
-      # Settings at all under MODE=production unless these are set, even
-      # though nothing in this smoke test actually reaches the broker --
-      # app.interfaces.base.MQTTEventSink/MQTTEventSource connect lazily,
-      # per-publish/subscribe, and health/registry.py registers no MQTT
-      # check, so /health/live and /health/ready never touch it. No mqtt
-      # service is added to this stack; these are smoke-test-only values
-      # to satisfy the guardrail, not a real broker's credentials.
+      # _require_mqtt_auth_in_production (config.py) requires TLS and
+      # credentials under MODE=production. MQTT_HOST/MQTT_PORT point at the
+      # mqtt service above (TLS listener); aiomqtt's
+      # ssl.create_default_context() honors SSL_CERT_FILE, so the broker's
+      # self-signed cert is trusted like Redis's. Smoke-test-only values.
+      MQTT_HOST: mqtt
+      MQTT_PORT: "8883"
       MQTT_USE_TLS: "true"
-      MQTT_USERNAME: smoke-only-mqtt-user
-      MQTT_PASSWORD: smoke-only-mqtt-pw
+      MQTT_USERNAME: *smoke_mqtt_user
+      MQTT_PASSWORD: *smoke_mqtt_password
     volumes:
       - smoke-tls:/tls:ro
     depends_on:
@@ -225,6 +265,8 @@ services:
       redis:
         condition: service_healthy
       keycloak:
+        condition: service_healthy
+      mqtt:
         condition: service_healthy
       smoke-tls-cert:
         condition: service_completed_successfully
@@ -250,6 +292,17 @@ services:
       # from sibling containers. This file lives outside .devcontainer/ and
       # exists to be curled from the GitHub Actions runner (host).
       - "8000:8000"
+
+configs:
+  smoke-mosquitto-conf:
+    content: |
+      listener 8883
+      cafile /tls/keycloak.crt
+      certfile /tls/keycloak.crt
+      keyfile /tls/keycloak.key
+      allow_anonymous false
+      password_file /mosquitto/passwd
+      log_dest stdout
 
 volumes:
   smoke-tls:
