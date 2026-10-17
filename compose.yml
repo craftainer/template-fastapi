@@ -9,8 +9,9 @@
 # stage's own production default (Dockerfile) -- that's the whole point of
 # this smoke test -- which means it must also satisfy src/app/config.py's
 # production-only guardrails: postgres_password/s3_access_key/s3_secret_key
-# can't be left at the stack fragments' shared local-dev defaults, and
-# oidc_issuer_url/s3_endpoint_url/redis_url must all be encrypted. The
+# can't be left at the stack fragments' shared local-dev defaults,
+# oidc_issuer_url/s3_endpoint_url/redis_url must all be encrypted, and
+# postgres_sslmode must be require/verify-ca/verify-full. The
 # overrides below exist only to satisfy those guardrails; they're
 # smoke-test-only values, not real secrets, and never touch the shared
 # .devcontainer/stack fragments (whose local-dev defaults stay exactly
@@ -41,15 +42,20 @@ services:
       # chmod: this container runs as root, but Keycloak's image runs as
       # uid 1000 (see stack/keycloak/compose.yml) -- world-readable is fine
       # for a self-signed, 1-day, CI-only cert with no real-world value.
+      # Postgres is the exception: it refuses a key file that is group- or
+      # world-accessible unless root-owned, so it gets its own private copy
+      # (postgres.key) owned by the alpine image's postgres uid (70), 0600.
       - >-
         openssl req -x509 -newkey rsa:2048 -nodes -days 1
         -keyout /tls/keycloak.key -out /tls/keycloak.crt
         -subj /CN=keycloak
-        -addext subjectAltName=DNS:keycloak,DNS:redis,DNS:s3
+        -addext subjectAltName=DNS:keycloak,DNS:redis,DNS:s3,DNS:postgres
         && cp /tls/keycloak.crt /tls/rustfs_cert.pem
         && cp /tls/keycloak.key /tls/rustfs_key.pem
+        && cp /tls/keycloak.key /tls/postgres.key
         && chmod 644 /tls/keycloak.key /tls/keycloak.crt
         /tls/rustfs_cert.pem /tls/rustfs_key.pem
+        && chown 70:70 /tls/postgres.key && chmod 600 /tls/postgres.key
     volumes:
       - smoke-tls:/tls
 
@@ -59,6 +65,17 @@ services:
       service: postgres
     environment:
       POSTGRES_PASSWORD: *smoke_postgres_password
+    # extends: replaces command: wholesale; the image's default is just
+    # `postgres`, so only the TLS flags are added. The healthcheck (local
+    # pg_isready over the unix socket) is unaffected by ssl=on.
+    command: >-
+      postgres -c ssl=on -c ssl_cert_file=/tls/keycloak.crt
+      -c ssl_key_file=/tls/postgres.key
+    volumes:
+      - smoke-tls:/tls:ro
+    depends_on:
+      smoke-tls-cert:
+        condition: service_completed_successfully
 
   # extends: (not the plain include: every other stack service that needs
   # no override uses) so the TLS command/port/healthcheck below can replace

@@ -20,6 +20,7 @@ _PRODUCTION_KWARGS: dict[str, object] = {
     "mqtt_password": "real-mqtt-password",
     "s3_endpoint_url": "https://s3.example.com",
     "redis_url": "rediss://redis.example.com:6379/0",
+    "postgres_sslmode": "verify-full",
 }
 
 
@@ -127,6 +128,78 @@ def test_production_mode_requires_encrypted_redis_url() -> None:
 def test_dev_mode_allows_plain_redis_url() -> None:
     """Settings(mode="dev") (the default) keeps the local redis:// URL default."""
     assert Settings().redis_url.startswith("redis://")
+
+
+@pytest.mark.parametrize("sslmode", [None, "disable", "allow", "prefer"])
+def test_production_mode_requires_encrypting_postgres_sslmode(sslmode: str | None) -> None:
+    """Settings(mode="production") with an unset or non-encrypting sslmode raises."""
+    kwargs = {**_PRODUCTION_KWARGS, "postgres_sslmode": sslmode}
+    with pytest.raises(ValidationError, match="postgres_sslmode"):
+        Settings(**kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("sslmode", ["require", "verify-ca", "verify-full"])
+def test_production_mode_accepts_encrypting_postgres_sslmode(sslmode: str) -> None:
+    """require, verify-ca and verify-full satisfy the production guardrail."""
+    settings = Settings(**{**_PRODUCTION_KWARGS, "postgres_sslmode": sslmode})  # type: ignore[arg-type]
+    assert settings.postgres_sslmode == sslmode
+
+
+def test_dev_mode_allows_unset_postgres_sslmode() -> None:
+    """Settings(mode="dev") (the default) keeps postgres_sslmode unset (no TLS)."""
+    assert Settings().postgres_sslmode is None
+
+
+def test_postgres_sslmode_rejects_unknown_value() -> None:
+    """A value outside libpq's sslmode set is rejected."""
+    with pytest.raises(ValidationError, match="postgres_sslmode"):
+        Settings(postgres_sslmode="bogus")  # type: ignore[arg-type]
+
+
+def test_db_settings_defaults_keep_todays_behavior() -> None:
+    """Every new DB setting defaults to today's behavior (nothing consumes them yet)."""
+    settings = Settings()
+    assert settings.db_pool_mode == "null"
+    assert settings.db_pool_size is None
+    assert settings.db_max_overflow is None
+    assert settings.db_pool_recycle is None
+    assert settings.db_connect_timeout is None
+    assert settings.db_command_timeout is None
+    assert settings.run_migrations_on_startup is True
+
+
+def test_db_settings_accept_valid_values() -> None:
+    """Valid pool/timeout values are accepted as given."""
+    settings = Settings(
+        db_pool_mode="local",
+        db_pool_size=5,
+        db_max_overflow=0,
+        db_pool_recycle=1800,
+        db_connect_timeout=2.5,
+        db_command_timeout=30,
+        run_migrations_on_startup=False,
+    )
+    assert settings.db_pool_mode == "local"
+    assert settings.db_pool_size == 5
+    assert settings.db_connect_timeout == 2.5
+    assert settings.run_migrations_on_startup is False
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"db_pool_mode": "bogus"},
+        {"db_pool_size": -1},
+        {"db_max_overflow": -1},
+        {"db_pool_recycle": -1},
+        {"db_connect_timeout": 0},
+        {"db_command_timeout": -1.0},
+    ],
+)
+def test_db_settings_reject_invalid_values(override: dict[str, object]) -> None:
+    """Unknown pool modes, negative sizes and non-positive timeouts are rejected."""
+    with pytest.raises(ValidationError):
+        Settings(**override)  # type: ignore[arg-type]
 
 
 def test_unrelated_env_vars_are_not_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
