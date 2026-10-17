@@ -8,7 +8,7 @@ the application's own internal layering and request flow, see
 
 ## Devcontainer stack
 
-`.devcontainer/compose.yml` builds `myapp` from the `Dockerfile`'s
+`.devcontainer/compose.yml` builds `myapp` from `.devcontainer/Dockerfile`'s
 `develop` stage, and `.devcontainer/compose.instance.yml` pulls in
 every supporting service via its `include:` list (each fragment under
 [.devcontainer/stack/](../.devcontainer/stack/)): Postgres (primary

@@ -23,19 +23,11 @@ this directory).
 
   `settings.json` also wires up the `PostToolUse` hook below.
 - `hooks/self-check.sh` — after Claude edits a file, runs the fast,
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.claude/README.md
   pre-commit-stage hooks from `../.pre-commit-config.yaml` (ruff, trailing
   whitespace, ...) against just that file via `prek`, so issues are
   caught and auto-fixed immediately instead of first at commit time.
   mypy/pytest/`uv lock --check` stay pre-push-only — too slow to run
   after every edit.
-=======
-  pre-commit-stage hooks from `../.pre-commit-config.yaml` (whitespace,
-  YAML/TOML/JSON checks, ...) against just that file via `prek`, so
-  issues are caught and auto-fixed immediately instead of first at commit
-  time. An instance's own slower, pre-push-only hooks stay pre-push-only —
-  too slow to run after every edit.
->>>>>>> /tmp/template-new/.claude/README.md
 - `agents/plan-executor.md` — the subagent that executes one work item
   of a `docs/plans/` plan on a faster model (`model: sonnet`), under
   the main session as orchestrator (see `../CLAUDE.md`, "Execute
@@ -66,11 +58,10 @@ this directory).
   gives the `myapp` service — never re-pinned a second time:
   - `clear-thought` (`@waldzellai/clear-thought-onepointfive`) — a
     local stdio MCP server exposing structured reasoning/mental-model
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.claude/README.md
     tools, launched via `npx`. `npx` needs Node.js, which isn't
     otherwise a dependency of this Python template — that's the only
-    reason `scripts/develop.sh` installs it (pinned via the Dockerfile's
-    `NODE_VERSION` ARG) — Claude Code itself doesn't need it.
+    reason `scripts/develop.sh` installs it (pinned via
+    `../.devcontainer/Dockerfile`'s `NODE_VERSION` ARG) — Claude Code itself doesn't need it.
   - `postgres` (`postgres-mcp`, aka Postgres MCP Pro) — query/schema
     access to the `postgres` stack service, run `unrestricted` (full
     read/write against the local dev DB) via `uvx`. Anthropic's own
@@ -109,17 +100,6 @@ this directory).
   second one.
 - `settings.json`'s `permissions.deny` — blocks `s3-mcp`'s write-capable
   tools (see above); nothing else in this file uses `permissions` yet.
-=======
-    tools, launched via `npx`. `npx` needs Node.js, which is the only
-    reason `scripts/develop.sh` installs it (pinned via
-    `../.devcontainer/Dockerfile`'s `NODE_VERSION` ARG) — Claude Code itself doesn't need it.
-
-  An instance adds its own stack-specific MCP servers here (database,
-  object storage, browser automation, ...), pinned to an exact
-  version/commit the same way, and reading credentials via `${VAR}` from
-  the same env vars its own `../.devcontainer/compose.yml` gives its dev
-  service — never re-pinned a second time.
->>>>>>> /tmp/template-new/.claude/README.md
 
 ## Do
 
@@ -143,13 +123,9 @@ this directory).
   `enabledPlugins` entry in `settings.json`.
 - **clear-thought**: delete its entry from `../.mcp.json`; if nothing
   else needs Node.js, also remove its install block (and `NODE_VERSION`
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.claude/README.md
-  ARG) from `../Dockerfile`/`scripts/develop.sh`.
+  ARG) from `../.devcontainer/Dockerfile`/`scripts/develop.sh`.
 - **postgres** / **redis**: delete the entry from `../.mcp.json`.
 - **s3-mcp**: delete its entry from `../.mcp.json` and its six
   `permissions.deny` entries from `settings.json`.
 - **playwright**: delete its entry from `../.mcp.json` and
   `mcp/playwright_selenium_bridge.py`.
-=======
-  ARG) from `../.devcontainer/Dockerfile`/`scripts/develop.sh`.
->>>>>>> /tmp/template-new/.claude/README.md

@@ -2,10 +2,13 @@
 
 - `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
   as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/README.md
   (features, mounts, forwarded ports, editor settings).
-- `compose.yml` — the dev service (`myapp`), built from the top-level
-  `Dockerfile`'s `develop` stage. Owned by template-base.
+- `Dockerfile` — the devcontainer image (a single `develop` stage), built
+  with the repo root as context; `Dockerfile.dockerignore` holds its
+  build-context excludes. Owned by template-base. The top-level
+  `../Dockerfile` is the app's runtime image (`../docs/TEMPLATE.md`).
+- `compose.yml` — the dev service (`myapp`), built from `Dockerfile`'s
+  `develop` stage. Owned by template-base.
 - `compose.instance.yml` — template-fastapi's layer on top of
   `compose.yml`: the `include:` list pulling in every `stack/` fragment,
   plus `services.myapp`'s stack credentials (`env_file:`), `depends_on`
@@ -13,22 +16,6 @@
   extension points".
 - `stack/` — one subdirectory per supporting service (Postgres,
   RustFS, Redis, MQTT, Keycloak, Selenium); see its own `README.md`.
-=======
-  (features, mounts, editor settings).
-- `Dockerfile` — the devcontainer image (a single `develop` stage), built
-  with the repo root as context; `Dockerfile.dockerignore` holds its
-  build-context excludes. The top-level `Dockerfile` is reserved for an
-  instance's runtime image (`../docs/TEMPLATE.md`).
-- `compose.yml` — the dev service (`myapp`), built from `Dockerfile`'s
-  `develop` stage. An instance that needs backing services
-  (a database, a queue, ...) adds its own `stack/` directory (one
-  subdirectory per service, each with its own compose fragment) and an
-  `include:` list in `compose.instance.yml` pointing at them — see `stack/README.md`'s
-  "Devcontainer stack pattern" convention once an instance adds one.
-- `compose.instance.yml` — instance-owned stub (`ignore` tier, never
-  touched by sync): an instance's `include:` list and extra `services.myapp`
-  settings. See `docs/TEMPLATE.md`'s "Instance extension points".
->>>>>>> /tmp/template-new/.devcontainer/README.md
 
 ## Docker-in-Docker vs. the host's Docker
 
@@ -130,8 +117,6 @@ Docker Desktop can bind-mount into a Linux container, and `code .` run
 from a Git Bash prompt doesn't change what environment the VS Code GUI
 process itself starts with anyway.
 
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/README.md
-=======
 ## After a rebuild
 
 "Dev Containers: Rebuild Container" reruns `postCreateCommand` from
@@ -153,7 +138,6 @@ A plain "Reopen in Container" (no rebuild) is enough for changes outside
 `.devcontainer/` and `scripts/develop.sh` — those only
 need the window reconnected, not a fresh image.
 
->>>>>>> /tmp/template-new/.devcontainer/README.md
 ## Do
 
 - Add a new compose fragment's path to `compose.instance.yml`'s `include:`

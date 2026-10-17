@@ -1,4 +1,5 @@
-# Build context excludes for `docker build` (see top-level Dockerfile).
+# Build context excludes for the runtime image (top-level Dockerfile). The
+# devcontainer image has its own: .devcontainer/Dockerfile.dockerignore.
 .git
 .github
 .devcontainer

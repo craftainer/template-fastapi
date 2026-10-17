@@ -18,25 +18,18 @@ this file current" for where a new convention belongs.
   `alembic/README.md`.
 - `tests/` — automated tests, split into `unit/`, `integration/`,
   `e2e/` (Playwright), and `perf/` (Locust) suites; see its `README.md`.
-- `scripts/` — the Dockerfile's per-stage setup scripts; see its
+- `scripts/` — both Dockerfiles' per-stage setup scripts; see its
   `README.md`.
 - `docs/` — knowledge about what the app does; this file is the one
   exception, documenting the template itself rather than product/domain
   knowledge.
 - `.secrets/` — local secret files, never committed; see its `README.md`.
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
-- `Dockerfile` — a single `develop` stage (the devcontainer image),
-  owned by template-base.
-- `app.Dockerfile` — the app image's `builder` and `runner` stages; see
-  "Instance extension points" below.
-=======
 - `.devcontainer/Dockerfile` — a single `develop` stage (the devcontainer
   image), with its build-context excludes in
-  `.devcontainer/Dockerfile.dockerignore`. The repo root has no
-  `Dockerfile`: that one name is reserved for an instance's own runtime
-  image (see "Instance extension points"), so a repo never has more than
-  one top-level Dockerfile.
->>>>>>> /tmp/template-new/docs/TEMPLATE.md
+  `.devcontainer/Dockerfile.dockerignore`; owned by template-base.
+- `Dockerfile` (+ `.dockerignore`) — the app image's `builder` and
+  `runner` stages, and the repo's only top-level Dockerfile; see
+  "Instance extension points" below.
 - `scripts/develop.sh`, `scripts/post-create.sh` — the `develop` stage's
   setup script and the devcontainer's `postCreateCommand`, each running
   an instance hook directory (`develop.d/`, `post-create.d/`); see
@@ -89,6 +82,11 @@ automatically. In the sync PR, by hand:
   `Makefile`, `dockerfile:` in compose files, CI, docs) and list both
   paths under `ignore:` in `.github/template-sync-manifest.local.yml`.
 - Without one: delete the old top-level `Dockerfile` and `.dockerignore`.
+
+Instances of template-fastapi have nothing to do by hand: template-fastapi's
+own manifest lists `Dockerfile`/`.dockerignore` as `replace` and keeps the
+retired `app.Dockerfile`/`app.Dockerfile.dockerignore` paths listed, so
+one sync installs the new files and deletes the old ones.
 
 ## Getting started
 
@@ -207,7 +205,7 @@ The arch legs run natively, not under QEMU: `arm64` on `ubuntu-24.04-arm`,
 
 This repo's `Makefile` implements the contract for the app image:
 `release-arches` prints both `amd64` and `arm64`; `build` builds
-`app.Dockerfile`'s `runner` stage to a per-arch OCI tarball; `sbom`
+`Dockerfile`'s `runner` stage to a per-arch OCI tarball; `sbom`
 writes its SPDX SBOM with Syft; `publish` pushes a per-arch registry tag
 (when `OCI_REGISTRY` is set); `release-check` runs `pytest` for
 `coverage.xml`; and `finalize` combines the per-arch tags into one
@@ -262,14 +260,15 @@ instance by hand, once:
 ## Versions and config
 
 Every version and config value is defined in exactly one place; nothing
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
 duplicates or re-pins it elsewhere:
 
 - Python/Debian base image versions: the `PYTHON_VERSION`/`DEBIAN_VERSION`
-  `ARG` defaults at the top of the `Dockerfile`. `.devcontainer/compose.yml`
-  does **not** pass matching `args:` — the Dockerfile's own defaults are
-  authoritative because it's the file closer to where they're used. To
-  change them, edit the `Dockerfile`, not the compose file. `PYTHON_VERSION`
+  `ARG` defaults at the top of `.devcontainer/Dockerfile` (`develop`) and
+  `Dockerfile` (`builder`/`runner`), kept identical by
+  `scripts/check-dockerfile-versions.sh`. `.devcontainer/compose.yml`
+  does **not** pass matching `args:` — the Dockerfiles' own defaults are
+  authoritative because they're closer to where they're used. To change
+  them, edit both Dockerfiles, not the compose file. `PYTHON_VERSION`
   is a single exact-patch pin shared by all three stages: `builder`/`runner`
   use it directly as the `python:${PYTHON_VERSION}-slim-${DEBIAN_VERSION}`
   base image, while `develop` (based on the generic
@@ -289,7 +288,7 @@ duplicates or re-pins it elsewhere:
   pinned once, at its single point of use, to an exact patch version —
   never a floating range or `latest` — so Renovate can bump them one at a
   time and the diff shows exactly what changed. Node.js (`NODE_VERSION`
-  in the `Dockerfile`) is infrastructure tooling only — `npx`, for the
+  in `.devcontainer/Dockerfile`) is infrastructure tooling only — `npx`, for the
   `clear-thought` MCP server in `.mcp.json` — not part of this app's own
   runtime; `scripts/develop.sh` installs it directly from nodejs.org's
   release tarballs, checksum-verified, rather than a devcontainer
@@ -304,28 +303,6 @@ project root. Same reasoning as not bind-mounting the venv (see
 bind-mounted `/workspace` gets scanned file-by-file by host
 antivirus/malware tools on Windows and is painfully slow to write to. A
 new tool with its own on-disk cache follows the same pattern.
-=======
-duplicates or re-pins it elsewhere. Everything pinned here (base image,
-Actions, hook revisions, `prek`/Claude Code CLI/`snip`/`uv`/Python/
-Node.js versions) is pinned once, at its single point of use, to an exact
-patch version — never a floating range or `latest` — so Renovate can
-bump them one at a time and the diff shows exactly what changed. An
-instance's own language runtime/package versions follow the same rule in
-its own Dockerfile/manifest.
-
-`python3` and Node.js, both installed by `scripts/develop.sh` and pinned
-via `.devcontainer/Dockerfile`'s `PYTHON_VERSION`/`NODE_VERSION` ARGs, are
-infrastructure tooling only — not an application runtime this template
-assumes. `python3` exists because `prek` needs an interpreter to build
-the venv for any `language: python` hook (`.pre-commit-config.yaml`'s
-`pre-commit-hooks` repo) and because `.github/scripts/*.py` need one
-directly; `uv` (its own `UV_VERSION` ARG) is only the mechanism used to
-install that exact, checksum-verified CPython build rather than an
-unpinned apt package, and stays on `PATH` afterward. Node.js exists
-because `npx` (the `clear-thought` MCP server in `.mcp.json`) needs it.
-An instance that adds Python or Node.js as its own application runtime
-can reuse these directly rather than installing a second copy.
->>>>>>> /tmp/template-new/docs/TEMPLATE.md
 
 ## Code style
 

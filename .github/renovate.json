@@ -23,12 +23,8 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/renovate.json
-        "/^(app\\.)?Dockerfile$/"
-=======
         "/^Dockerfile$/",
         "/^\\.devcontainer/Dockerfile$/"
->>>>>>> /tmp/template-new/.github/renovate.json
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s*\\nARG \\w+_VERSION=(?<currentValue>.*)\\s"
