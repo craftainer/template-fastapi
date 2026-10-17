@@ -23,7 +23,7 @@ from selenium.webdriver import ChromeOptions, Remote
 from sqlalchemy import text
 
 from app.config import get_settings
-from craftainer_tool_crud.models.base import engine
+from app.db import engine
 
 _STARTUP_TIMEOUT_SECONDS = 10.0
 

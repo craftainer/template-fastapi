@@ -109,7 +109,7 @@ known-first-party = ["app", "craftainer_tool_crud", "craftainer_tool_observabili
 # mirroring crud_router.py's build_json_router's own opt-in param shape --
 # inherent to keeping this generic across every resource, not accidental
 # complexity.
-"src/app/web_components.py" = ["PLR0913"]
+"src/craftainer_tool_crud/web_components.py" = ["PLR0913"]
 # crud_actions.py's resolve_* helpers take one named parameter per piece of
 # per-route context (crud/schema/request/id/not_found/etc, PLR0913) and return
 # a schema instance or a bulk-result view depending on the id/filter branch
@@ -152,8 +152,6 @@ layers = [
     "crud_1",
     "controllers",
     "http_headers",
-    "xml_codec",
-    "web_components",
     "views",
     "maintenance",
     "models",
@@ -161,6 +159,7 @@ layers = [
     "problem_details",
     "rate_limit",
     "health_checks",
+    "db",
     "config",
 ]
 
@@ -185,6 +184,18 @@ layers = [
     "registry",
     "base",
 ]
+
+[[tool.importlinter.contracts]]
+name = "crud never imports app"
+type = "forbidden"
+source_modules = ["craftainer_tool_crud"]
+forbidden_modules = ["app"]
+
+[[tool.importlinter.contracts]]
+name = "observability never imports app or crud"
+type = "forbidden"
+source_modules = ["craftainer_tool_observability"]
+forbidden_modules = ["app", "craftainer_tool_crud"]
 
 [tool.mypy]
 python_version = "3.14"

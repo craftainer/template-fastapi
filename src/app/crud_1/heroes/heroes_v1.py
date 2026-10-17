@@ -19,6 +19,7 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.crud_1.heroes.heroes_v2 import DeleteRoles, HeroCRUD, ReadRoles, WriteRoles
+from app.crud_1.wiring import bulk_rate_limit
 from app.http_headers import sunset
 from app.models.hero import Hero as HeroModel
 from app.views.hero_v1 import (
@@ -50,6 +51,7 @@ def get_hero_v1_crud(crud: HeroCRUD) -> CompatCRUD[HeroV1, HeroV2, HeroModel]:
 HeroV1CRUD = Annotated[CompatCRUD[HeroV1, HeroV2, HeroModel], Depends(get_hero_v1_crud)]
 
 router = build_resource_router(
+    bulk_rate_limit=bulk_rate_limit,
     prefix="",
     api_prefix=f"/crud/v{ROUTER_VERSION}/heroes/v1",
     tags=["heroes"],

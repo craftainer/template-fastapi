@@ -6,9 +6,9 @@ Also covers /health/ready end-to-end, via app.main's actually-wired registry.
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
+from app.db import engine
 from app.health_checks import DatabaseHealthCheck, OIDCHealthCheck, RedisHealthCheck, S3HealthCheck
 from app.main import app
-from craftainer_tool_crud.models.base import engine
 
 client = TestClient(app)
 

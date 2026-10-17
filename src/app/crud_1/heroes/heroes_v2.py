@@ -15,6 +15,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends
 
+from app.crud_1.wiring import bulk_rate_limit
 from app.models.hero import Hero as HeroModel
 from app.oidc import get_current_claims, require_roles
 from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
@@ -112,6 +113,7 @@ WriteRoles = Depends(require_roles("editor", "maintainer"))
 DeleteRoles = Depends(require_roles("maintainer"))
 
 router = build_resource_router(
+    bulk_rate_limit=bulk_rate_limit,
     prefix="",
     api_prefix=f"/crud/v{ROUTER_VERSION}/heroes/v2",
     tags=["heroes"],
