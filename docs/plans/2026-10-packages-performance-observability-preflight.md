@@ -14,8 +14,8 @@ This file belongs to the plan and is deleted with it.
 - [ ] 3. PyPI and TestPyPI: pending trusted publishers
 - [ ] 4. Org secret `TEMPLATE_SYNC_TOKEN`
 - [ ] 5. Org apps and rulesets (Renovate, CodSpeed, branch ruleset)
-- [ ] 6. Claude Code permission allow-list
-- [ ] 7. Docker resources and power settings
+- [ ] 6. GitHub CLI: merge the base PR, sync, rebuild, log in
+- [ ] 7. Power settings
 - [ ] 8. Start a fresh session and kick off
 
 ---
@@ -149,74 +149,36 @@ ruleset → New branch ruleset**:
 
 **Check:** the ruleset shows as *Active* with the targets above.
 
-## 6. Claude Code permission allow-list
+## 6. GitHub CLI: merge the base PR, sync, rebuild, log in
 
-Keeps 18 parallel agents from prompting for every routine command. It
-goes in your **personal, git-ignored** file (listed in `.gitignore`),
-not the template-synced `.claude/settings.json`. Subagents inherit the
-main session's rules.
+`gh` used to be installed by hand, so the rebuild in step 2 dropped it.
+The orchestrator needs it for PRs, workflow runs and releases. A
+temporary copy is in `~/.local/bin/gh`; this step makes it permanent.
 
-Create `/workspace/.claude/settings.local.json`:
+1. Log the temporary copy in, so the orchestrator can open the PRs:
+   `gh auth login` (GitHub.com → SSH → browser). **Check:**
+   `gh auth status` shows `Logged in`.
+2. Review and merge the template-base PR that adds `gh` to the
+   devcontainer (`feat/devcontainer-gh-cli`), then ask the orchestrator
+   to release template-base and sync this repo (it opens the sync PR);
+   merge that.
+3. Rebuild the devcontainer again (Command Palette → **Dev Containers:
+   Rebuild Container**), then run `gh auth login` once more. From now
+   on, the login lives in the `gh-config` volume and survives rebuilds.
+   **Check:** `which gh` prints `/usr/local/bin/gh`, and `gh auth
+   status` shows `Logged in`.
 
-```json
-{
-  "permissions": {
-    "defaultMode": "acceptEdits",
-    "allow": [
-      "Bash(uv *)",
-      "Bash(uvx *)",
-      "Bash(prek *)",
-      "Bash(git *)",
-      "Bash(gh *)",
-      "Bash(docker *)",
-      "Bash(locust *)",
-      "Bash(py-spy *)",
-      "Bash(python3 *)",
-      "Bash(make *)",
-      "Bash(curl -s https://pypi.org/*)",
-      "WebSearch",
-      "WebFetch",
-      "mcp__plugin_context7_context7__*"
-    ],
-    "deny": [
-      "Bash(uv publish *)",
-      "Bash(twine *)",
-      "Bash(git push --force *)",
-      "Bash(git push -f *)",
-      "Bash(git push origin main*)",
-      "Bash(gh repo delete *)",
-      "Bash(gh pr merge *)",
-      "Bash(gh release create *)"
-    ]
-  }
-}
-```
+Permissions need no setup: they're shared in the repo's
+`.claude/settings.json` (`.claude/README.md` explains each rule).
 
-The `deny` list enforces your decisions mechanically:
-- no manual PyPI uploads;
-- no force pushes and no direct pushes to `main`;
-- no deleting repos;
-- you merge PRs yourself;
-- releases only through workflows.
+## 7. Power settings
 
-Deny always wins over allow.
+Turn off sleep for the duration of the run (Windows: *Power & sleep →
+Never*; macOS: *Battery/Energy → Prevent automatic sleeping*).
 
-**Check:** in the fresh session (step 8), `/permissions` lists these
-rules.
-
-## 7. Docker resources and power settings
-
-- Docker Desktop → **Settings → Resources**: at least **16 GB** memory
-  and **100 GB** free disk. 18 worktrees each get their own `.venv`, and
-  perf runs build images.
-- Turn off sleep for the duration of the run (Windows: *Power & sleep →
-  Never*; macOS: *Battery/Energy → Prevent automatic sleeping*).
-
-**Check** (in the container):
-
-```bash
-docker info --format 'mem={{.MemTotal}} cpus={{.NCPU}}'; df -h /workspace
-```
+With 8 GB of memory, the plan runs at most 4 agents at once (its
+Decision log). Raising Docker's memory later doesn't change that cap
+automatically: tell the orchestrator the new budget.
 
 ## 8. Start a fresh session and kick off
 
@@ -224,7 +186,7 @@ docker info --format 'mem={{.MemTotal}} cpus={{.NCPU}}'; df -h /workspace
    planning conversation; the orchestrator should start with a clean
    context.
 2. Check that `/agents` lists **plan-executor**, `/mcp` shows context7
-   connected, and `/permissions` shows step 6's rules.
+   connected, and `/permissions` shows the rules from `.claude/settings.json`.
 3. Send:
 
    > Execute `docs/plans/2026-10-packages-performance-observability.md`

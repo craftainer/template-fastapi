@@ -69,8 +69,12 @@ Plan-specific settings:
 - **Orchestrator:** Claude Opus 5.5 in the main session.
   **Executors:** `plan-executor` on Sonnet 5.5, each in its own worktree
   (`isolation: "worktree"`) on branch `wip/<id>`.
-- **Concurrency:** at most 18 agents at once. The waves below are sized
-  to stay under that.
+- **Concurrency:** at most **4** agents at once (Decision log). The host
+  has 8 GB of memory: `mypy` peaks at about 500 MB per run and the unit
+  tests at about 200 MB, with about 3.9 GB free while the stack runs.
+  Waves keep their structure; the orchestrator runs each wave's items in
+  batches of 4, dependency-critical items first (e.g. Wave 1: D1, S1,
+  O1, D2), and the bench lane still runs only with no agents active.
 - **"Done when" for every brief:** `ruff check`, `ruff format --check`,
   `mypy --strict`, and the unit tests touching the write set all pass
   in the worktree.
@@ -137,15 +141,15 @@ execution needs only the remaining gates below.
 
 **Local environment:**
 
-8. **Permissions:** allow-list the commands agents run, so 18 parallel
-   agents don't trigger prompts: `uv run *`, `uv sync*`, `uv lock*`,
-   `prek *`, `docker *`/`docker compose *`, `git *`, `gh *`,
-   `locust *`, `py-spy *`. Put these in the user's
-   `.claude/settings.local.json` (personal, not template-synced), or
-   generate them with `/fewer-permission-prompts`.
-9. **Resources:** Docker with enough memory and disk for 18 worktrees,
-   each with its own `.venv` (uv's cache is shared), plus the stack,
-   and the machine kept awake for the run. Start from a fresh session,
+8. **Permissions:** the repo's shared `.claude/settings.json` allows the
+   routine commands, asks before release triggers and variable changes,
+   and denies manual publishing, force or direct pushes to `main`,
+   merging, and repo deletion (`.claude/README.md`). Nothing to set up
+   per user.
+9. **Resources:** the machine kept awake for the run. With 8 GB of
+   memory, concurrency is capped at 4 (Execution). The GitHub CLI is
+   logged in (`gh auth status`); it's part of the devcontainer via
+   template-base, and its login persists across rebuilds. Start from a fresh session,
    so `plan-executor` is loaded and the orchestrator's context is clean.
 
 **Decisions made in advance** (recorded in the Decision log):
@@ -991,5 +995,7 @@ orchestrator appends to this list as it resolves escalations.
 | 2026-10-17 | At most one top-level `Dockerfile` per repo: the runtime image. A devcontainer-only Dockerfile lives in `.devcontainer/` (`template-base#12`). |
 | 2026-10-17 | Bench acceptance: keep a change only if its median capacity (3 runs) beats the baseline by more than the run-to-run spread and by ≥ 3%. |
 | 2026-10-17 | Non-blocking questions are batched per wave. |
+| 2026-10-17 | Concurrency capped at 4 agents: 8 GB host, measured `mypy` peak of about 500 MB per run. |
+| 2026-10-17 | Permission rules live in the shared `.claude/settings.json` (allow routine commands, ask on release/variable changes, deny publishing, force/main pushes, merges, repo deletion). |
 | 2026-10-17 | Standing approvals: create the three new repos; push branches and open PRs; trigger template-base releases. The user merges all PRs and approves `tool-*`/template releases. PyPI publishing happens only inside `release.yml`, never by hand. |
 | 2026-10-17 | Autoscaling: app-side readiness only in this repo. No scale to zero, at least 2 replicas, KEDA on in-flight requests preferred over CPU-only HPA, never VPA and HPA on the same metric. |
