@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import secrets
 import time
 import uuid
 from collections import Counter
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from locust import HttpUser, LoadTestShape, between, events, task
@@ -45,6 +47,9 @@ _GENERATOR_CPU_WARNING_PERCENT = 90.0
 # Peak per-process CPU (percent of one core) of the load generator, sampled while
 # the run is live; read by the summary.
 _generator_cpu_samples: list[float] = []
+# Highest number of workers connected to the master at once: workers have already
+# disconnected by the time the summary is built, so len(runner.clients) reads 0 then.
+_peak_workers = [0]
 
 
 def _p95_ceiling(path: str) -> int:
@@ -276,6 +281,7 @@ def _sample_generator_cpu(environment: Environment) -> None:
             continue
         usage = [float(runner.current_cpu_usage)]
         if isinstance(runner, MasterRunner):
+            _peak_workers[0] = max(_peak_workers[0], len(runner.clients))
             usage += [float(worker.cpu_usage) for worker in runner.clients.values()]
         _generator_cpu_samples.append(max(usage))
 
@@ -296,7 +302,9 @@ def _generator_cpu_summary(environment: Environment) -> dict[str, Any]:
         "max": max(samples, default=None),
         "mean": sum(samples) / len(samples) if samples else None,
         "samples": len(samples),
-        "workers": len(runner.clients) if isinstance(runner, MasterRunner) else 0,
+        "workers": max(
+            _peak_workers[0], len(runner.clients) if isinstance(runner, MasterRunner) else 0
+        ),
         "cpu_warning": bool(runner and runner.cpu_warning_emitted)
         or max(samples, default=0.0) > _GENERATOR_CPU_WARNING_PERCENT,
     }
@@ -387,6 +395,10 @@ def _check_latency_thresholds(environment: Environment, **_: object) -> None:
 # DeleteRoles only grants "maintainer" -- every task below needs read+write+delete.
 _LOGIN_USERNAME = "maintainer"
 
+# Optional base URL (e.g. https://127.0.0.1:8443) that token requests connect to instead
+# of OIDC_TOKEN_URL's own host; see tests/perf/README.md "Authenticating locally".
+_CONNECT_ENV = "PERF_OIDC_CONNECT_URL"
+
 _HERO_LIST_PATH = "/crud/v1/heroes/v2/json"
 
 
@@ -398,16 +410,29 @@ def _fetch_access_token() -> str:
     suite isn't pytest-collected at all, so it can't share a fixture either way.
     """
     settings = get_settings()
-    response = httpx.post(
-        settings.oidc_token_url,
-        data={
-            "grant_type": "password",
-            "client_id": settings.oidc_client_id,
-            "username": _LOGIN_USERNAME,
-            "password": _LOGIN_USERNAME,
-        },
-        timeout=10,
-    )
+    url = settings.oidc_token_url
+    headers: dict[str, str] = {}
+    extensions: dict[str, str] = {}
+    connect_to = os.environ.get(_CONNECT_ENV)
+    if connect_to:
+        # Connect to a different address than the URL names, but keep the URL's Host
+        # header (Keycloak echoes it into the token's `iss`) and its TLS server name.
+        token = urlsplit(url)
+        url = f"{connect_to.rstrip('/')}{token.path}"
+        headers["Host"] = token.netloc
+        extensions["sni_hostname"] = token.hostname or ""
+    with httpx.Client(timeout=10) as client:
+        response = client.post(
+            url,
+            data={
+                "grant_type": "password",
+                "client_id": settings.oidc_client_id,
+                "username": _LOGIN_USERNAME,
+                "password": _LOGIN_USERNAME,
+            },
+            headers=headers,
+            extensions=extensions,
+        )
     response.raise_for_status()
     return response.json()["access_token"]  # type: ignore[no-any-return]
 
