@@ -1,6 +1,6 @@
 # tests/
 
-Four independent suites:
+Five independent suites:
 
 - `unit/` — no external services; mirrors `src/app/`'s structure.
 - `integration/` — reaches the real stack containers (already
@@ -12,11 +12,15 @@ Four independent suites:
 - `perf/` — a Locust load test against the `runner` image over the real
   stack; not `pytest`-based at all (Locust has its own headless runner)
   — see its own `README.md`.
+- `bench/` — `pytest-benchmark` microbenchmarks (token decoding, in-process
+  ASGI round trips under `MODE=mock`); no external services, run
+  explicitly with `uv run pytest tests/bench --no-cov` — see its own
+  `README.md`.
 
 A plain `pytest` run collects `unit/` and `integration/` (both work
-inside the devcontainer / CI as-is) and ignores `e2e/` and `perf/` (see
-`pyproject.toml`'s `addopts`); `perf/` is never collected by `pytest` at
-all, under any invocation.
+inside the devcontainer / CI as-is) and ignores `e2e/` and `bench/`
+(see `pyproject.toml`'s `addopts`); `perf/` is never collected by
+`pytest` at all, under any invocation.
 
 Test code is type-checked under the same `mypy --strict` settings as
 `src/` — the hook runs `uv run mypy src tests` — so tests carry full
