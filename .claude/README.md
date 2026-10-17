@@ -98,8 +98,20 @@ this directory).
   `../.mcp.json`'s `playwright` entry, so it shares the `selenium`
   package already in the `dev` dependency group rather than adding a
   second one.
-- `settings.json`'s `permissions.deny` — blocks `s3-mcp`'s write-capable
-  tools (see above); nothing else in this file uses `permissions` yet.
+- `settings.json`'s `permissions`, shared by everyone working here and by
+  the `plan-executor` subagents (which inherit the session's rules):
+  - `defaultMode: acceptEdits`: file edits in the workspace don't prompt.
+  - `allow`: the commands this repo's workflow runs all the time (`uv`,
+    `prek`, `git`, `gh`, `docker`, `locust`, `py-spy`, `make`), web
+    lookups and context7, so parallel agents don't prompt for routine
+    work.
+  - `ask`: actions that are user gates in a plan: triggering a
+    `release.yml` and setting repo variables (e.g. `PYPI_PUBLISH`).
+  - `deny`: `s3-mcp`'s write-capable tools (see above), plus no manual
+    PyPI uploads (`uv publish`, `twine`), no force pushes or direct
+    pushes to `main`, no `gh pr merge` (the user merges), no
+    `gh release create` (releases only through `release.yml`), and no
+    `gh repo delete`. Deny always wins over allow.
 
 ## Do
 
