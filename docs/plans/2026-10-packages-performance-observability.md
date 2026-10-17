@@ -92,20 +92,88 @@ Plan-specific settings:
   other agents running builds or tests, because CPU contention from
   parallel agents would distort the numbers. Alternatively, they run
   through `perf.yml` on a pushed branch on a dedicated runner, after
-  gate G6. `L1` reports numbers; the orchestrator accepts or reverts
+  the standing push approval (pre-flight item 10). `L1` reports numbers; the orchestrator accepts or reverts
   each change.
 
-### User gates (the orchestrator asks; nothing proceeds without a yes)
+### Pre-flight: what the user sets up before kickoff
+
+Everything here is either something only the user can do (org admin
+rights, third-party web UIs, rebuilding the devcontainer) or a decision
+that would otherwise stop execution midway. Once all of it is done,
+execution needs only the remaining gates below.
+
+**Accounts and org settings (user only):**
+
+1. **PyPI and TestPyPI:** accounts with 2FA. Register a *pending
+   trusted publisher* on both for `craftainer-tool-crud` and
+   `craftainer-tool-health`: owner `craftainer`, repos `tool-crud` /
+   `tool-health`, workflow `release.yml`, no environment. Pending
+   publishers work before the repos and projects exist.
+2. **Org-level secrets and variables** (they need `admin:org`, which the
+   orchestrator's token doesn't have, so new repos inherit them):
+   - secret `TEMPLATE_SYNC_TOKEN`, visible to all repos (`ADR-0018`);
+   - variable `PYPI_PUBLISH` (A1) for `tool-*` repos;
+   - variable `CI_RUNNER` if a dedicated perf runner exists.
+3. **Org-wide GitHub Apps** set to "All repositories", so new repos are
+   covered with no per-repo step: Renovate, and CodSpeed (plus a
+   `CODSPEED_TOKEN` org secret if CodSpeed requires one for public
+   repos).
+4. **Org rulesets** (branch protection on `main`, required checks) at
+   org level, so they apply to new repos automatically.
+
+**Template-base (user merges, or delegates below):**
+
+5. Merge `craftainer/template-base#12` (devcontainer `Dockerfile` into
+   `.devcontainer/`), then cut a base release.
+6. Run this repo's template sync to that release, and do its one-time
+   Dockerfile upgrade (item W0a below) in the sync PR.
+7. **Rebuild the devcontainer** after that sync, because
+   `.devcontainer/` changed. Only the user can trigger a rebuild, so it
+   has to happen before kickoff, not mid-run.
+
+**Local environment:**
+
+8. **Permissions:** allow-list the commands agents run, so 18 parallel
+   agents don't trigger prompts: `uv run *`, `uv sync*`, `uv lock*`,
+   `prek *`, `docker *`/`docker compose *`, `git *`, `gh *`,
+   `locust *`, `py-spy *`. Put these in the user's
+   `.claude/settings.local.json` (personal, not template-synced), or
+   generate them with `/fewer-permission-prompts`.
+9. **Resources:** Docker with enough memory and disk for 18 worktrees,
+   each with its own `.venv` (uv's cache is shared), plus the stack,
+   and the machine kept awake for the run. Start from a fresh session,
+   so `plan-executor` is loaded and the orchestrator's context is clean.
+
+**Decisions made in advance** (recorded in the Decision log):
+
+10. **Standing approvals:** the orchestrator may do the following
+    without asking (see the Decision log):
+    - create the three new repos;
+    - push branches and open, and merge once CI is green, PRs in the
+      new repos, in template-base, and here into `main`;
+    - cut template-base releases;
+    - tag and publish `0.x` releases (TestPyPI first, then PyPI).
+11. **Bench-lane acceptance rule:** a change is kept if its median
+    capacity over 3 runs beats the baseline median by more than the
+    larger run-to-run spread and by at least 3%. Otherwise it's
+    reverted. The same rule decides the Granian switch.
+12. **Batching:** questions that don't block the current wave are
+    collected and asked together at the end of the wave, not one at a
+    time.
+
+### Remaining gates (the orchestrator asks; nothing proceeds without a yes)
+
+With pre-flight done and item 10 granted, only these remain:
 
 | Gate | Before |
 | --- | --- |
-| G0 | Kickoff: create integration branch `feat/packages-perf-obs` from `main`, allow agent commits on `wip/*` branches, run up to 18 parallel agents (cost) |
-| G1 | Creating `craftainer/template-python-package` from template-base |
-| G2 | Opening the template-base PR (A2). Merging and releasing base is the user's call. |
-| G3 | Creating `craftainer/tool-crud` and `craftainer/tool-health` |
-| G4 | The user registers pending trusted publishers on TestPyPI and PyPI. This is in their web UI, so only the user can do it. |
-| G5 | Tagging and releasing `0.1.0` (TestPyPI first, then PyPI) |
-| G6 | Pushing the integration branch or opening the PR into `main`. Also needed before any CI-based bench run. |
+| G0 | Kickoff: confirm pre-flight items 1–9 are done. |
+| G-esc | Any escalation whose decision is really the user's: scope, security trade-offs, deleting anything outside this plan's own branches and repos. |
+| G-final | Deleting this plan file and closing out (after X2/X3 have folded it into ADRs and docs). |
+
+Without item 10, the original per-step gates apply instead: creating the
+package template repo, the template-base PRs, creating the two package
+repos, the `0.1.0` release, and pushing or opening the PR here.
 
 ### Waves
 
@@ -113,15 +181,17 @@ Each wave's items have disjoint write sets. The orchestrator merges
 them in table order. A later wave starts only when everything it
 depends on is merged and verified.
 
-**Wave 0: serial foundation (1 agent, after G0).** It touches nearly
-every file, so it runs alone and first.
+**Wave 0: serial foundation (after G0).** These touch nearly every
+file, so they run alone and first. W0a lands in the template-sync PR
+during pre-flight (items 5–7), before the devcontainer rebuild.
 
 | ID | Item | Write set |
 | --- | --- | --- |
+| W0a | **One top-level Dockerfile** (decided; base side is `craftainer/template-base#12`). In the sync PR to the base release containing #12, do the one-time upgrade: rename `app.Dockerfile` → `Dockerfile` and `app.Dockerfile.dockerignore` → `.dockerignore`, overwriting base's old root files. Update every reference: `Makefile` (`-f app.Dockerfile`), the repo-root `compose.yml`, `scripts/check-dockerfile-versions.sh` (now compares `.devcontainer/Dockerfile` with `Dockerfile`) and its README, `docs/TEMPLATE.md`, `docs/architecture.md`, and this repo's sync manifest (`Dockerfile`/`.dockerignore` stay `replace` for template-fastapi's own instances; `app.Dockerfile*` entries go). Accepted ADRs keep their old wording. | those files |
 | W0 | A4 rename in place (`crud` → `craftainer_tool_crud`, `health` → `craftainer_tool_health`). Add every new dependency for the whole plan in one go (`pytest-benchmark`, `pytest-codspeed`, `py-spy`, `pyinstrument`, `opentelemetry-instrumentation-fastapi`/`-sqlalchemy` at `0.65b0`, `granian`) plus `uv lock`. Add `--ignore=tests/bench` to pytest `addopts`. This means no later item edits `pyproject.toml` dependencies or `uv.lock`. | `src/`, `tests/`, `alembic/env.py`, `pyproject.toml`, `uv.lock`, living `README.md`s |
 
-**Wave 1: fan-out (17 agents, after W0 is verified, plus G1 and G2 for
-T1–T3 and B1).**
+**Wave 1: fan-out (17 agents, after W0 is verified; T1–T3 and B1 run
+under the standing approvals).**
 
 | ID | Item | Write set |
 | --- | --- | --- |
@@ -135,7 +205,7 @@ T1–T3 and B1).**
 | P3 | Phase 0.6: app-level microbenchmarks (token verify, ASGI round trip) | `tests/bench/` |
 | P5 | CI: capped stack + relative-baseline check in `perf.yml`, capacity job, CodSpeed workflow for this repo | `.github/workflows/{perf,codspeed}.yml`, `.github/workflows/README.md` |
 | S1 | Phase 3/4 settings: `DB_POOL_*`, `POSTGRES_SSLMODE` + production guardrail, `DB_*_TIMEOUT`, `RUN_MIGRATIONS_ON_STARTUP` (fields, validation, tests only; no consumers yet) | `src/app/config.py`, its unit tests, `src/app/README.md` config section |
-| R1 | Phase 1: `runner.sh` flags, `--limit-concurrency`, Phase 7.1 `--timeout-graceful-shutdown`, `APP_SERVER` switch (uvicorn/granian) + a lifespan check under Granian, `UV_COMPILE_BYTECODE` (code only; measured in the bench lane) | `runner.sh`, `app.Dockerfile` builder stage, `scripts/builder-sync-*.sh` |
+| R1 | Phase 1: `runner.sh` flags, `--limit-concurrency`, Phase 7.1 `--timeout-graceful-shutdown`, `APP_SERVER` switch (uvicorn/granian) + a lifespan check under Granian, `UV_COMPILE_BYTECODE` (code only; measured in the bench lane) | `runner.sh`, `Dockerfile` builder stage, `scripts/builder-sync-*.sh` |
 | R2 | Phase 2: JWKS prefetch at startup + off-loop cache-miss path | `src/app/oidc.py`, its tests |
 | O1 | Phase 5.2–5.4, 5.6: tracer and meter providers, `instrument_app()` / `instrument_engine()` / pool-gauge helpers, trace-id log correlation, in-memory-exporter tests (not wired into `main.py`); Phase 7.4 scaling-metric docs | `src/app/telemetry.py`, its tests, `src/app/README.md` telemetry section |
 | X1 | ADR drafts: perf CI and benchmarks (amends 0010), package extraction, OTel + NFR superseding 0023 | `docs/adrs/`, `docs/nfrs/` (new files only) |
@@ -182,15 +252,15 @@ those are merged (Phase 0.7).
 | L1 | A/B: C1 revalidation, C2 stats cache hit/miss | none (report only) |
 
 **Wave 3: packages (after T1–T3, B1 synced, D1/F1/F2/C1/C2 merged, and
-G3 and G4).**
+pre-flight item 1).**
 
 | ID | Item | Write set |
 | --- | --- | --- |
-| K1 | A5 for `tool-crud`: `git filter-repo` history, move code and tests, Postgres via `compose.instance.yml`, `0.1.0` (release after G5) | `tool-crud` repo |
+| K1 | A5 for `tool-crud`: `git filter-repo` history, move code and tests, Postgres via `compose.instance.yml`, `0.1.0` (released under the standing approvals) | `tool-crud` repo |
 | K2 | A5 for `tool-health` | `tool-health` repo |
 | L1 | Phase 5.7 OTel overhead (unset / 100% / 10% sampling); `gc` variants | none (report only) |
 
-**Wave 4: switch and close (serial, after G5).**
+**Wave 4: switch and close (serial, after both `0.1.0` releases are on PyPI).**
 
 | ID | Item | Write set |
 | --- | --- | --- |
@@ -201,7 +271,7 @@ G3 and G4).**
 
 Then the orchestrator runs the verification lane one last time and,
 per `docs/plans/README.md`, folds this plan into the ADRs written above
-and deletes it. G6 covers pushing and the PR.
+and deletes it after G-final. Pushing and merging fall under the standing approvals.
 
 ## Approach
 
@@ -219,6 +289,9 @@ instance of `craftainer/template-base` (`ADR-0018`), the same way
 future libraries are created from it and receive fixes through template
 sync. Contents:
 
+- Created from a base release that includes `template-base#12`, so the
+  only Dockerfile is `.devcontainer/Dockerfile`. A pure library ships
+  no runtime image, so there's no top-level `Dockerfile`.
 - `src/<import_name>/` layout with a `py.typed` marker, hatchling
   build, and `uv`.
 - This repo's quality bar, copied:
@@ -395,7 +468,8 @@ Each item is one A/B run:
 - Log level: confirm `MODE=production` doesn't emit per-request
   INFO/DEBUG records through the JSON formatter.
 - **Precompile bytecode:** set `UV_COMPILE_BYTECODE=1` in
-  `app.Dockerfile`'s builder stage. Today neither
+  `Dockerfile`'s builder stage (named `app.Dockerfile` until W0a).
+  Today neither
   `scripts/builder-sync-*.sh` compiles, and the runner sets
   `PYTHONDONTWRITEBYTECODE=1`, so every container start recompiles
   every imported module (FastAPI, Pydantic, SQLAlchemy, boto3, OTel).
@@ -787,4 +861,7 @@ orchestrator appends to this list as it resolves escalations.
 | 2026-10-17 | Shared server-side caching only for non-per-user aggregates (`/stats`, `/predict`). Per-user responses get `ETag`/`304` with `Cache-Control: private` only. |
 | 2026-10-17 | uvicorn stays the default server. Granian replaces it only if it wins the capacity A/B at the reference budget. |
 | 2026-10-17 | Not now: Python JIT, free-threaded build, gzip in the app. |
+| 2026-10-17 | At most one top-level `Dockerfile` per repo: the runtime image. A devcontainer-only Dockerfile lives in `.devcontainer/` (`template-base#12`). |
+| 2026-10-17 | Bench acceptance: keep a change only if its median capacity (3 runs) beats the baseline by more than the run-to-run spread and by ≥ 3%. |
+| 2026-10-17 | Non-blocking questions are batched per wave. |
 | 2026-10-17 | Autoscaling: app-side readiness only in this repo. No scale to zero, at least 2 replicas, KEDA on in-flight requests preferred over CPU-only HPA, never VPA and HPA on the same metric. |
