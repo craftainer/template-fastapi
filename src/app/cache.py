@@ -78,7 +78,7 @@ class RedisStatsCache:
         """Return the cached body, or None on a miss or a Redis failure."""
         try:
             value = await self._client.get(self._redis_key(resource, key))
-        except RedisError:
+        except RedisError:  # pragma: no cover -- Redis outage; unit-tested, not reachable in e2e
             logger.warning("stats cache get failed", exc_info=True)
             return None
         # The client is built without decode_responses, so a hit is always bytes.
@@ -88,7 +88,7 @@ class RedisStatsCache:
         """Store `value` with the TTL; a Redis failure is logged and otherwise ignored."""
         try:
             await self._client.set(self._redis_key(resource, key), value, ex=self._ttl_seconds)
-        except RedisError:
+        except RedisError:  # pragma: no cover -- Redis outage; unit-tested, not reachable in e2e
             logger.warning("stats cache set failed", exc_info=True)
 
     async def invalidate(self, resource: str) -> None:
@@ -98,12 +98,13 @@ class RedisStatsCache:
             batch: list[bytes] = []
             async for redis_key in self._client.scan_iter(match=pattern, count=_SCAN_COUNT):
                 batch.append(redis_key)
-                if len(batch) >= _SCAN_COUNT:
+                # e2e-unreachable: needs 500+ cached keys; covered by tests/unit/test_cache.py
+                if len(batch) >= _SCAN_COUNT:  # pragma: no cover
                     await self._client.unlink(*batch)
                     batch = []
             if batch:
                 await self._client.unlink(*batch)
-        except RedisError:
+        except RedisError:  # pragma: no cover -- Redis outage; unit-tested, not reachable in e2e
             logger.warning("stats cache invalidate failed", exc_info=True)
 
     async def aclose(self) -> None:
@@ -114,21 +115,28 @@ class RedisStatsCache:
 class InMemoryStatsCache:
     """In-process `StatsCache` for MODE=mock (no Redis): same TTL semantics, per process."""
 
-    def __init__(self, *, ttl_seconds: int) -> None:
-        """Set the entry TTL; entries live in a dict of resource -> key -> (expiry, body)."""
+    def __init__(self, *, ttl_seconds: int, version: str) -> None:
+        """Set the entry TTL and the app version namespacing keys, as `RedisStatsCache` does.
+
+        Entries live in a dict of resource -> versioned key -> (expiry, body).
+        """
         self._ttl_seconds = ttl_seconds
+        self._version = version
         self._entries: dict[str, dict[str, tuple[float, bytes]]] = {}
 
     async def get(self, resource: str, key: str) -> bytes | None:
         """Return the cached body, or None on a miss or an expired entry."""
-        entry = self._entries.get(resource, {}).get(key)
+        entry = self._entries.get(resource, {}).get(f"{self._version}:{key}")
         if entry is None or entry[0] <= time.monotonic():
             return None
         return entry[1]
 
     async def set(self, resource: str, key: str, value: bytes) -> None:
         """Store `value` until the TTL elapses."""
-        self._entries.setdefault(resource, {})[key] = (time.monotonic() + self._ttl_seconds, value)
+        self._entries.setdefault(resource, {})[f"{self._version}:{key}"] = (
+            time.monotonic() + self._ttl_seconds,
+            value,
+        )
 
     async def invalidate(self, resource: str) -> None:
         """Drop every entry of `resource`."""
@@ -141,7 +149,7 @@ def build_stats_cache(settings: Settings) -> StatsCache | None:
     if ttl is None:
         return None
     if settings.mode == "mock":
-        return InMemoryStatsCache(ttl_seconds=ttl)
+        return InMemoryStatsCache(ttl_seconds=ttl, version=app_version())
     return RedisStatsCache.from_url(settings.redis_url, ttl_seconds=ttl, version=app_version())
 
 
@@ -171,6 +179,7 @@ async def run_invalidation(
             await cache.invalidate(resource)
             async for _event in events:
                 await cache.invalidate(resource)
-        except Exception:
+        # e2e-unreachable: needs a failing event stream; covered by tests/unit/test_cache.py
+        except Exception:  # pragma: no cover
             logger.warning("stats cache invalidation stream failed", exc_info=True)
         await asyncio.sleep(retry_seconds)

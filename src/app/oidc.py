@@ -103,7 +103,8 @@ def _jwks_is_warm(token: str) -> bool:
     fetch over blocking HTTP. A token whose header can't even be parsed is "warm":
     decode_bearer_token rejects it with a 401 before any network call.
     """
-    if _get_jwks_client.cache_info().currsize == 0:
+    # e2e-unreachable: prefetch_jwks warms the client at startup; covered by tests/unit/test_oidc.py
+    if _get_jwks_client.cache_info().currsize == 0:  # pragma: no cover
         return False
     try:
         kid = jwt.get_unverified_header(token).get("kid")
@@ -128,7 +129,8 @@ async def decode_bearer_token_async(token: str) -> dict[str, Any]:
     """
     if settings.mode == "mock" or _jwks_is_warm(token):
         return decode_bearer_token(token)
-    return await run_in_threadpool(decode_bearer_token, token)
+    # e2e-unreachable: the JWKS is warm after prefetch; covered by tests/unit/test_oidc.py
+    return await run_in_threadpool(decode_bearer_token, token)  # pragma: no cover
 
 
 async def prefetch_jwks() -> None:
@@ -146,7 +148,8 @@ async def prefetch_jwks() -> None:
 
     try:
         await run_in_threadpool(_prefetch)
-    except (HTTPException, jwt.PyJWTError) as exc:
+    # e2e-unreachable: needs an IdP outage at startup; covered by tests/unit/test_oidc.py
+    except (HTTPException, jwt.PyJWTError) as exc:  # pragma: no cover
         logger.warning("JWKS prefetch failed; falling back to lazy fetch: %s", exc)
 
 

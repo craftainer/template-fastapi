@@ -246,3 +246,15 @@ def test_stats_cache_ttl_is_off_by_default_and_accepts_positive_seconds() -> Non
     assert Settings(stats_cache_ttl_seconds=30).stats_cache_ttl_seconds == 30
     with pytest.raises(ValidationError, match="stats_cache_ttl_seconds"):
         Settings(stats_cache_ttl_seconds=0)
+
+
+def test_gc_freeze_health_info_and_profiling_defaults_and_overrides() -> None:
+    """gc_freeze is on; /health/info and profiling are off by default, each overridable."""
+    defaults = Settings()
+    assert defaults.gc_freeze is True
+    assert defaults.health_info_enabled is False
+    assert defaults.profiling_enabled is False
+    custom = Settings(gc_freeze=False, health_info_enabled=True, profiling_enabled=True)
+    assert custom.gc_freeze is False
+    assert custom.health_info_enabled is True
+    assert custom.profiling_enabled is True

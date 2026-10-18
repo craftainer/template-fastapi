@@ -1,26 +1,41 @@
 """FastAPI app entrypoint: wires up settings, migrations, routers, and lifespan."""
 
 import asyncio
+import gc
+import socket
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 
 import debugpy
 from alembic.config import Config
 from fastapi import FastAPI
 
 from alembic import command
+from app.cache import RedisStatsCache, run_invalidation
 from app.config import get_settings
 from app.controllers import (
     audit,
     mock,
 )
 from app.crud_1 import router as crud_v1_router
+from app.crud_1.heroes import heroes_v2
+from app.crud_1.wiring import stats_cache
+from app.db import engine
 from app.health_checks import get_health_registry
 from app.http_headers import add_security_headers
+from app.oidc import prefetch_jwks
 from app.problem_details import register_problem_handlers
 from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION
+from craftainer_tool_crud.interfaces.cache import StatsCache
 from craftainer_tool_observability.health.router import build_health_router
 from craftainer_tool_observability.logs import configure_logging
+from craftainer_tool_observability.middleware import RequestIDMiddleware
+from craftainer_tool_observability.otel import (
+    configure_telemetry,
+    instrument_app,
+    instrument_engine,
+)
+from craftainer_tool_observability.profiling import install_profiling
 
 settings = get_settings()
 configure_logging()
@@ -39,18 +54,65 @@ def _run_migrations() -> None:
 
 
 @asynccontextmanager
+async def _stats_cache_invalidation(cache: StatsCache) -> AsyncIterator[None]:
+    """Keep `cache` invalidated by Hero's CRUD events while serving; close it afterwards.
+
+    The invalidation task is cancelled and awaited first, then a Redis-backed cache's
+    client is closed (the in-process cache has nothing to close). The resource name
+    matches the routers' `resource="hero"` (both Hero versions share one event stream).
+    """
+    task = asyncio.create_task(
+        run_invalidation(
+            cache,
+            heroes_v2.get_hero_event_source(),
+            resource="hero",
+            subscriber_id=f"stats-cache-{socket.gethostname()}",
+        )
+    )
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        if isinstance(cache, RedisStatsCache):
+            await cache.aclose()
+
+
+@asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Apply pending migrations before serving, then run normally until shutdown.
+    """Migrate, warm the JWKS cache, start cache invalidation; undo it in reverse on shutdown.
 
     MODE=mock skips migrations entirely -- there's no database to migrate against
-    (see craftainer_tool_crud.repositories.memory). `# pragma: no branch` below is for tests/e2e
-    specifically: its one live process is always MODE=dev, so the other branch can
-    never run there -- tests/unit/test_main.py exercises it directly and still
-    counts toward its own 95% gate.
+    (see craftainer_tool_crud.repositories.memory), as does RUN_MIGRATIONS_ON_STARTUP=false
+    (migrations then run as a separate deploy step). `# pragma: no branch` below is for
+    tests/e2e specifically: its live processes always run with the flag at its default and
+    one of them in a migrating mode, so the other branch can never run there --
+    tests/unit/test_main.py exercises it directly and still counts toward its own gate.
+
+    Once startup work is done (and `GC_FREEZE` isn't false), `gc.collect(); gc.freeze()`
+    moves everything allocated so far out of the cyclic GC's reach. Shutdown ends with
+    `engine.dispose()` so pooled connections close cleanly.
     """
-    if settings.mode != "mock":  # pragma: no branch
+    if settings.run_migrations_on_startup and settings.mode != "mock":  # pragma: no branch
         await asyncio.to_thread(_run_migrations)
-    yield
+    await prefetch_jwks()
+    try:
+        async with AsyncExitStack() as stack:
+            # `# pragma: no branch`: both e2e legs enable the cache (Redis and in-process).
+            if stats_cache is not None:  # pragma: no branch
+                await stack.enter_async_context(_stats_cache_invalidation(stats_cache))
+            if settings.gc_freeze:
+                gc.collect()
+                gc.freeze()
+            yield
+    finally:
+        await engine.dispose()
+
+
+def _docs_path(path: str, mode: str) -> str | None:
+    """`path` for the interactive docs/schema routes, or None (route off) in production."""
+    return None if mode == "production" else path
 
 
 def _enable_debugger() -> None:
@@ -97,11 +159,17 @@ def _mount_mode_specific_routers(app: FastAPI, mode: str) -> None:
 
 
 _configure_debugger(settings.mode)
+configure_telemetry()
+
+_production = settings.mode == "production"
 
 app = FastAPI(
     title=settings.app_name,
     lifespan=lifespan,
     debug=settings.mode == "dev",
+    docs_url=_docs_path("/docs", settings.mode),
+    redoc_url=_docs_path("/redoc", settings.mode),
+    openapi_url=_docs_path("/openapi.json", settings.mode),
     swagger_ui_init_oauth={
         "usePkceWithAuthorizationCodeGrant": True,
         "clientId": settings.oidc_client_id,
@@ -110,7 +178,28 @@ app = FastAPI(
 register_problem_handlers(app)
 add_security_headers(app)
 
-app.include_router(build_health_router(get_health_registry), prefix="/health")
+app.include_router(
+    build_health_router(
+        get_health_registry,
+        include_info=settings.health_info_enabled,
+        info_package="template-fastapi",
+    ),
+    prefix="/health",
+)
 app.include_router(crud_v1_router, prefix=f"/crud/v{ROUTER_VERSION}")
 app.include_router(audit.router, prefix="/audit")
 _mount_mode_specific_routers(app, settings.mode)
+
+# Middleware order, outermost first: OTel server span, RequestIDMiddleware, profiling,
+# security headers. Starlette makes the most recently added middleware outermost, so the
+# request-ID and profiling middleware are added after add_security_headers above. OTel
+# doesn't follow that rule: FastAPIInstrumentor.instrument_app() wraps
+# build_middleware_stack so its span encloses the whole user-middleware stack wherever it
+# is called (checked in the installed opentelemetry-instrumentation-fastapi). That is
+# what lets RequestIDMiddleware find an active server span to tag. The profile response
+# bypasses the security headers on purpose: pyinstrument's HTML needs inline scripts.
+# Both instrument_* calls are no-ops unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
+install_profiling(app, enabled=settings.profiling_enabled, production=_production)
+app.add_middleware(RequestIDMiddleware)
+instrument_app(app)
+instrument_engine(engine)

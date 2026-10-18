@@ -107,6 +107,18 @@ class Settings(BaseSettings):
     # Whether the api process runs Alembic migrations itself on startup.
     run_migrations_on_startup: bool = True
 
+    # Run `gc.collect(); gc.freeze()` once startup finishes, moving the import-time object
+    # graph out of the cyclic GC's generations so collections stop rescanning it (and a
+    # forked worker doesn't copy-on-write its pages). A switch so a load test can A/B it.
+    gc_freeze: bool = True
+
+    # Expose GET /health/info (version and commit). Off by default: it discloses the version.
+    health_info_enabled: bool = False
+
+    # Honor `?profile=1` with a pyinstrument HTML profile (app.main -> install_profiling).
+    # Startup fails if this is set under MODE=production.
+    profiling_enabled: bool = False
+
     s3_endpoint_url: str = "http://localhost:9000"
     s3_access_key: str = Field(default="rustfsadmin", validation_alias="RUSTFS_ACCESS_KEY")
     s3_secret_key: str = Field(default="rustfsadmin", validation_alias="RUSTFS_SECRET_KEY")

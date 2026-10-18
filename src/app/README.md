@@ -37,8 +37,9 @@ beyond what it's explicitly passed or reads from `app.config`.
 
 - `config.py` — settings, read from environment variables; see
   "Configuration" and "MODE" below.
-- `main.py` — FastAPI app instance, router wiring, and the lifespan hook
-  that applies pending Alembic migrations on startup; see "Alembic
+- `main.py` — FastAPI app instance, router wiring, telemetry/middleware wiring
+  and the lifespan hook (migrations, JWKS prefetch, cache invalidation, GC freeze,
+  engine disposal); see "Startup, shutdown and middleware wiring" and "Alembic
   migrations" below.
 - `oidc.py` — provider-agnostic OIDC bearer-token validation (PKCE-
   compatible; not Keycloak-specific); see "OIDC / auth" below.
@@ -84,7 +85,7 @@ beyond what it's explicitly passed or reads from `app.config`.
 Import order between all of the above is strict and one-directional —
 lower layers never import from higher ones (`config` → `db` →
 `health_checks`
-→ `rate_limit` → `problem_details` → `oidc` → `models` →
+→ `cache` → `rate_limit` → `problem_details` → `oidc` → `models` →
 `maintenance` → `views` →
 `http_headers` → `controllers` → `crud_1` → `main`) — enforced by
 `import-linter`'s `"app layers"` contract in `../../pyproject.toml`'s
@@ -120,7 +121,7 @@ it imports `crud_1`'s finished router.
 
 ```mermaid
 graph LR
-    config --> db --> health_checks --> rate_limit --> problem_details
+    config --> db --> health_checks --> cache --> rate_limit --> problem_details
     problem_details --> oidc --> models --> maintenance
     maintenance --> views --> http_headers --> controllers --> crud_1 --> main
 ```
@@ -158,6 +159,14 @@ keep the NullPool, no-TLS, no-timeout behavior):
 | `DB_COMMAND_TIMEOUT` | unset (asyncpg default) | asyncpg `command_timeout`: per-command timeout in seconds, > 0. |
 | `RUN_MIGRATIONS_ON_STARTUP` | `true` | Whether the api runs Alembic migrations on startup. |
 
+Process-wide switches `main.py` consumes (see "Startup, shutdown and middleware wiring" below):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `GC_FREEZE` | `true` | Run `gc.collect(); gc.freeze()` once startup finishes, so the import-time object graph stops being rescanned by the cyclic GC. A switch so a load test can A/B it without a rebuild. |
+| `HEALTH_INFO_ENABLED` | `false` | Mount `GET /health/info` (`{"version", "commit"}` from `APP_VERSION`/`APP_COMMIT`, falling back to the installed `template-fastapi` distribution's version). Off because it discloses the version. |
+| `PROFILING_ENABLED` | `false` | A request with `?profile=1` is answered with a pyinstrument HTML profile. Startup fails (`ProfilingDisabledError`) under `MODE=production`. pyinstrument is a dev dependency only. |
+
 ## Stats cache
 
 `GET <prefix>/stats` and `/predict` are whole-table aggregates, not per-user data, so
@@ -177,6 +186,37 @@ runs `app.cache.run_invalidation(cache, event_source, resource=..., subscriber_i
 as a lifespan background task, which empties the resource's entries on every event (and
 once per (re)subscribe). A read racing a write can still store a stale body, so the TTL
 stays the safety net. A Redis outage degrades to uncached responses.
+
+## Startup, shutdown and middleware wiring
+
+`main.py` wires every optional piece in one place; each is off or a no-op unless its
+setting asks for it.
+
+Lifespan, in order: Alembic migrations (off the event loop; skipped under `MODE=mock` or
+`RUN_MIGRATIONS_ON_STARTUP=false`), `oidc.prefetch_jwks()` (warm-only, an unreachable
+IdP just logs), the stats-cache invalidation task (only when `STATS_CACHE_TTL_SECONDS` is
+set: `app.cache.run_invalidation` over Hero's event source, `resource="hero"`,
+`subscriber_id="stats-cache-<hostname>"`), then `gc.collect(); gc.freeze()` (unless
+`GC_FREEZE=false`). Shutdown runs in reverse: cancel and await the invalidation task,
+close the Redis cache client, then `engine.dispose()` so pooled connections close cleanly.
+`crud_1/wiring.py` builds the `stats_cache` once at import time because the Hero v2
+router takes it as `stats_cache=`.
+
+Telemetry and request IDs: `configure_telemetry()` runs before the app is built, then
+`instrument_app(app)` and `instrument_engine(app.db.engine)` (both no-ops without
+`OTEL_EXPORTER_OTLP_ENDPOINT`) and `RequestIDMiddleware` (`X-Request-ID` echoed, bad
+values replaced, ID on JSON log lines and the server span). The OTel server span wraps
+the whole user-middleware stack regardless of call order, so the request-ID middleware
+always runs inside it; the order is also explained in a comment at the bottom of
+`main.py`. Profiling (`PROFILING_ENABLED`) sits inside both and outside the security
+headers, so the profile page isn't subject to the strict CSP.
+
+Under `MODE=production`, `/docs`, `/redoc` and `/openapi.json` are not served.
+
+Known gap: `alembic/env.py`'s `fileConfig` replaces the root logger's handlers once
+migrations ran, so a process that migrates on startup stops writing JSON log lines (and
+loses the OTLP log bridge). Deployments that set `RUN_MIGRATIONS_ON_STARTUP=false` are
+unaffected.
 
 ## Alembic migrations
 
