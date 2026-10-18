@@ -65,3 +65,17 @@ def test_configure_logging_routes_uvicorn_loggers_to_root(_restore_logging: None
         for lg, handlers, propagate in saved:
             lg.handlers = handlers
             lg.propagate = propagate
+
+
+def test_configure_logging_keeps_disabled_uvicorn_access_log_silent(_restore_logging: None) -> None:
+    """uvicorn's --no-access-log state (no handlers, propagate=False) is not re-enabled."""
+    access = logging.getLogger("uvicorn.access")
+    saved = (list(access.handlers), access.propagate)
+    try:
+        access.handlers = []
+        access.propagate = False
+        configure_logging()
+        assert not access.handlers
+        assert not access.propagate
+    finally:
+        access.handlers, access.propagate = saved

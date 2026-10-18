@@ -137,6 +137,14 @@ def configure_logging() -> None:
     # the app; hand its loggers over to the root handlers so they are JSON too.
     for name in _UVICORN_LOGGERS:
         uvicorn_logger = logging.getLogger(name)
+        if (
+            name == "uvicorn.access"
+            and not uvicorn_logger.handlers
+            and not uvicorn_logger.propagate
+        ):
+            # uvicorn's `--no-access-log` / UVICORN_ACCESS_LOG=false leaves exactly this
+            # state (no handlers, propagate=False); re-routing it would re-enable the lines.
+            continue
         uvicorn_logger.handlers.clear()
         uvicorn_logger.propagate = True
 
