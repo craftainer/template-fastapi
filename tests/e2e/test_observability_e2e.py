@@ -69,13 +69,9 @@ def test_request_id_is_echoed_and_an_invalid_one_is_replaced(page: Page, base_ur
 def test_request_id_and_trace_id_reach_the_json_logs(managed: AppHandle, base_url: str) -> None:
     """A rejected token logs a warning carrying the request's ID and the trace ID.
 
-    Mock leg only (OTel configured, no exporter): the dev-mode legs run Alembic on startup,
-    and alembic/env.py's `fileConfig` replaces the root logger's handlers with
-    alembic.ini's stderr one, so those processes no longer write JSON lines at all (a
-    known gap, reported in the M1 hand-back).
+    Runs on every leg, including the ones that migrate on startup: alembic/env.py leaves an
+    already-configured root logger alone, so the JSON handler survives the migrations.
     """
-    if managed.leg != "mock":
-        pytest.skip("alembic's fileConfig replaces the JSON log handler after migrating")
     request_id = f"e2e-log-{uuid.uuid4().hex}"
     response = httpx.get(
         f"{base_url}{_HEROES}",
@@ -89,6 +85,9 @@ def test_request_id_and_trace_id_reach_the_json_logs(managed: AppHandle, base_ur
 
     _wait_for(logged, "the request's log line")
     line = next(line for line in _log_lines(managed) if line.get("request_id") == request_id)
+    if managed.leg == "bare":  # the bare leg runs without OpenTelemetry: no spans, no IDs
+        assert "trace_id" not in line
+        return
     assert len(str(line["trace_id"])) == 32
     assert len(str(line["span_id"])) == 16
 

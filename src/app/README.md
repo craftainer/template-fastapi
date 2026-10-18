@@ -213,10 +213,10 @@ headers, so the profile page isn't subject to the strict CSP.
 
 Under `MODE=production`, `/docs`, `/redoc` and `/openapi.json` are not served.
 
-Known gap: `alembic/env.py`'s `fileConfig` replaces the root logger's handlers once
-migrations ran, so a process that migrates on startup stops writing JSON log lines (and
-loses the OTLP log bridge). Deployments that set `RUN_MIGRATIONS_ON_STARTUP=false` are
-unaffected.
+`alembic/env.py` only applies `alembic.ini`'s logging config when the root logger has no
+handlers (the standalone `alembic` CLI), so a process that migrates on startup keeps its
+JSON log lines and OTLP log bridge. `configure_logging()` also hands uvicorn's own
+loggers over to the root handlers, so its lines are JSON too.
 
 ## Alembic migrations
 
