@@ -4,6 +4,7 @@ Migrates over asyncpg.
 """
 
 import asyncio
+import logging
 from logging.config import fileConfig
 
 from sqlalchemy.engine import Connection
@@ -19,13 +20,12 @@ from craftainer_tool_crud.models.base import Base
 
 config = context.config
 
-if config.config_file_name is not None:
-    # disable_existing_loggers=False: fileConfig's default (True) disables every
-    # already-instantiated logger not declared in alembic.ini's own [loggers] section
-    # -- since app.main's lifespan runs migrations before serving any request, that
-    # would permanently silence every app.* logger (app.oidc, app.problem_details,
-    # craftainer_tool_crud.controllers.crud_actions, ...) for the rest of the process on every real
-    # startup, not just in a test.
+# Configure alembic's own logging only when running standalone (`alembic upgrade` from
+# the CLI), where the root logger has no handlers yet. Invoked from the app (lifespan
+# migrations) the root logger already carries the JSON/OTLP handlers from
+# `configure_logging()`, and `fileConfig` would replace them with alembic.ini's stderr
+# handler. `disable_existing_loggers=False` keeps already-created app.* loggers enabled.
+if config.config_file_name is not None and not logging.getLogger().handlers:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
