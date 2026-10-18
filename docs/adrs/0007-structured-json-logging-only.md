@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. Its "no tracing or metrics" scope limit is superseded by
+[0021](0021-opentelemetry-traces-and-metrics-pushed-over-otlp.md); the
+JSON-logging and OTEL-environment-variable decisions stand.
 
 ## Context
 

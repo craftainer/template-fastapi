@@ -1,5 +1,9 @@
 # NFR-0023. Limit observability scope to logs only
 
+## Status
+
+Superseded by [NFR-0025](NFR-0025-observability-scope-logs-traces-and-metrics.md)
+
 ## Attribute
 
 Scope constraint / observability.
