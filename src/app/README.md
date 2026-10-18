@@ -46,6 +46,12 @@ beyond what it's explicitly passed or reads from `app.config`.
 - `rate_limit.py` — the Redis-backed `slowapi` limiter applied to
   `POST /mock/token` and each resource's bulk update/delete routes; see
   "Rate limiting" below.
+- `cache.py` — `RedisStatsCache`/`InMemoryStatsCache` (the latter under `MODE=mock`),
+  implementations of `craftainer_tool_crud.interfaces.cache.StatsCache` for the shared
+  `/stats`/`/predict` cache; `build_stats_cache(settings)` (None unless
+  `STATS_CACHE_TTL_SECONDS` is set); and `run_invalidation(cache, source, *, resource,
+  ...)`, the per-replica task that empties a resource's entries on every CRUD event.
+  See "Stats cache" below.
 - `http_headers.py` — the `Sunset`/`Deprecation` header dependency and
   the baseline security-headers middleware; see "Sunset/Deprecation
   headers" below.
@@ -151,6 +157,26 @@ keep the NullPool, no-TLS, no-timeout behavior):
 | `DB_CONNECT_TIMEOUT` | unset (asyncpg default) | asyncpg `timeout`: connect timeout in seconds, > 0. |
 | `DB_COMMAND_TIMEOUT` | unset (asyncpg default) | asyncpg `command_timeout`: per-command timeout in seconds, > 0. |
 | `RUN_MIGRATIONS_ON_STARTUP` | `true` | Whether the api runs Alembic migrations on startup. |
+
+## Stats cache
+
+`GET <prefix>/stats` and `/predict` are whole-table aggregates, not per-user data, so
+they are the only responses cached server-side (per-record and list responses are not:
+heroes are owner-scoped, see ADR-0011). Off unless set:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `STATS_CACHE_TTL_SECONDS` | unset (cache off) | Lifetime in seconds of a cached `/stats`/`/predict` body, integer > 0. Also the staleness bound if an invalidation event is missed. |
+
+`app.cache.build_stats_cache(settings)` returns the cache (Redis over `REDIS_URL`, so
+`rediss://` TLS works as for rate limiting; in-process under `MODE=mock`), which is
+passed to the router factories as `stats_cache=`. Redis keys are
+`stats-cache:<APP_VERSION>:<resource>:<hash>`; the version keeps a canary release's
+differently-shaped responses apart. Writes publish CRUD events (ADR-0015); each replica
+runs `app.cache.run_invalidation(cache, event_source, resource=..., subscriber_id=...)`
+as a lifespan background task, which empties the resource's entries on every event (and
+once per (re)subscribe). A read racing a write can still store a stale body, so the TTL
+stays the safety net. A Redis outage degrades to uncached responses.
 
 ## Alembic migrations
 

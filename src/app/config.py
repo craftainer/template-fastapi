@@ -113,6 +113,11 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    # app.cache: how long a cached /stats or /predict response lives, in seconds. None
+    # (the default, env STATS_CACHE_TTL_SECONDS unset) turns the shared cache off. Writes
+    # invalidate it through the CRUD event stream; this TTL is the safety net.
+    stats_cache_ttl_seconds: int | None = Field(default=None, gt=0)
+
     # craftainer_tool_crud.interfaces.dependency.build_event_sink_provider/
     # build_event_source_provider's real (non-MODE=mock) backend -- see .devcontainer/stack/mqtt/.
     # mqtt_keepalive_seconds is the aiomqtt.Client keepalive passed to both
