@@ -219,6 +219,10 @@ services:
       # verify-full: asyncpg only verifies against a separately supplied CA
       # file, which no setting provides yet.
       POSTGRES_SSLMODE: require
+      # Pooled connections reuse asyncpg's prepared statements; see
+      # docs/plans/2026-10-packages-performance-observability.md Phase 3 (and the
+      # future pooling ADR). The app default stays `null`.
+      DB_POOL_MODE: local
       # OTel service.name, read by craftainer_tool_observability.logs's
       # Resource.create() (OTEL_SERVICE_NAME is OTel's own env var).
       OTEL_SERVICE_NAME: template-fastapi
