@@ -238,3 +238,11 @@ def test_mock_mode_with_allow_mock_mode_succeeds() -> None:
     """Settings(mode="mock", allow_mock_mode=True) constructs without error."""
     settings = Settings(mode="mock", allow_mock_mode=True)
     assert settings.mode == "mock"
+
+
+def test_stats_cache_ttl_is_off_by_default_and_accepts_positive_seconds() -> None:
+    """STATS_CACHE_TTL_SECONDS unset disables the shared stats cache; it must be positive."""
+    assert Settings().stats_cache_ttl_seconds is None
+    assert Settings(stats_cache_ttl_seconds=30).stats_cache_ttl_seconds == 30
+    with pytest.raises(ValidationError, match="stats_cache_ttl_seconds"):
+        Settings(stats_cache_ttl_seconds=0)
