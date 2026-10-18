@@ -9,14 +9,14 @@ This file belongs to the plan and is deleted with it.
 
 ## Checklist
 
-- [ ] 1. Merge PR #35 (plan update)
-- [ ] 2. Rebuild the devcontainer
-- [ ] 3. PyPI and TestPyPI: pending trusted publishers
-- [ ] 4. Org secret `TEMPLATE_SYNC_TOKEN`
-- [ ] 5. Org apps and rulesets (Renovate, CodSpeed, branch ruleset)
-- [ ] 6. GitHub CLI: merge the base PR, sync, rebuild, log in
-- [ ] 7. Power settings
-- [ ] 8. Start a fresh session and kick off
+- [x] 1. Merge PR #35 (plan update)
+- [x] 2. Rebuild the devcontainer
+- [x] 3. PyPI and TestPyPI: pending trusted publishers
+- [x] 4. Org secret `TEMPLATE_SYNC_TOKEN`
+- [x] 5. Org apps and rulesets (Renovate, CodSpeed, branch ruleset)
+- [x] 6. GitHub CLI: merge the base PR, sync, rebuild, log in
+- [x] 7. Power settings
+- [x] 8. Start a fresh session and kick off
 
 ---
 
@@ -128,26 +128,15 @@ repositories.
 
 **Check:** CodSpeed's dashboard lists the `craftainer` organization.
 
-### 5c. Branch ruleset for the new repos
+### 5c. Branch and tag rulesets for the new repos
 
-Mirrors `template-fastapi`'s own ruleset, so every new repo is protected
-from its first commit.
-
-<https://github.com/organizations/craftainer/settings/rules> → **New
-ruleset → New branch ruleset**:
-
-| Setting | Value |
-| --- | --- |
-| Name | `default-branch` |
-| Enforcement | Active |
-| Target repositories | By name: `tool-*` and `template-python-package` (or all repositories) |
-| Target branches | Include default branch |
-| Restrict deletions | ✓ |
-| Block force pushes | ✓ |
-| Require a pull request before merging | ✓, allowed merge method: **Squash** |
-| Require status checks to pass | ✓, add `prek (amd64, ubuntu-24.04)` and `prek (arm64, ubuntu-24.04-arm)`, the exact check names `checks.yml` reports (copied from `template-fastapi`'s `main`) |
-
-**Check:** the ruleset shows as *Active* with the targets above.
+Org rulesets aren't enforced on GitHub Free. The orchestrator instead
+copies `template-fastapi`'s two repo-level rulesets ("Disallow direct
+push to main", "Disallow tags except me") onto each new repo itself
+(Decision log, 2026-10-18). The only thing for you to do: delete the
+disabled `default-branch` org ruleset at
+<https://github.com/organizations/craftainer/settings/rules>, so it
+doesn't look like protection is in place.
 
 ## 6. GitHub CLI: merge the base PR, sync, rebuild, log in
 
