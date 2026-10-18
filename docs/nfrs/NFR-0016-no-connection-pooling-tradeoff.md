@@ -1,5 +1,9 @@
 # NFR-0016. Accept no async connection pooling as a documented trade-off
 
+## Status
+
+Superseded by [NFR-0026](NFR-0026-connection-pooling-per-deployment.md)
+
 ## Attribute
 
 Performance / architecture constraint.

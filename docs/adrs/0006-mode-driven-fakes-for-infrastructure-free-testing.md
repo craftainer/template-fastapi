@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. Its "unconditionally" part (the pool class) is superseded by
+[0022](0022-db-pool-mode-per-deployment.md); the mode-driven fakes and the
+event-loop rationale for the default `null` pool stand.
 
 ## Context
 
