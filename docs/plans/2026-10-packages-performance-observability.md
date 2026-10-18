@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress (kickoff 2026-10-17, G0 granted; pre-flight steps 3–5 still with the user). Baseline commit: `07154b9` (full check suite green). Integration branch: `integration/packages-perf-observability`. Wave 0: W0a done in pre-flight; W0 merged and verified (`b39c026`). Wave 1 in progress.
+In progress (kickoff 2026-10-17, G0 granted; pre-flight complete 2026-10-18). Baseline commit: `07154b9` (full check suite green). Integration branch: `integration/packages-perf-observability`. Wave 0: W0a done in pre-flight; W0 merged and verified (`b39c026`). Wave 1 in progress.
 
 **Progress (2026-10-17, second orchestrator session):**
 
@@ -142,8 +142,10 @@ execution needs only the remaining gates below.
    covered with no per-repo step: Renovate, and CodSpeed (plus a
    `CODSPEED_TOKEN` org secret if CodSpeed requires one for public
    repos).
-4. **Org rulesets** (branch protection on `main`, required checks) at
-   org level, so they apply to new repos automatically.
+4. **Rulesets:** org rulesets can't be enforced on the Free plan, so
+   each new repo gets repo-level copies of `template-fastapi`'s two
+   rulesets, applied by the orchestrator (item 10, Decision log
+   2026-10-18).
 
 **Template-base (user merges, or delegates below):**
 
@@ -176,7 +178,9 @@ execution needs only the remaining gates below.
       and `craftainer/tool-observability`;
     - push branches and open PRs in those repos, in template-base, and
       here;
-    - trigger template-base's `release.yml`.
+    - trigger template-base's `release.yml`;
+    - copy `template-fastapi`'s rulesets onto the three new repos
+      (Decision log 2026-10-18).
 
     The user approves and merges every PR. Nothing is published to
     PyPI or TestPyPI by hand: packages ship only through each repo's
@@ -446,7 +450,9 @@ use the pre-rename names (`src/crud/...`).
 `craftainer/tool-crud` and `craftainer/tool-observability` are created from
 `template-python-package`. Use `git filter-repo` limited to each
 package's paths to keep their history. `crud`'s repo adds Postgres
-through `compose.instance.yml`, for its integration tests. Release
+through `compose.instance.yml`, for its integration tests. Apply the
+copied rulesets once the history import is on `main`, before any other
+PR merges (Decision log 2026-10-18). Release
 `0.1.0` of each: TestPyPI first, then PyPI. Version as SemVer, staying
 in `0.x` until the public API settles.
 
@@ -1060,3 +1066,4 @@ orchestrator appends to this list as it resolves escalations.
 | 2026-10-18 | Wave 2 batch C merged: X2 `04229d8`, C1 `fad2dee`, M1 `6c3bc8b`, plus orchestrator fix `0effb83`. C1's `If-Match` lookup used `include_archived=True`, so a PATCH on a record archived by DELETE answered 412 instead of the write's 404 (the e2e journey caught it on the Postgres legs); the precondition now uses the write's own `?include_archived`/`?include_unpublished` visibility. **First fully green suite since O1, e2e at 100% included.** Production smoke: docs routes 404, `/health/info` 404 (off by default), `X-Request-ID` echoed, pooled connection on TLS, clean lifespan shutdown, 0 tracebacks; log lines are still plain text, the alembic bug A7 fixes. Follow-ups: public `read_scope` property on CRUD interfaces (C2); `docs/system-design.md` and `src/README.md` should mention the `cache` layer and M1's wiring. |
 | 2026-10-18 | A7 merged and verified (`3b28bc5`): `alembic/env.py` runs `fileConfig` only when the root logger has no handlers, and `configure_logging()` routes uvicorn's loggers (which uvicorn gives their own plain handlers with `propagate=False`) to the root JSON handler. Production smoke shows 0 non-JSON log lines. Side effect for benchmarks: the access log is now JSON-formatted per request; R1's `UVICORN_ACCESS_LOG` toggle measures that cost. |
 | 2026-10-18 | L1 measurement program (orchestrator decision): (1) re-baseline `07154b9` with exact cgroup CPU (fixed load, 3 runs); (2) HEAD image with baseline-equivalent env (`DB_POOL_MODE=null`), measuring all code changes combined; (3) single-variable env A/Bs on the HEAD image: `DB_POOL_MODE=local`, `UVICORN_ACCESS_LOG=false`, `GC_FREEZE=false`, `APP_SERVER=granian`. Per-merge images (F1/F2/F3/R2 one at a time) only if (2) is not better than (1). The acceptance rule is the 2026-10-18 one (CPU-ms/request beyond the spread and ≥ 3%; p99 as a guard; capacity as a coarse gate, checked for the kept variants). |
+| 2026-10-18 | Pre-flight complete. Org rulesets aren't enforced on the Free plan (the org ruleset the user created shows as disabled; the user deletes it). Instead the orchestrator copies `template-fastapi`'s two repo-level rulesets exactly (`gh api repos/craftainer/template-fastapi/rulesets/<id>` → `POST repos/craftainer/<repo>/rulesets`, dropping `id`/`source`/timestamps): "Disallow direct push to main" (default branch: no deletion or force push; PR required, squash only, 1 approval, last-push approval, threads resolved, stale reviews dismissed; bypass: org admins and Renovate, app 2740) and "Disallow tags except me" (all tags: no deletion, update or force push). No required status checks are added. Timing: `template-python-package` right after it's created; `tool-crud`/`tool-observability` right after A5's `git filter-repo` history lands on `main` (squash-only would flatten it), before any other PR merges there. `TEMPLATE_SYNC_TOKEN` is visible to all public repos (the Free plan's widest), so all three new repos must stay public. |
