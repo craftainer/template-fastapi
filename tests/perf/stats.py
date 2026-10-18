@@ -1,4 +1,4 @@
-"""Sample a container's CPU and memory with ``docker stats`` during a load run.
+"""Sample a container's CPU and memory from its cgroup files during a load run.
 
 Usage::
 
@@ -8,16 +8,24 @@ Usage::
 Runs until SIGINT/SIGTERM (or ``--duration`` seconds), then writes one JSON
 file: ``{"container", "interval_s", "samples": [{"t", "cpu_percent",
 "mem_bytes", "cpu_t", "cpu_usage_usec"}], "summary": {"cpu_percent":
-{"mean", "p95", "max"}, "mem_bytes": {"mean", "max"}, "cpu_seconds_total",
-"window_s"}}``.
+{"mean", "p95", "max"}, "mem_bytes": {"mean", "max"}, "mem_peak_bytes",
+"cpu_seconds_total", "window_s"}}``.
 
-``cpu_usage_usec`` is the container cgroup's cumulative ``usage_usec`` (read
-with ``docker exec <c> cat /sys/fs/cgroup/cpu.stat``) taken at ``cpu_t``, so
-CPU-seconds between two instants is exact, unlike averaging ``cpu_percent``.
-``summary.cpu_seconds_total`` is last minus first, ``summary.window_s`` the
-matching ``cpu_t`` span. Both are ``null`` if cpu.stat is unreadable (the
-samples then lack ``cpu_usage_usec``). ``--since`` / ``--until`` (unix
-timestamps) restrict the summary to samples inside that window.
+No docker call is made while sampling: ``docker inspect`` runs once at start
+to resolve the full container id, then the container's cgroup v2 directory
+(``/sys/fs/cgroup/docker/<id>`` or the systemd ``system.slice/docker-<id>.scope``)
+is read directly. ``docker exec``/``docker stats`` every interval froze small
+hosts under load. The caller (devcontainer or runner) must be able to see the
+container's cgroup; otherwise it fails at start.
+
+``cpu_usage_usec`` is the cgroup's cumulative ``cpu.stat`` ``usage_usec``
+taken at ``cpu_t``; ``cpu_percent`` is its delta over wall time (100 = one
+CPU), ``mem_bytes`` is ``memory.current``. ``summary.cpu_seconds_total`` is
+last minus first ``cpu_usage_usec``, ``summary.window_s`` the matching
+``cpu_t`` span (both ``null`` with under two samples). ``summary.mem_peak_bytes``
+is ``memory.peak`` at the end (``null`` if the kernel lacks it).
+``--since`` / ``--until`` (unix timestamps) restrict the summary to samples
+inside that window.
 """
 
 from __future__ import annotations
@@ -25,46 +33,16 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import FrameType
 from typing import Any
 
-_UNITS: dict[str, int] = {
-    "b": 1,
-    "kb": 1000,
-    "mb": 1000**2,
-    "gb": 1000**3,
-    "tb": 1000**4,
-    "kib": 1024,
-    "mib": 1024**2,
-    "gib": 1024**3,
-    "tib": 1024**4,
-}
-_SIZE_RE = re.compile(r"^\s*([0-9]*\.?[0-9]+)\s*([A-Za-z]+)\s*$")
-
-
-def parse_size(text: str) -> int:
-    """Parse docker's human size (e.g. ``512.3MiB``, ``1.5GB``) into bytes."""
-    match = _SIZE_RE.match(text)
-    if match is None or match.group(2).lower() not in _UNITS:
-        raise ValueError(f"unrecognised size: {text!r}")
-    return int(float(match.group(1)) * _UNITS[match.group(2).lower()])
-
-
-def parse_stats_line(line: str, now: float) -> dict[str, float | int]:
-    """Turn one ``docker stats --format '{{json .}}'`` object into a sample."""
-    row: dict[str, Any] = json.loads(line)
-    used = str(row["MemUsage"]).split("/", 1)[0]
-    return {
-        "t": now,
-        "cpu_percent": float(str(row["CPUPerc"]).strip().rstrip("%")),
-        "mem_bytes": parse_size(used),
-    }
+CGROUP_ROOT = Path("/sys/fs/cgroup")
 
 
 def percentile(values: list[float], pct: float) -> float:
@@ -80,6 +58,7 @@ def summarize(
     samples: list[dict[str, float | int]],
     since: float | None = None,
     until: float | None = None,
+    mem_peak_bytes: int | None = None,
 ) -> dict[str, Any]:
     """Aggregate samples into the ``summary`` block."""
     cpu = [float(s["cpu_percent"]) for s in samples]
@@ -95,6 +74,7 @@ def summarize(
             "mean": sum(mem) / len(mem) if mem else 0.0,
             "max": max(mem, default=0),
         },
+        "mem_peak_bytes": mem_peak_bytes,
         "cpu_seconds_total": window[0] if window else None,
         "window_s": window[1] if window else None,
     }
@@ -109,15 +89,36 @@ def parse_cpu_stat(text: str) -> int:
     raise ValueError("no usage_usec in cpu.stat")
 
 
-def read_cpu_usage_usec(container: str) -> int:
-    """Read the container cgroup's cumulative CPU time in microseconds."""
+def resolve_container_id(container: str) -> str:
+    """Resolve a container name or id to its full id (the only docker call)."""
     out = subprocess.run(  # noqa: S603 -- fixed docker argv, container is the operator's own CLI arg
-        ["docker", "exec", container, "cat", "/sys/fs/cgroup/cpu.stat"],  # noqa: S607 -- docker from PATH, as in the devcontainer
+        ["docker", "inspect", "--format", "{{.Id}}", container],  # noqa: S607 -- docker from PATH, as in the devcontainer
         check=True,
         capture_output=True,
         text=True,
     ).stdout
-    return parse_cpu_stat(out)
+    return out.strip()
+
+
+def find_cgroup_dir(container_id: str, root: Path = CGROUP_ROOT) -> Path:
+    """Locate the container's cgroup v2 directory; raise ``FileNotFoundError``."""
+    candidates = [
+        root / "docker" / container_id,
+        root / "system.slice" / f"docker-{container_id}.scope",
+    ]
+    for path in candidates:
+        if (path / "cpu.stat").is_file():
+            return path
+    tried = ", ".join(str(p) for p in candidates)
+    raise FileNotFoundError(f"no cgroup v2 directory for container {container_id} (tried {tried})")
+
+
+def read_int(path: Path) -> int | None:
+    """Read a single-integer cgroup file; ``None`` if absent or ``max``/unparsable."""
+    try:
+        return int(path.read_text().strip())
+    except OSError, ValueError:
+        return None
 
 
 def cpu_seconds_between(
@@ -146,29 +147,31 @@ def cpu_seconds_between(
     )
 
 
-def sample_once(container: str) -> dict[str, float | int]:
-    """Take one ``docker stats --no-stream`` reading plus exact cgroup CPU time."""
-    out = subprocess.run(  # noqa: S603 -- fixed docker argv, container is the operator's own CLI arg
-        ["docker", "stats", "--no-stream", "--format", "{{json .}}", container],  # noqa: S607 -- docker from PATH, as in the devcontainer
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    sample = parse_stats_line(out.strip().splitlines()[0], time.time())
-    try:
-        usage = read_cpu_usage_usec(container)
-    except (subprocess.CalledProcessError, ValueError) as exc:
-        print(f"cpu.stat unreadable, no exact CPU time: {exc}", file=sys.stderr)
-        return sample
-    sample["cpu_t"] = time.time()
-    sample["cpu_usage_usec"] = usage
-    return sample
+def sample_once(
+    cgroup: Path, prev: tuple[float, int]
+) -> tuple[dict[str, float | int], tuple[float, int]]:
+    """Read ``cpu.stat`` and ``memory.current``; ``prev`` is ``(time, usage_usec)``."""
+    usage = parse_cpu_stat((cgroup / "cpu.stat").read_text())
+    now = time.time()
+    mem = read_int(cgroup / "memory.current")
+    elapsed = now - prev[0]
+    percent = (usage - prev[1]) / 1e6 / elapsed * 100 if elapsed > 0 else 0.0
+    sample: dict[str, float | int] = {
+        "t": now,
+        "cpu_percent": percent,
+        "mem_bytes": mem if mem is not None else 0,
+        "cpu_t": now,
+        "cpu_usage_usec": usage,
+    }
+    return sample, (now, usage)
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else None)
-    parser.add_argument("--container", required=True, help="container name or id")
+    parser.add_argument(
+        "--container", required=True, help="container name or id (resolved once via docker inspect)"
+    )
     parser.add_argument("--interval", type=float, default=2.0, help="seconds between samples")
     parser.add_argument("--out", required=True, type=Path, help="output JSON path")
     parser.add_argument("--duration", type=float, default=None, help="stop after N seconds")
@@ -180,30 +183,40 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Sample until stopped, then write the JSON file; return the exit code."""
     args = build_parser().parse_args(argv)
-    stop = False
+    stop = threading.Event()
 
     def _stop(_signum: int, _frame: FrameType | None) -> None:
-        nonlocal stop
-        stop = True
+        stop.set()
 
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
+    try:
+        container_id = resolve_container_id(args.container)
+        cgroup = find_cgroup_dir(container_id)
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else exc
+        print(f"cannot resolve container cgroup: {detail}", file=sys.stderr)
+        return 1
+
     samples: list[dict[str, float | int]] = []
+    prev = (time.time(), parse_cpu_stat((cgroup / "cpu.stat").read_text()))
     started = time.monotonic()
-    while not stop:
-        # `docker stats --no-stream` itself takes ~1-2 s, so sleep only the rest.
-        tick = time.monotonic()
+    while not stop.is_set():
+        deadline = time.monotonic() + args.interval
+        while not stop.is_set() and time.monotonic() < deadline:
+            time.sleep(max(0.0, min(0.2, deadline - time.monotonic())))
+        if stop.is_set():
+            break
         try:
-            samples.append(sample_once(args.container))
-        except subprocess.CalledProcessError as exc:
-            print(f"docker stats failed: {exc.stderr.strip()}", file=sys.stderr)
+            sample, prev = sample_once(cgroup, prev)
+        except (OSError, ValueError) as exc:
+            print(f"cgroup read failed: {exc}", file=sys.stderr)
             return 1
+        samples.append(sample)
         if args.duration is not None and time.monotonic() - started >= args.duration:
             break
-        deadline = tick + args.interval
-        while not stop and time.monotonic() < deadline:
-            time.sleep(max(0.0, min(0.2, deadline - time.monotonic())))
+    mem_peak = read_int(cgroup / "memory.peak")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
@@ -212,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
                 "container": args.container,
                 "interval_s": args.interval,
                 "samples": samples,
-                "summary": summarize(samples, args.since, args.until),
+                "summary": summarize(samples, args.since, args.until, mem_peak),
             },
             indent=2,
         )

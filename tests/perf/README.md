@@ -216,24 +216,30 @@ in both modes, when the run quits (not written by distributed workers):
   `cpus: "1"` / `mem_limit: 2g` (the reference budget capacity numbers refer
   to) and grants it `SYS_PTRACE`; backing services stay uncapped. Layer it
   with `docker compose -f compose.yml -f compose.perf.yml up -d --build --wait`.
-- `stats.py` samples a container's CPU and RSS via `docker stats --no-stream`
-  while a run is in progress, then writes a JSON file with the samples and a
-  summary (mean/p95/max CPU, mean/max memory) when stopped:
+- `stats.py` samples a container's CPU and memory while a run is in
+  progress, then writes a JSON file with the samples and a summary
+  (mean/p95/max CPU, mean/max memory, `mem_peak_bytes`) when stopped:
 
   ```bash
   uv run python tests/perf/stats.py --container <api-container> \
       --interval 2 --out tests/perf/.results/stats.json &   # SIGINT/SIGTERM or --duration ends it
   ```
-- Each sample also carries `cpu_usage_usec`, the container cgroup v2
-  `cpu.stat` cumulative CPU time (read via `docker exec <c> cat
-  /sys/fs/cgroup/cpu.stat`, taken at `cpu_t`), and `summary` gains
-  `cpu_seconds_total` (last minus first) and `window_s`. This is exact, unlike
-  the mean of `cpu_percent` samples, so use it for the fixed-load metric:
+- It makes no docker calls while sampling: one `docker inspect` at start
+  resolves the full container id, then it reads the container's cgroup v2
+  files directly (`/sys/fs/cgroup/docker/<id>/`, or the systemd layout
+  `system.slice/docker-<id>.scope/`): `cpu.stat` and `memory.current` per
+  sample, `memory.peak` once at the end. It exits 1 at start if the cgroup
+  directory isn't visible. Do not go back to `docker exec`/`docker stats`
+  here: calling them every interval froze small (8 GB) hosts during load runs.
+- Each sample carries `cpu_usage_usec`, the cgroup's cumulative `usage_usec`
+  taken at `cpu_t`; `cpu_percent` is its delta over wall time (100 = one CPU)
+  and `mem_bytes` is `memory.current`. `summary` has `cpu_seconds_total` (last
+  minus first `cpu_usage_usec`) and `window_s`. This is exact, unlike the mean
+  of `cpu_percent` samples, so use it for the fixed-load metric:
   CPU-ms/request = cpu_seconds in window x 1000 / requests in window. To
   restrict to the load window, pass `--since <unix-ts> --until <unix-ts>`, or
   call `cpu_seconds_between(samples, since, until)` from `stats.py` on the
-  saved samples (returns `(cpu_seconds, window_s)`). If `cpu.stat` can't be
-  read, the fields are absent/`null` and the rest still works.
+  saved samples (returns `(cpu_seconds, window_s)`).
 - `profile.sh [-d SECONDS] [-c CONTAINER]` records a py-spy speedscope
   profile of the server (PID 1 in the container) into `.results/`. The runner
   image has no py-spy and must not gain one, so the script copies the dev
