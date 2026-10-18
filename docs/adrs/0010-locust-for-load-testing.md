@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. Its "manual or weekly only, no per-PR performance signal" part is
+superseded by [0019](0019-per-pr-benchmarks-and-fixed-load-acceptance.md);
+the rest stands.
 
 ## Context
 
