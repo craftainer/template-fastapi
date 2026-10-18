@@ -36,6 +36,7 @@ import math
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import FrameType
@@ -182,11 +183,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Sample until stopped, then write the JSON file; return the exit code."""
     args = build_parser().parse_args(argv)
-    stop = False
+    stop = threading.Event()
 
     def _stop(_signum: int, _frame: FrameType | None) -> None:
-        nonlocal stop
-        stop = True
+        stop.set()
 
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
@@ -202,11 +202,11 @@ def main(argv: list[str] | None = None) -> int:
     samples: list[dict[str, float | int]] = []
     prev = (time.time(), parse_cpu_stat((cgroup / "cpu.stat").read_text()))
     started = time.monotonic()
-    while not stop:
+    while not stop.is_set():
         deadline = time.monotonic() + args.interval
-        while not stop and time.monotonic() < deadline:
+        while not stop.is_set() and time.monotonic() < deadline:
             time.sleep(max(0.0, min(0.2, deadline - time.monotonic())))
-        if stop:
+        if stop.is_set():
             break
         try:
             sample, prev = sample_once(cgroup, prev)
