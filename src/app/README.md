@@ -43,7 +43,7 @@ beyond what it's explicitly passed or reads from `app.config`.
 - `oidc.py` — provider-agnostic OIDC bearer-token validation (PKCE-
   compatible; not Keycloak-specific); see "OIDC / auth" below.
 - `problem_details.py` — RFC 9457 error responses; see below.
-- `rate_limit.py` — the Redis-backed `slowapi` limiter applied to
+- `rate_limit.py` — the Redis-backed async limiter applied to
   `POST /mock/token` and each resource's bulk update/delete routes; see
   "Rate limiting" below.
 - `http_headers.py` — the `Sunset`/`Deprecation` header dependency and
@@ -329,25 +329,25 @@ tags), applied by the same middleware based on request path.
 
 ## Rate limiting
 
-`rate_limit.py`'s `limiter` (a `slowapi.Limiter`, backed by this app's
-Redis service — `Settings.redis_url`, shared across worker processes)
-is applied per-route via `@limiter.limit(...)`, not as global
-middleware: `app.controllers.mock`'s `POST /mock/token`
-(`Settings.rate_limit_mock_token`, default `10/minute`) and every
-resource's generated bulk update/delete routes
-(`Settings.rate_limit_bulk_action`, default `20/minute`, exempted for a
-single-record `?id=` request via `exempt_single_record_action`) — see
-`rate_limit.py`'s own module docstring for why this stays per-route
-instead of `slowapi.middleware.SlowAPIMiddleware` (a
-`BaseHTTPMiddleware`, which `_SecurityHeadersMiddleware`'s own docstring
-above documents as unsafe for this app). `slowapi.errors.
-RateLimitExceeded` is itself an `HTTPException` subclass (`429`), so
-`problem_details.py`'s existing handler renders it as a normal RFC 9457
-body with no separate wiring. `tests/e2e/conftest.py` raises both limits
-generously for its own live process, since one e2e run's cumulative
+`rate_limit.py`'s `limiter` (an `AsyncLimiter`: `limits`' async fixed-window
+strategy over this app's Redis service, `Settings.redis_url`, through
+redis-py's asyncio client, so the check is awaited instead of blocking the
+event loop, and is shared across worker processes) is applied per-route via
+`@limiter.limit(...)`, not as global middleware: `app.controllers.mock`'s
+`POST /mock/token` (`Settings.rate_limit_mock_token`, default `10/minute`)
+and every resource's generated bulk update/delete/restore routes
+(`Settings.rate_limit_bulk_action`, default `20/minute`, keyed per client
+address, single-record `?id=` requests included). See `rate_limit.py`'s own
+module docstring for why this stays per-route instead of a
+`BaseHTTPMiddleware` (`_SecurityHeadersMiddleware`'s own docstring above
+documents that as unsafe for this app). A limit miss raises
+`slowapi.errors.RateLimitExceeded`, itself an `HTTPException` subclass
+(`429`), so `problem_details.py`'s existing handler renders it as a normal
+RFC 9457 body with no separate wiring. `tests/e2e/conftest.py` raises both
+limits generously for its own live process, since one e2e run's cumulative
 login/bulk-action traffic would otherwise trip the production defaults
-itself — `tests/unit/test_rate_limit.py` verifies the actual enforcement
-against a throwaway `Limiter` instead.
+itself; `tests/unit/test_rate_limit.py` verifies the actual enforcement
+against a throwaway `AsyncLimiter` on in-memory storage instead.
 
 ## Example CRUD resource: Hero
 
