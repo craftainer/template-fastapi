@@ -138,18 +138,18 @@ know a specific provider's URL scheme. Fixed in-network hostnames/ports
 are not credentials and stay as plain literals in the consuming compose
 file (e.g. `myapp`'s `POSTGRES_HOST: postgres`), not in an env file.
 
-Database connection settings (none are consumed yet; defaults keep
-today's behavior):
+Database connection settings (`app.db.build_engine` consumes them; defaults
+keep the NullPool, no-TLS, no-timeout behavior):
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `POSTGRES_SSLMODE` | unset (no TLS) | libpq sslmode: `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. Must be `require`, `verify-ca` or `verify-full` under `MODE=production`. |
-| `DB_POOL_MODE` | `null` | `null`, `local` or `external` connection pooling. |
-| `DB_POOL_SIZE` | unset (SQLAlchemy default) | Pool size, integer >= 0. |
-| `DB_MAX_OVERFLOW` | unset (SQLAlchemy default) | Extra connections beyond the pool size, integer >= 0. |
-| `DB_POOL_RECYCLE` | unset (SQLAlchemy default) | Seconds before a pooled connection is recycled, integer >= 0. |
-| `DB_CONNECT_TIMEOUT` | unset (asyncpg default) | Connect timeout in seconds, > 0. |
-| `DB_COMMAND_TIMEOUT` | unset (asyncpg default) | Per-command timeout in seconds, > 0. |
+| `POSTGRES_SSLMODE` | unset (no TLS) | libpq sslmode: `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`, passed to asyncpg's `ssl`. Must be `require`, `verify-ca` or `verify-full` under `MODE=production`. |
+| `DB_POOL_MODE` | `null` | `null`: NullPool, a connection per use (default and test mode). `local`: in-process `AsyncAdaptedQueuePool` with `pool_pre_ping`; the root `compose.yml` api uses it. `external`: NullPool plus unique prepared-statement names, for PgBouncer in transaction mode. |
+| `DB_POOL_SIZE` | unset (SQLAlchemy default) | `local` mode pool size, integer >= 0. |
+| `DB_MAX_OVERFLOW` | unset (SQLAlchemy default) | `local` mode: extra connections beyond the pool size, integer >= 0. |
+| `DB_POOL_RECYCLE` | unset (SQLAlchemy default) | `local` mode: seconds before a pooled connection is recycled, integer >= 0. |
+| `DB_CONNECT_TIMEOUT` | unset (asyncpg default) | asyncpg `timeout`: connect timeout in seconds, > 0. |
+| `DB_COMMAND_TIMEOUT` | unset (asyncpg default) | asyncpg `command_timeout`: per-command timeout in seconds, > 0. |
 | `RUN_MIGRATIONS_ON_STARTUP` | `true` | Whether the api runs Alembic migrations on startup. |
 
 ## Alembic migrations
