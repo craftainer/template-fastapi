@@ -62,12 +62,13 @@ class AsyncLimiter:
     ) -> None:
         """Open the async storage for `storage_uri` and key hits with `key_func`."""
         # Sync `redis://` / `rediss://` URIs get the matching async backend.
-        if not storage_uri.startswith("async+"):
-            storage_uri = f"async+{storage_uri}"
+        storage_uri = "async+" + storage_uri.removeprefix("async+")
         # `redis-py` (already a dependency) rather than limits' default `coredis`.
         options: dict[str, Any] = {"implementation": "redispy"} if "redis" in storage_uri else {}
         storage = storage_from_string(storage_uri, **options)
-        if not isinstance(storage, Storage):
+        # `# pragma: no cover` (here and on the other defensive checks below): a
+        # misconfiguration guard tests/e2e can never trigger; tests/unit/test_rate_limit.py does.
+        if not isinstance(storage, Storage):  # pragma: no cover
             msg = f"{storage_uri!r} did not resolve to an async limits storage"
             raise TypeError(msg)
         self._strategy = FixedWindowRateLimiter(storage)
@@ -79,7 +80,7 @@ class AsyncLimiter:
         item = parse(rate)
 
         def decorator(func: Callable[..., Awaitable[object]]) -> Callable[..., Any]:
-            if not inspect.iscoroutinefunction(func):
+            if not inspect.iscoroutinefunction(func):  # pragma: no cover
                 msg = f"{func!r} must be an async function to be rate limited"
                 raise TypeError(msg)
             scope = f"{func.__module__}.{func.__name__}"
@@ -87,7 +88,8 @@ class AsyncLimiter:
 
             @functools.wraps(func)
             async def wrapper(*args: object, **kwargs: object) -> object:
-                if self.enabled:
+                # `# pragma: no branch`: `enabled = False` is a test-only switch (unit tests).
+                if self.enabled:  # pragma: no branch
                     request = (
                         kwargs["request"]
                         if "request" in kwargs
@@ -95,7 +97,7 @@ class AsyncLimiter:
                         if len(args) > request_index
                         else None
                     )
-                    if not isinstance(request, Request):
+                    if not isinstance(request, Request):  # pragma: no cover
                         msg = (
                             "parameter `request` must be an instance of starlette.requests.Request"
                         )

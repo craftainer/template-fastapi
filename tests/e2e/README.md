@@ -8,10 +8,33 @@ driving Chromium remotely in the `selenium` stack container over CDP
 `pyproject.toml`'s pytest `addopts`, which ignores this directory by
 default; run it explicitly with `uv run pytest tests/e2e`).
 
-The whole suite runs twice per session, parametrized over the
-session-scoped `app_mode` fixture (`conftest.py`, `params=["dev",
-"mock"]`): once against the live `myapp` service under `MODE=dev`
-(`:8000`), once against a second `uvicorn` process under `MODE=mock`
+The whole suite runs three times per session, parametrized over the
+session-scoped `app_leg` fixture (`conftest.py`, `params=["dev", "mock",
+"bare"]`; `app_mode` derives `dev`/`mock` from it). The legs differ in which optional
+features their `uvicorn` process runs with (`_LEG_ENV` in `conftest.py`), so that every
+feature's enabled and disabled code paths execute in some leg and the combined
+coverage reaches 100%:
+
+- `dev` (`:8000`, `MODE=dev`): a local connection pool with explicit sizes, TLS
+  negotiation (`POSTGRES_SSLMODE=prefer`), asyncpg timeouts, the Redis stats cache,
+  `/health/info`, profiling, the GC freeze, and traces + metrics exported over OTLP to
+  an in-process receiver the fixture starts (a `http.server` stub, not a service).
+- `mock` (`:8001`, `MODE=mock`, `ALLOW_MOCK_MODE=1`): the in-process stats cache,
+  `/health/info` with `APP_VERSION`, profiling, no GC freeze, OTel with exporters off,
+  and a trusted `X-Forwarded-For` for the rate-limit journey.
+- `bare` (`:8002`, `MODE=dev`): none of the optional settings, i.e. the defaults.
+
+`test_observability_e2e.py` holds the journeys for these features; each adapts to its
+leg and skips when the api was started elsewhere (its environment is unknown). Those
+journeys: request-ID echo, trace/request IDs in JSON logs, spans and metrics arriving at
+the receiver, `/health/info`, `?profile=1`, the stats cache (miss, hit, miss after a
+write) and a 429 from the rate limiter. A leg's JSON log lines go to a temp file the
+journeys read. The `dev` leg's process migrates on startup, which currently swaps out
+its JSON log handler (see `../../src/app/README.md`, "Startup, shutdown and middleware
+wiring"), so the log journey runs on `mock`.
+
+The `dev` and `bare` legs use the real services; the `mock` leg uses a second `uvicorn`
+process under `MODE=mock`
 (`:8001`, `ALLOW_MOCK_MODE=1`) with no Postgres/Redis/S3/Keycloak
 dependency at all — `InMemoryRepository`, `MockHealthCheck`, and
 `POST /mock/token` (see `../../src/app/README.md`'s "MODE" section)

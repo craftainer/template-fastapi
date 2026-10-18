@@ -55,7 +55,9 @@ def build_engine(settings: Settings) -> AsyncEngine:
             kwargs["pool_recycle"] = settings.db_pool_recycle
     else:
         kwargs["poolclass"] = NullPool
-        if settings.db_pool_mode == "external":
+        # `# pragma: no cover`: tests/e2e covers null (bare leg) and local (dev and mock
+        # legs); this pooler mode is unit-tested in tests/unit/test_db.py only.
+        if settings.db_pool_mode == "external":  # pragma: no cover
             connect_args["prepared_statement_name_func"] = lambda: f"__asyncpg_{uuid4()}__"
 
     if connect_args:

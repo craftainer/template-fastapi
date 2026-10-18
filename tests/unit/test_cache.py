@@ -159,7 +159,7 @@ async def test_in_memory_cache_expires_and_invalidates(monkeypatch: pytest.Monke
     """Entries are served until the TTL, per resource, and invalidate drops a resource."""
     now = [100.0]
     monkeypatch.setattr(time, "monotonic", lambda: now[0])
-    cache = InMemoryStatsCache(ttl_seconds=10)
+    cache = InMemoryStatsCache(ttl_seconds=10, version="v")
     assert await cache.get("hero", "k") is None
     await cache.set("hero", "k", b"1")
     await cache.set("villain", "k", b"2")
@@ -171,6 +171,21 @@ async def test_in_memory_cache_expires_and_invalidates(monkeypatch: pytest.Monke
     assert await cache.get("hero", "k") is None
     assert await cache.get("villain", "k") is None  # expired at 110
     await cache.invalidate("hero")  # idempotent
+
+
+async def test_in_memory_cache_namespaces_keys_by_version() -> None:
+    """Entries are stored under the app version, like the Redis keys."""
+    cache = InMemoryStatsCache(ttl_seconds=10, version="1.2.3")
+    await cache.set("hero", "k", b"1")
+    assert list(cache._entries["hero"]) == ["1.2.3:k"]
+
+
+def test_build_stats_cache_versions_the_in_memory_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The mock-mode cache gets app_version() as its key namespace."""
+    monkeypatch.setenv("APP_VERSION", "7.7.7")
+    mock = build_stats_cache(Settings(mode="mock", allow_mock_mode=True, stats_cache_ttl_seconds=5))
+    assert isinstance(mock, InMemoryStatsCache)
+    assert mock._version == "7.7.7"
 
 
 def test_build_stats_cache_by_settings() -> None:

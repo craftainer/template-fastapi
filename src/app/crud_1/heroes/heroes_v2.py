@@ -15,7 +15,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends
 
-from app.crud_1.wiring import bulk_rate_limit
+from app.crud_1.wiring import bulk_rate_limit, stats_cache
 from app.models.hero import Hero as HeroModel
 from app.oidc import get_current_claims, require_roles
 from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
@@ -134,4 +134,5 @@ router = build_resource_router(
     revision_repository_dependency=HeroRevisionRepository,
     event_source_dependency=HeroEventSource,
     stats_enabled=True,
+    stats_cache=stats_cache,
 )

@@ -3,11 +3,14 @@
 Importing this module installs the crud config (built from `Settings`) and the
 app's session factory via `craftainer_tool_crud.config.configure`, and exposes
 `bulk_rate_limit`, the decorator every resource router passes to
-`build_resource_router(bulk_rate_limit=...)`. Resource modules import it, so the
-config is always installed before any router is built or request served -- even
+`build_resource_router(bulk_rate_limit=...)`, and `stats_cache`, the optional shared
+`/stats`/`/predict` cache (None unless `STATS_CACHE_TTL_SECONDS` is set) routers pass as
+`stats_cache=` and `app.main`'s lifespan keeps invalidated and closes. Resource modules
+import it, so the config is always installed before any router is built or request served -- even
 for tests that import a resource module without `app.main`.
 """
 
+from app.cache import build_stats_cache
 from app.config import get_settings
 from app.db import session_factory
 from app.rate_limit import limiter
@@ -34,3 +37,5 @@ configure(
 )
 
 bulk_rate_limit: RateLimit = limiter.limit(_settings.rate_limit_bulk_action)
+
+stats_cache = build_stats_cache(_settings)
