@@ -7,8 +7,17 @@ Usage::
 
 Runs until SIGINT/SIGTERM (or ``--duration`` seconds), then writes one JSON
 file: ``{"container", "interval_s", "samples": [{"t", "cpu_percent",
-"mem_bytes"}], "summary": {"cpu_percent": {"mean", "p95", "max"},
-"mem_bytes": {"mean", "max"}}}``.
+"mem_bytes", "cpu_t", "cpu_usage_usec"}], "summary": {"cpu_percent":
+{"mean", "p95", "max"}, "mem_bytes": {"mean", "max"}, "cpu_seconds_total",
+"window_s"}}``.
+
+``cpu_usage_usec`` is the container cgroup's cumulative ``usage_usec`` (read
+with ``docker exec <c> cat /sys/fs/cgroup/cpu.stat``) taken at ``cpu_t``, so
+CPU-seconds between two instants is exact, unlike averaging ``cpu_percent``.
+``summary.cpu_seconds_total`` is last minus first, ``summary.window_s`` the
+matching ``cpu_t`` span. Both are ``null`` if cpu.stat is unreadable (the
+samples then lack ``cpu_usage_usec``). ``--since`` / ``--until`` (unix
+timestamps) restrict the summary to samples inside that window.
 """
 
 from __future__ import annotations
@@ -67,10 +76,15 @@ def percentile(values: list[float], pct: float) -> float:
     return ordered[rank - 1]
 
 
-def summarize(samples: list[dict[str, float | int]]) -> dict[str, dict[str, float | int]]:
+def summarize(
+    samples: list[dict[str, float | int]],
+    since: float | None = None,
+    until: float | None = None,
+) -> dict[str, Any]:
     """Aggregate samples into the ``summary`` block."""
     cpu = [float(s["cpu_percent"]) for s in samples]
     mem = [int(s["mem_bytes"]) for s in samples]
+    window = cpu_seconds_between(samples, since, until)
     return {
         "cpu_percent": {
             "mean": sum(cpu) / len(cpu) if cpu else 0.0,
@@ -81,18 +95,74 @@ def summarize(samples: list[dict[str, float | int]]) -> dict[str, dict[str, floa
             "mean": sum(mem) / len(mem) if mem else 0.0,
             "max": max(mem, default=0),
         },
+        "cpu_seconds_total": window[0] if window else None,
+        "window_s": window[1] if window else None,
     }
 
 
+def parse_cpu_stat(text: str) -> int:
+    """Return ``usage_usec`` from a cgroup v2 ``cpu.stat`` file's text."""
+    for line in text.splitlines():
+        key, _, value = line.partition(" ")
+        if key == "usage_usec":
+            return int(value)
+    raise ValueError("no usage_usec in cpu.stat")
+
+
+def read_cpu_usage_usec(container: str) -> int:
+    """Read the container cgroup's cumulative CPU time in microseconds."""
+    out = subprocess.run(  # noqa: S603 -- fixed docker argv, container is the operator's own CLI arg
+        ["docker", "exec", container, "cat", "/sys/fs/cgroup/cpu.stat"],  # noqa: S607 -- docker from PATH, as in the devcontainer
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return parse_cpu_stat(out)
+
+
+def cpu_seconds_between(
+    samples: list[dict[str, float | int]],
+    since: float | None = None,
+    until: float | None = None,
+) -> tuple[float, float] | None:
+    """Return ``(cpu_seconds, window_s)`` over samples with ``cpu_t`` in [since, until].
+
+    ``None`` when fewer than two samples carry ``cpu_usage_usec`` in the window.
+    For CPU-ms/request: ``cpu_seconds * 1000 / requests in the same window``.
+    """
+    pts = [
+        s
+        for s in samples
+        if "cpu_usage_usec" in s
+        and (since is None or float(s["cpu_t"]) >= since)
+        and (until is None or float(s["cpu_t"]) <= until)
+    ]
+    if len(pts) < 2:
+        return None
+    first, last = pts[0], pts[-1]
+    return (
+        (int(last["cpu_usage_usec"]) - int(first["cpu_usage_usec"])) / 1e6,
+        float(last["cpu_t"]) - float(first["cpu_t"]),
+    )
+
+
 def sample_once(container: str) -> dict[str, float | int]:
-    """Take one ``docker stats --no-stream`` reading."""
+    """Take one ``docker stats --no-stream`` reading plus exact cgroup CPU time."""
     out = subprocess.run(  # noqa: S603 -- fixed docker argv, container is the operator's own CLI arg
         ["docker", "stats", "--no-stream", "--format", "{{json .}}", container],  # noqa: S607 -- docker from PATH, as in the devcontainer
         check=True,
         capture_output=True,
         text=True,
     ).stdout
-    return parse_stats_line(out.strip().splitlines()[0], time.time())
+    sample = parse_stats_line(out.strip().splitlines()[0], time.time())
+    try:
+        usage = read_cpu_usage_usec(container)
+    except (subprocess.CalledProcessError, ValueError) as exc:
+        print(f"cpu.stat unreadable, no exact CPU time: {exc}", file=sys.stderr)
+        return sample
+    sample["cpu_t"] = time.time()
+    sample["cpu_usage_usec"] = usage
+    return sample
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -102,6 +172,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval", type=float, default=2.0, help="seconds between samples")
     parser.add_argument("--out", required=True, type=Path, help="output JSON path")
     parser.add_argument("--duration", type=float, default=None, help="stop after N seconds")
+    parser.add_argument("--since", type=float, default=None, help="summary: unix ts window start")
+    parser.add_argument("--until", type=float, default=None, help="summary: unix ts window end")
     return parser
 
 
@@ -140,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
                 "container": args.container,
                 "interval_s": args.interval,
                 "samples": samples,
-                "summary": summarize(samples),
+                "summary": summarize(samples, args.since, args.until),
             },
             indent=2,
         )
