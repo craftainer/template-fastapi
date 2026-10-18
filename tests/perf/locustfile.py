@@ -120,6 +120,15 @@ def _add_arguments(parser: LocustArgumentParser) -> None:
         help="Keep stepping after the first failing step instead of stopping there",
     )
     parser.add_argument(
+        "--revalidate-weight",
+        type=int,
+        default=0,
+        help=(
+            "Task weight of the conditional-GET task (GET ?id= with If-None-Match, expecting "
+            "304); 0 (default) leaves it out so the request mix stays the baseline's"
+        ),
+    )
+    parser.add_argument(
         "--summary-json",
         type=str,
         default="",
@@ -131,6 +140,14 @@ def _add_arguments(parser: LocustArgumentParser) -> None:
         default="",
         help="API-container resource sampler output (tests/perf/stats.py) to embed in the summary",
     )
+
+
+@events.init.add_listener  # type: ignore[untyped-decorator] # locust ships no py.typed marker
+def _enable_revalidate_task(environment: Environment, **_: object) -> None:
+    """Add `HeroesUser.revalidate_hero` to the task mix `--revalidate-weight` times."""
+    weight = _option(environment, "revalidate_weight", 0)
+    if weight > 0:
+        HeroesUser.tasks = [*HeroesUser.tasks, *[HeroesUser.revalidate_hero] * weight]
 
 
 def _option[T](environment: Environment, name: str, default: T) -> T:
@@ -538,6 +555,7 @@ class HeroesUser(HttpUser):
     def on_start(self) -> None:
         """Get a bearer token up front, so a broken login fails the user immediately."""
         _tokens.get()
+        self._revalidate_hero: dict[str, Any] | None = None
 
     def _call(
         self,
@@ -546,23 +564,26 @@ class HeroesUser(HttpUser):
         *,
         name: str | None = None,
         expected: int | None = None,
-        json: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
     ) -> Response:
         """Send an authenticated request; on an unexpected 401 re-login once and retry once.
 
         Every attempt is recorded as a Locust request (a 401 as a failure, so the safety
         net never hides a rejected token); the token request itself is not. A response is
         a failure if its status is not `expected`, or, with none given, is >= 400.
+        `options` holds extra `client.request` arguments (`json`, `headers`).
         """
         token = _tokens.get()
+        extra = dict(options or {})
+        extra_headers = extra.pop("headers", {})
         for attempt in range(2):
             with self.client.request(
                 method,
                 path,
                 name=name,
                 catch_response=True,
-                headers={"Authorization": f"Bearer {token}"},
-                json=json,
+                headers={"Authorization": f"Bearer {token}", **extra_headers},
+                **extra,
             ) as response:
                 status = response.status_code
                 if status == 401 and attempt == 0:
@@ -583,7 +604,7 @@ class HeroesUser(HttpUser):
             "name": f"locust-{uuid.uuid4().hex[:8]}",
             "powers": ["flight"],
         }
-        response = self._call("POST", _HERO_LIST_PATH, json=payload, expected=201)
+        response = self._call("POST", _HERO_LIST_PATH, options={"json": payload}, expected=201)
         if response.status_code != 201:
             return None
         return response.json()  # type: ignore[no-any-return]
@@ -615,7 +636,7 @@ class HeroesUser(HttpUser):
         self._call(
             "PATCH",
             f"{_HERO_LIST_PATH}?id={hero['id']}",
-            json={"powers": [*hero["powers"], secrets.choice(["speed", "strength"])]},
+            options={"json": {"powers": [*hero["powers"], secrets.choice(["speed", "strength"])]}},
             name=f"{_HERO_LIST_PATH}?id= [PATCH]",
         )
 
@@ -628,6 +649,36 @@ class HeroesUser(HttpUser):
         self._call(
             "DELETE", f"{_HERO_LIST_PATH}?id={hero['id']}", name=f"{_HERO_LIST_PATH}?id= [DELETE]"
         )
+
+    def revalidate_hero(self) -> None:
+        """GET one Hero with `If-None-Match` from its previous response (expects a 304).
+
+        Not decorated with `@task`: `_enable_revalidate_task` appends it to `tasks`
+        `--revalidate-weight` times, so at the default 0 the request mix is unchanged.
+        The Hero is this user's own (created on first use, so nothing else touches it
+        and the tag stays valid); the first call just records its `ETag`.
+        """
+        path = f"{_HERO_LIST_PATH}?id="
+        if self._revalidate_hero is None:
+            hero = self._create_hero()
+            if hero is None:
+                return
+            self._revalidate_hero = {"id": hero["id"], "etag": ""}
+        target = self._revalidate_hero
+        url = f"{_HERO_LIST_PATH}?id={target['id']}"
+        if not target["etag"]:
+            response = self._call("GET", url, name=f"{path} [REVALIDATE seed]")
+            target["etag"] = response.headers.get("ETag", "")
+            return
+        response = self._call(
+            "GET",
+            url,
+            name=f"{path} [REVALIDATE]",
+            options={"headers": {"If-None-Match": target["etag"]}},
+        )
+        if response.status_code != 304:
+            # Changed or gone: re-seed on the next run rather than failing it forever.
+            target["etag"] = ""
 
     @task(8)
     def health_live(self) -> None:

@@ -44,6 +44,10 @@ Keycloak (password grant, same convention as `../e2e/conftest.py`'s
   `locustfile.py`'s own `quitting` event listener additionally fails the
   run if any endpoint's p95 latency exceeds `NFR-0024`'s ceiling
   (Locust has no built-in latency-threshold flag).
+- Pass `--revalidate-weight N` (default 0, off) to add a conditional-GET
+  task: `GET ?id=` with the `If-None-Match` from the user's previous
+  response, expecting `304`. The baseline request mix is unchanged
+  unless it's set.
 - Authenticate against the stack's own Keycloak when running from the
   devcontainer. `compose.yml`'s api only accepts tokens whose issuer is
   `https://keycloak:8443/realms/template-fastapi`, but inside the devcontainer
