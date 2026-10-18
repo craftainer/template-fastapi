@@ -220,6 +220,16 @@ in both modes, when the run quits (not written by distributed workers):
   uv run python tests/perf/stats.py --container <api-container> \
       --interval 2 --out tests/perf/.results/stats.json &   # SIGINT/SIGTERM or --duration ends it
   ```
+- Each sample also carries `cpu_usage_usec`, the container cgroup v2
+  `cpu.stat` cumulative CPU time (read via `docker exec <c> cat
+  /sys/fs/cgroup/cpu.stat`, taken at `cpu_t`), and `summary` gains
+  `cpu_seconds_total` (last minus first) and `window_s`. This is exact, unlike
+  the mean of `cpu_percent` samples, so use it for the fixed-load metric:
+  CPU-ms/request = cpu_seconds in window x 1000 / requests in window. To
+  restrict to the load window, pass `--since <unix-ts> --until <unix-ts>`, or
+  call `cpu_seconds_between(samples, since, until)` from `stats.py` on the
+  saved samples (returns `(cpu_seconds, window_s)`). If `cpu.stat` can't be
+  read, the fields are absent/`null` and the rest still works.
 - `profile.sh [-d SECONDS] [-c CONTAINER]` records a py-spy speedscope
   profile of the server (PID 1 in the container) into `.results/`. The runner
   image has no py-spy and must not gain one, so the script copies the dev
