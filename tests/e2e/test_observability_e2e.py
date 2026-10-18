@@ -92,6 +92,44 @@ def test_request_id_and_trace_id_reach_the_json_logs(managed: AppHandle, base_ur
     assert len(str(line["span_id"])) == 16
 
 
+def test_access_log_follows_uvicorn_access_log_setting(managed: AppHandle, base_url: str) -> None:
+    """uvicorn's access lines are JSON with the request ID, or absent when switched off.
+
+    The mock leg runs with UVICORN_ACCESS_LOG=false; the others keep uvicorn's default.
+    """
+    request_id = f"e2e-access-{uuid.uuid4().hex}"
+    marker_id = f"e2e-access-marker-{uuid.uuid4().hex}"
+    assert httpx.get(
+        f"{base_url}/health/live", headers={"X-Request-ID": request_id}, timeout=10
+    ).is_success
+    # A rejected token logs an app warning: once it's in the log, everything the server
+    # wrote for the earlier request is too, so absence can be asserted without sleeping.
+    httpx.get(
+        f"{base_url}{_HEROES}",
+        headers={"Authorization": "Bearer not-a-token", "X-Request-ID": marker_id},
+        timeout=10,
+    )
+    _wait_for(
+        lambda: any(line.get("request_id") == marker_id for line in _log_lines(managed)),
+        "the marker request's log line",
+    )
+    access = [
+        line
+        for line in _log_lines(managed)
+        if line.get("logger") == "uvicorn.access" and line.get("request_id") == request_id
+    ]
+    if managed.leg == "mock":
+        assert access == []
+        return
+    _wait_for(
+        lambda: any(
+            line.get("logger") == "uvicorn.access" and line.get("request_id") == request_id
+            for line in _log_lines(managed)
+        ),
+        "the request's uvicorn.access line",
+    )
+
+
 def test_spans_and_metrics_arrive_at_the_otlp_receiver(
     managed: AppHandle, base_url: str, access_token: Callable[[str], str]
 ) -> None:

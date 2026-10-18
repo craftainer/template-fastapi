@@ -104,6 +104,9 @@ _LEG_ENV: dict[str, dict[str, str]] = {
         "OTEL_METRICS_EXPORTER": "none",
         # Trusted so the rate-limit journey can give itself its own client key.
         "FORWARDED_ALLOW_IPS": "*",
+        # uvicorn reads UVICORN_* natively: this leg runs with the access log off, so
+        # logs.configure_logging() must leave uvicorn.access silent (other legs log it).
+        "UVICORN_ACCESS_LOG": "false",
     },
     "bare": {},
 }
