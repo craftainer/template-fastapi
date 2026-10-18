@@ -18,7 +18,8 @@ In progress (kickoff 2026-10-17, G0 granted; pre-flight complete 2026-10-18). Ba
 - Wave 2 batches B and C merged; integration branch fully green at `0effb83` (e2e 100%).
 - A7 merged and verified (`3b28bc5`).
 - **2026-10-18, third orchestrator session:** pre-flight closed by the user (`1890b5e`; `deny` list removal committed as `4fb1ac3`). The suite is green on the rebuilt devcontainer (e2e included). `craftainer/template-python-package` was created from template-base v1.4.0 and marked as a template. Copying the rulesets was **refused by auto mode's classifier**, so it's with the user (cleaned JSON in the orchestrator's scratchpad; Decision log). T1, T2, T3 and B1 are running (local clones under `.claude/worktrees/ext-*`). L1's A/B program was interrupted at c1–c4 x2, c5–c6 x1 (`tests/perf/.results/ab-1110fab/`); it resumes in the next quiet window.
-- **Next:** merge T1–T3 into `integration/scaffold` and open the template-python-package PR; open the B1 PR in template-base (G-pr for both); release template-base after B1 merges, then sync template-python-package and this repo; finish L1; then Wave 3.
+- T1–T3 merged into template-python-package's `integration/scaffold` (19 hooks green) → PR craftainer/template-python-package#2. B1 → PR craftainer/template-base#14, extended with `PYPI_PUBLISH` pass-through (T2 and T3 both found base's `release.yml` never passed it to `make publish`/`release-check`). Both await G-pr; the rulesets still await the user.
+- **Next:** L1 finishes its A/B program (quiet window now); after #14 merges, cut a template-base release and open sync PRs for template-python-package and this repo; after #2 merges, Wave 3 (K1, K2).
 
 ## Goal
 
