@@ -1,7 +1,7 @@
 # Perf-only override, layered on compose.yml:
 #   docker compose -f compose.yml -f compose.perf.yml up -d --build --wait
 # Caps `api` at the 1 vCPU / 2 GB reference budget every capacity number in
-# docs/plans/2026-10-packages-performance-observability.md refers to, so the
+# docs/adrs/0019-per-pr-benchmarks-and-fixed-load-acceptance.md refers to, so the
 # app (not the host) is the bottleneck and results compare across machines.
 # Backing services stay uncapped on purpose. SYS_PTRACE lets py-spy attach
 # (tests/perf/profile.sh); it is granted here and nowhere else.

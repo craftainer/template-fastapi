@@ -3,7 +3,7 @@
 Implements `craftainer_tool_crud.interfaces.cache.StatsCache` over this app's Redis
 service (`redis.asyncio`, `Settings.redis_url`, so `rediss://` TLS works exactly as it
 does for `app.rate_limit`), or in process under `MODE=mock`. Only non-per-user aggregates
-go through it (Phase 6 of docs/plans/2026-10-packages-performance-observability.md); the
+go through it (docs/adrs/0023-http-conditional-requests-and-stats-cache.md); the
 router builds keys that already separate callers by ownership scope.
 
 Off unless `Settings.stats_cache_ttl_seconds` is set: `build_stats_cache` then returns

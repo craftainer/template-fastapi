@@ -1,6 +1,6 @@
 """Integration test: an open SSE stream vs SIGTERM, and a lossless resume afterwards.
 
-Phase 7.3 of docs/plans/2026-10-packages-performance-observability.md: `/events`
+docs/architecture.md, "Kubernetes deployment (future)" / Autoscaling: `/events`
 streams never end on their own, so on a scale-down they hold a terminating pod open
 until `--timeout-graceful-shutdown` cancels them. That is acceptable only if (a) the
 process really exits within that timeout and (b) a client resumes losslessly

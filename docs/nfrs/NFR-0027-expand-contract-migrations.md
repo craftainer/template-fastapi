@@ -33,8 +33,9 @@ never needs a schema rollback.
 
 Operations: progressive delivery (Argo Rollouts or Flagger) needs old and
 new versions on one database with automatic rollback. Part of the
-canary-readiness phase of
-`../plans/2026-10-packages-performance-observability.md`. Builds on
+canary-readiness work recorded in
+[`../architecture.md`](../architecture.md) ("Canary releases and
+migrations"). Builds on
 [NFR-0003](NFR-0003-db-model-current-shape-only.md) (parallel API versions
 over one current-shape model) and
 [NFR-0019](NFR-0019-migrations-immutable-once-applied.md).
