@@ -34,6 +34,17 @@ this directory).
   multi-item work as an orchestrator"). It holds the executor's side of
   the protocol: what a brief contains, the write-set and no-push rules,
   the escalation triggers, and the report format.
+- `skills/` — project skills Claude loads when a request matches their
+  `description` (or that you invoke as `/<name>`):
+  - `plan-creation` — writing a `docs/plans/` plan and, when the user
+    has setup to do first, its pre-flight runbook.
+  - `plan-execution` — the orchestrator's side of executing a plan:
+    the rolling queue of `plan-executor` subagents, researched answers
+    to escalations, serialized lanes, gates and close-out.
+  - `owasp-scan` — a parallel OWASP Top Ten scan of `src/`.
+
+  `../CLAUDE.md` points at the two plan skills, so they're used even when
+  a request doesn't match their descriptions word for word.
 - The `PreToolUse` hook on `Bash` runs `snip hook`, the
   [snip](https://github.com/edouard-claude/snip) token-filtering proxy:
   it rewrites supported commands (this repo's stack — `pytest`, `ruff`,
