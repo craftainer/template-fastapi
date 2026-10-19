@@ -70,6 +70,13 @@ jobs:
           # satisfies requires-python.
           python-version: "3.14"
 
+      # Install Python and the locked dependencies now, while the default CA
+      # bundle is in effect: the Locust step later sets SSL_CERT_FILE to the
+      # stack's self-signed Keycloak cert, and uv honours it, so any download
+      # from there on (Python, wheels) would fail TLS verification.
+      - name: Install Python and dependencies
+        run: uv sync --locked --all-extras
+
       # Unique per run so concurrent runs never collide on
       # container/volume/network names -- same reasoning as checks.yml/smoke.yml.
       - name: Set compose project name
@@ -182,6 +189,13 @@ jobs:
           # PYTHON_VERSION); otherwise uv picks the runner's newest Python that
           # satisfies requires-python.
           python-version: "3.14"
+
+      # Install Python and the locked dependencies now, while the default CA
+      # bundle is in effect: the Locust step later sets SSL_CERT_FILE to the
+      # stack's self-signed Keycloak cert, and uv honours it, so any download
+      # from there on (Python, wheels) would fail TLS verification.
+      - name: Install Python and dependencies
+        run: uv sync --locked --all-extras
 
       - name: Set compose project name
         run: echo "COMPOSE_PROJECT_NAME=perf-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
