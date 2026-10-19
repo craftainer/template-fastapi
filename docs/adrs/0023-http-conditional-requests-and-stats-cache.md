@@ -93,6 +93,9 @@ object, not from per-route code.
 Harder: cached aggregates can be stale for up to the TTL when
 invalidation fails; each replica needs the invalidation task and a
 stable subscriber ID; `If-Match` makes clients handle `412`. The `304`
-saves bandwidth but not the query. `TBD`: measured effect, CPU
-ms/request and p99 on a `/stats`-heavy mix with the cache on versus off,
-and the revalidation saving.
+saves bandwidth but not the query. Not measured: the
+cache's CPU ms/request and p99 on a `/stats`-heavy mix (cache on versus
+off) were not A/B'd, and no measurement was planned for it. The ETag revalidation
+saving was not measured either: the revalidate task is opt-in with
+weight 0, so the standard runs never exercise it. Both are
+correctness-and-bandwidth features here, not accepted on a CPU win.

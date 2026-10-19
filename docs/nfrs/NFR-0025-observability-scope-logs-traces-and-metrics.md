@@ -24,9 +24,12 @@ This requirement supersedes [`NFR-0023`](NFR-0023-observability-scope-logs-only.
 - carry `service.name` and `service.version` (from `APP_VERSION`) on all
   signals;
 - keep health probes out of traces;
-- cost no more than `TBD`% api CPU per request at the 1 vCPU / 2 GB
-  reference budget with the recommended sampling rate, measured against
-  telemetry unset.
+- not reduce capacity at the 1 vCPU / 2 GB reference budget with the
+  recommended sampling rate, measured against telemetry unset ("telemetry
+  that eats the capacity it's meant to watch is a regression too"). Measured
+  at 10% sampling: capacity unchanged (130 users), p99 within run-to-run
+  spread, +7.5% api CPU per request. At 100% sampling capacity fell to 100
+  users, which this requirement rules out as a default.
 
 ## Source
 

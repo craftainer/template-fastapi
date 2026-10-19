@@ -58,8 +58,15 @@ engine so pooled connections close cleanly.
 
 **Measured effect (null vs local, reference budget, fixed load,
 [`0019`](0019-per-pr-benchmarks-and-fixed-load-acceptance.md)'s
-acceptance rule):** `TBD` CPU ms/request, `TBD` aggregate p99, `TBD`
-`max_users_passed`.
+acceptance rule; baseline-relative results are in `0019`):** 19.11 CPU
+ms/request and 200 ms aggregate p99 with `null`, against 7.31 CPU
+ms/request (-61.7%) and 68 ms p99 with `local` (p50 11 ms, p95 62 ms).
+Capacity was not measured separately for `null` and `local`; the final
+`local` configuration reaches 130 users at the reference budget (10-user
+steps), against 35 for the original baseline. Connection budget:
+replicas x workers x (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) must stay
+below `max_connections` minus reserved slots and migration/admin
+headroom.
 
 ## Consequences
 
@@ -75,4 +82,5 @@ PgBouncer service is added to any stack; it must be live-tested on the
 first deployment behind a pooler, with PgBouncer in transaction mode and
 an explicit non-zero `max_prepared_statements` (the default changed
 across versions), checking that prepared statements do not pile up on
-server connections. `TBD`: the measured null-vs-local numbers above.
+server connections. The measured null-vs-local numbers are above; `external` has no
+measurement because no PgBouncer was in the stack.

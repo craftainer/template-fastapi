@@ -24,8 +24,11 @@ The service shall:
   slots and headroom for migrations and admin sessions;
 - in `external` mode, use `NullPool` with unique prepared-statement
   names, for PgBouncer in transaction mode;
-- spend at most `TBD` CPU ms/request at the 1 vCPU / 2 GB reference
-  budget and 25 users in `local` mode, measured against `null`.
+- in `local` mode, use less api CPU per request than `null` at the
+  1 vCPU / 2 GB reference budget by more than the run-to-run spread and by
+  at least 3% (ADR 0019's acceptance rule), so a deployment that opts in
+  gets a real saving. Measured at 25 users: 7.31 against 19.11 CPU
+  ms/request for `null`, a 61.7% reduction (spreads 2.9% and 6.4%).
 
 ## Source
 
