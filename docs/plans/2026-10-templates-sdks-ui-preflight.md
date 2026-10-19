@@ -94,7 +94,7 @@ how you set them up), or pick the second option.
 survey.
 - [ ] The orchestrator decides from RS2's counts and records it
   (recommended; no stop). Ties or close calls still come to you
-  (G-choice, the plan's protocol step 4).
+  (G-choice).
 - [ ] Show me RS2's report before Wave 3 starts (one extra gate).
 
 ## Part 2: setup

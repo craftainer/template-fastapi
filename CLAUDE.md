@@ -92,25 +92,11 @@ Practices below are distilled from Anthropic's own Claude Code guidance
   merges and verifies the results, and asks the user at every gate. When
   a subagent escalates, the orchestrator researches, decides, records
   the decision in the plan's Decision log, and resumes that same
-  subagent; decisions that are really the user's go to the user (see
-  the next item). Checks that share devcontainer services (integration/e2e
-  suites, load tests) run one at a time in the orchestrator's own lane,
-  never in parallel subagents. See
-  [`docs/plans/README.md`](docs/plans/README.md) for how a plan lays
-  this out.
-- **Decide alone only where a common best practice exists.** Whether
-  orchestrating a plan or working directly, settle a decision yourself
-  only when primary sources (official docs, RFCs, maintainers) or a clear
-  majority of reputable practice agree, or when a plan, ADR or NFR
-  already requires one option. Otherwise the user decides: sources that
-  disagree, genuine trade-offs with no dominant answer, and matters of
-  taste or convention (naming, public API shape, visual design, defaults
-  users will see). Don't pick one just to keep work moving. Ask with the
-  question in one sentence, 2–4 options with their trade-offs, the
-  sources and why they don't settle it, and your own lean labeled as a
-  lean. While waiting, pause only the work that depends on the answer,
-  batch non-blocking questions, and record the answer (in a plan's
-  Decision log, if there is one) as a user decision.
+  subagent; decisions that are really the user's go to the user. Checks
+  that share devcontainer services (integration/e2e suites, load tests)
+  run one at a time in the orchestrator's own lane, never in parallel
+  subagents. See [`docs/plans/README.md`](docs/plans/README.md) for how
+  a plan lays this out.
 - **Flag devcontainer changes as needing a rebuild.** Editing anything
   under `.devcontainer/` (compose files, `stack/`, Dockerfiles) doesn't
   take effect in the running container — tell the user a rebuild is

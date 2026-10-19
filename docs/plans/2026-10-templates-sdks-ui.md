@@ -146,22 +146,20 @@ fixtures.
 
 ## Execution
 
-Follows `CLAUDE.md` ("Execute multi-item work as an orchestrator") and
-`README.md`'s "Execution section". The executor's brief, rules,
-escalation triggers and report format are in
-`.claude/agents/plan-executor.md` and aren't repeated here.
+Executed with the `plan-execution` skill (`.claude/skills/plan-execution/`),
+laid out per `README.md`'s "Execution section". The orchestrator's queue,
+escalation handling, lanes and gates come from that skill; the executor's
+brief, rules, escalation triggers and report format are in
+`.claude/agents/plan-executor.md`. Neither is repeated here; this section
+holds only this plan's settings.
 
 - **Orchestrator:** Claude Opus 5.5 in the main session. It never
   implements a work item itself; it briefs, answers, merges, verifies and
   runs the serialized lanes.
 - **Executors:** `plan-executor`, called with `model: "sonnet"` (Sonnet
   5.5), one per work item, `wip/<ID>` branch, in its own worktree.
-- **Concurrency: a rolling queue, target 4 agents at all times.** Waves
-  below define *dependencies*, not batches: whenever an agent reports, the
-  orchestrator starts the next *ready* item (all dependencies merged and
-  verified, write set disjoint from every running item), highest priority
-  first (critical path, then the item that unblocks the most others). It
-  keeps 4 slots busy while ready items exist. Limits within the 4:
+- **Concurrency: the skill's rolling queue, target 4 agents at all
+  times.** Limits within the 4:
   - at most **1** agent compiling Rust at once, with `CARGO_BUILD_JOBS=4`
     (LTO builds of the axum graph need several GB; raise to 2 only if
     pre-flight P-7 raised Docker's memory to 12 GB or more);
@@ -190,56 +188,20 @@ escalation triggers and report format are in
   Items that pick tools (tsdown, hishel, Storybook, MUI X, crates-io-auth
   action, …) cite the context7 result in their report.
 
-### Answering agents and handling errors (orchestrator protocol)
+### Answering agents and handling errors
 
-An agent's report is one of `done` or `escalate`. The orchestrator handles
-each without the user unless the decision is genuinely the user's:
+The `plan-execution` skill's protocol applies unchanged: review every
+`done` diff, research escalations (context7, then primary sources on the
+web, then ADRs and this Decision log), decide only when the research
+converges, resume the same agent with `SendMessage`, revert a merge whose
+verification lane is red, and re-plan an item that escalates twice on the
+same approach. What this plan adds:
 
-1. **`done`:** read the diff, not just the summary. Check that every
-   changed file is inside the write set and that `CHECKS` shows real
-   output. Merge into the repo's integration branch, run the verification
-   lane, then start the next ready item.
-2. **`escalate`:** research before deciding, in this order:
-   1. **context7** for the library or framework involved (current API,
-      migration notes for the pinned version);
-   2. **WebSearch/WebFetch** for the exact error text and the tool's
-      issue tracker, changelog and official docs; prefer primary sources
-      (official docs, maintainers' issues/PRs, RFCs) over blog posts;
-   3. the repo's own ADRs, NFRs, READMEs and this plan's Decision log.
-3. **Decide and record, if the research converges** on a common best
-   practice (step 4 otherwise): one Decision log row with the decision,
-   the reason and the source URLs. Then **resume the same agent** with
-   `SendMessage` (it keeps its context and worktree), quoting the new
-   Decision log row. A new agent is started only if the old one's context
-   is unusable.
-4. **The user decides (G-choice) when there's no common best practice.**
-   The orchestrator decides alone only when primary sources (official
-   docs, RFCs, maintainers) or a clear majority of reputable practice
-   agree, or when one option is plainly required by this plan, an ADR or
-   an NFR. Everything else is the user's: options the sources disagree
-   on, genuine trade-offs with no dominant answer, and matters of taste
-   or convention (naming, public API shape, visual design, defaults
-   users will see). The orchestrator doesn't pick one just to keep the
-   queue moving. It asks with:
-   - the question, in one sentence;
-   - 2–4 options, each with its trade-off;
-   - the sources it found, and why they don't settle it;
-   - its own lean, labeled as a lean, not a recommendation from sources.
-
-   While waiting, the asking item pauses (its agent stays resumable) and
-   the queue keeps running other ready items. Non-blocking questions are
-   batched. The answer goes into the Decision log as "user decision".
-5. **Escalate to the user (G-esc) also for:** scope changes, security or
-   licensing trade-offs, anything that deletes something this plan didn't
-   create, a registry name already taken, and anything the standing
-   approvals don't cover. Questions that don't block the current item are
-   batched and asked together.
-6. **Course-correct:** if the same item escalates twice on the same
-   approach, re-plan the item (split it, change the approach, record why)
-   instead of a third variation (`CLAUDE.md`).
-7. **Red verification lane** after a merge: revert the merge on the
-   integration branch, send the failing output to the owning agent as an
-   escalation-style message, and keep the queue moving with other items.
+- **G-choice** is the gate for decisions the user owns under `CLAUDE.md`'s
+  "Decide alone only where a common best practice exists". Known in
+  advance: the aesthetic direction for `template-react` (RS3).
+- **G-esc** additionally covers a registry or repo name that turns out to
+  be taken.
 
 ### Serialized lanes (never parallel)
 
@@ -270,9 +232,9 @@ batched into one request.
 | G-pr | Merging a PR in a repo the user merges (per P-D6). Raised per wave, together. |
 | G-rel | The first release of each **published package** (PyPI, npm, crates.io), the `0.1.2` notice releases, and both `0.2.0` releases under the new names. Templates release under the standing approval. |
 | G-tp | After a package's first npm or crates.io release: the user adds its trusted publisher on the registry and deletes the bootstrap token (pre-flight P-4/P-5). Batched: one request after Wave 3's releases, one after the axum releases. |
-| G-choice | Decisions with no common best practice (protocol step 4). Known in advance: the aesthetic direction for `template-react` (RS3). |
+| G-choice | Decisions with no common best practice (`CLAUDE.md`, "Decide alone only where a common best practice exists"). Known in advance: the aesthetic direction for `template-react` (RS3). |
 | G-legacy | After the `0.1.2` notice releases of `craftainer-tool-crud` and `craftainer-tool-observability`: the user archives both projects on PyPI (project settings, owner only). |
-| G-esc | Escalations that are really the user's (protocol step 5). |
+| G-esc | Escalations that are really the user's (the `plan-execution` skill, plus a taken registry or repo name). |
 | G-final | Deleting this plan after it's folded into ADRs and docs. |
 
 ### Waves (dependencies)
@@ -452,7 +414,7 @@ gap analysis lists, each A/B-tested with the earlier plan's rule.
 | 2026-10-19 | Plan drafted. Discovery goes through `/.well-known/api-catalog` (RFC 9727) pointing at `/_crud/manifest`, not an unregistered `/.well-known/crud`. Confirmed or changed in pre-flight P-D2. |
 | 2026-10-19 | Concurrency: rolling queue, 4 agents; at most 1 compiling Rust; 0 during bench measurements. |
 | 2026-10-19 | First npm and crates.io publishes use pre-flight bootstrap tokens; trusted publishing afterwards (G-tp). Neither registry supports pending publishers. |
-| 2026-10-19 | User decision: the orchestrator decides alone only where a common best practice exists; anything else goes to the user with options, sources and a labeled lean (protocol step 4, G-choice). |
+| 2026-10-19 | User decision: the orchestrator decides alone only where a common best practice exists; anything else goes to the user with options, sources and a labeled lean (G-choice). A standing rule in `CLAUDE.md` since template-base v1.6.0. |
 | 2026-10-19 | User decision, naming: repos `lib-<name>-<py\|ts\|rs>`; registries `craftainer-<name>` (PyPI, crates.io) and `@craftainer/<name>` (npm); SDKs are `crud-sdk`; Python import names match the distribution (`craftainer_crud`, `craftainer_observability`, `craftainer_crud_sdk`). `tool-crud`/`tool-observability` are renamed on GitHub in pre-flight. |
 | 2026-10-19 | User decision, old PyPI projects: `craftainer-tool-crud` and `craftainer-tool-observability` get a final `0.1.2` notice release (old code, `DeprecationWarning`, README pointer), then are archived on PyPI, not yanked, so existing pins keep working (RN3, G-legacy). |
 
