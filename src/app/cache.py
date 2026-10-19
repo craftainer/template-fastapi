@@ -29,11 +29,11 @@ from importlib import metadata
 from typing import cast
 
 import redis.asyncio as aioredis
+from craftainer_tool_crud.interfaces.base import EventSource
+from craftainer_tool_crud.interfaces.cache import StatsCache
 from redis.exceptions import RedisError
 
 from app.config import Settings
-from craftainer_tool_crud.interfaces.base import EventSource
-from craftainer_tool_crud.interfaces.cache import StatsCache
 
 logger = logging.getLogger(__name__)
 

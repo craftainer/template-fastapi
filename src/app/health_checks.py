@@ -9,15 +9,15 @@ craftainer_tool_crud.repositories.memory -- see its module docstring.
 from functools import lru_cache
 
 import boto3
-
-from app.config import get_settings
-from app.db import engine
 from craftainer_tool_observability.health.base import HealthCheckResult
 from craftainer_tool_observability.health.checks.http import HTTPCheck
 from craftainer_tool_observability.health.checks.postgres import PostgresCheck
 from craftainer_tool_observability.health.checks.redis import RedisCheck
 from craftainer_tool_observability.health.checks.s3 import S3Check
 from craftainer_tool_observability.health.registry import HealthRegistry
+
+from app.config import get_settings
+from app.db import engine
 
 
 class MockHealthCheck:  # pragma: no cover -- see module docstring

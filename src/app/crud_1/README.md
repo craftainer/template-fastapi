@@ -2,7 +2,7 @@
 
 Resource routers for the `/crud/v{ROUTER_VERSION}` API: one subpackage per
 resource, each combining that resource's versioned sibling routers (built
-from `../../craftainer_tool_crud/controllers/`'s generic factories) into one router,
+from `craftainer_tool_crud/controllers/`'s generic factories) into one router,
 which this package's own `__init__.py` then combines into the single
 `router` `app.main` mounts at `/crud/v{ROUTER_VERSION}`. Sits after
 `controllers` in `src/app/`'s import order — may import from
@@ -34,7 +34,7 @@ one module. The package's `__init__.py` is the only thing this package's
 own `__init__.py` ever imports for that resource — it combines every
 version's own router (each built by
 `craftainer_tool_crud.controllers.crud_router.build_resource_router`, see
-`../../craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories") into one
+`craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories") into one
 `router`, so a resource stays a single `include_router` call at the
 mount site no matter how many versions it carries internally:
 
@@ -102,7 +102,7 @@ router still needs the full, absolute `/crud/v{ROUTER_VERSION}/...`
 path is `build_resource_router`'s `api_prefix` argument, since that gets
 baked into rendered HTML/JS at build time and can't be derived from the
 `include_router` calls that do the actual mounting — see
-`../../craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories". The DB
+`craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories". The DB
 model (`app.models`) always represents
 the *current* shape only — an older API version is a `views` + `crud`
 concern, never a second table/model. Only `app.views` classes carry a
@@ -114,13 +114,13 @@ A deprecated version follows the `*_vN.py` pattern: a `views/hero_vN.py`
 module defining that version's Pydantic shape plus pure converter
 functions to/from the current version's views (see
 `app.views.hero_v1`), and a sibling controller module (`heroes_v1.py`)
-that calls the same `build_resource_router` `../../craftainer_tool_crud/controllers/
+that calls the same `build_resource_router` `craftainer_tool_crud/controllers/
 README.md`'s "Generic CRUD router factories" describes, with
 `crud_dependency` pointing at a `CompatCRUD`-typed dependency instead of a
 `CRUDInterface`-typed one. `craftainer_tool_crud.interfaces.compat.CompatCRUD` is the reusable
 wrapper that adapts the current version's `CRUDInterface` to speak in
 the deprecated view's shape, so the deprecated router needs no new
-persistence wiring — see `../../craftainer_tool_crud/interfaces/README.md`. Apply
+persistence wiring — see `craftainer_tool_crud/interfaces/README.md`. Apply
 `app.http_headers.sunset(...)` via the deprecated resource-version's
 `router_dependencies=[...]` `build_resource_router` argument (not per
 format) so every route under it — JSON/XML/web alike — advertises

@@ -1,7 +1,7 @@
 # mqtt
 
 [Eclipse Mosquitto](https://mosquitto.org/), the MQTT broker backing
-`src/craftainer_tool_crud/interfaces/base.py`'s `MQTTEventSink`/`MQTTEventSource` (the
+`craftainer_tool_crud.interfaces.base`'s `MQTTEventSink`/`MQTTEventSource` (the
 generic CRUD interface's opt-in real-time event stream — see
 `docs/adrs/0015-mqtt-for-crud-events.md`). Mosquitto is dual
 EPL-2.0/EDL-1.0 licensed, both OSI-approved, unlike this stack's Redis/

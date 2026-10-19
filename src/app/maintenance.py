@@ -43,14 +43,14 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
+from craftainer_tool_crud.models.base import Base
+from craftainer_tool_crud.models.revision import Revision  # noqa: F401 -- see above
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import session_factory
 from app.models.hero import Hero  # noqa: F401 -- registers Hero on Base.registry.mappers
-from craftainer_tool_crud.models.base import Base
-from craftainer_tool_crud.models.revision import Revision  # noqa: F401 -- see above
 
 logger = logging.getLogger(__name__)
 

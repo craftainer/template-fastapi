@@ -1,9 +1,9 @@
 """Deprecated v1 Hero view (single superpower) and its converters to/from v2."""
 
+from craftainer_tool_crud.views.base import IXDTFDatetime, ORMView
 from pydantic import Field
 
 from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
-from craftainer_tool_crud.views.base import IXDTFDatetime, ORMView
 
 
 class HeroV1Base(ORMView):

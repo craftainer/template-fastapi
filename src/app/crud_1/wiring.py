@@ -10,12 +10,13 @@ import it, so the config is always installed before any router is built or reque
 for tests that import a resource module without `app.main`.
 """
 
+from craftainer_tool_crud.config import CrudConfig, MQTTConfig, configure
+from craftainer_tool_crud.controllers.crud_router import RateLimit
+
 from app.cache import build_stats_cache
 from app.config import get_settings
 from app.db import session_factory
 from app.rate_limit import limiter
-from craftainer_tool_crud.config import CrudConfig, MQTTConfig, configure
-from craftainer_tool_crud.controllers.crud_router import RateLimit
 
 _settings = get_settings()
 

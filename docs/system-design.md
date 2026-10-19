@@ -1,19 +1,20 @@
 # System design
 
-Application-level view of `src/app/` and `src/craftainer_tool_crud/`: layering, request
+Application-level view of `src/app/` and the published `craftainer-tool-crud` package: layering, request
 flow, the multi-format representation pattern, and auth. For the
 infrastructure/deployment view (services, networking, healthchecks), see
 [architecture.md](architecture.md). This is a summary that must stay
 consistent with [src/app/README.md](../src/app/README.md)'s and
-[src/craftainer_tool_crud/README.md](../src/craftainer_tool_crud/README.md)'s own "Layering" sections
+`craftainer_tool_crud/README.md`'s own "Layering" sections
 and diagrams, which remain authoritative for the exact import order.
 
 ## Layering
 
-The generic CRUD framework lives in `src/craftainer_tool_crud/`, laid out as its own
+The generic CRUD framework lives in the `craftainer-tool-crud` package (its own repository,
+a pinned dependency of this one, imported as `craftainer_tool_crud`), laid out as its own
 MVC-ish split under one strict, one-directional import order — a lower
 layer never imports from a higher one, enforced by `import-linter`'s
-`"crud layers"` contract in CI (see
+`"crud layers"` contract in that package's CI (see
 [docs/adrs/0001](adrs/0001-mvc-layering-with-a-generic-crud-interface.md)):
 
 ```mermaid
@@ -58,13 +59,13 @@ graph LR
 
 The generic health check framework (interface, registry, and router
 factory backing `/health/live`/`/health/ready`) lives in its own
-sibling `src/craftainer_tool_observability/health/` package, laid out the same MVC-ish way under its
-own `"health layers"` contract — no external dependency beyond FastAPI
+`craftainer_tool_observability.health` package (from the published `craftainer-tool-observability`), laid out the same MVC-ish way under its
+own `"health layers"` contract in that package's CI — no external dependency beyond FastAPI
 itself. `app/health_checks.py`'s concrete, service-specific checks
 (Postgres, Redis, S3, OIDC) build on that interface and wire into a
 registry `main.py` passes to `craftainer_tool_observability.health.router.build_health_router` the
 same way it uses `crud_1`'s finished router — see
-[src/craftainer_tool_observability/README.md](../src/craftainer_tool_observability/README.md) and
+the `craftainer-tool-observability` package's `README.md` and
 [src/app/README.md](../src/app/README.md).
 
 `config.py`/`problem_details.py`/`oidc.py`/
@@ -72,7 +73,7 @@ same way it uses `crud_1`'s finished router — see
 `main.py` stay flat,
 outside any subpackage. See
 [src/app/README.md](../src/app/README.md) for what each one does, and
-[src/craftainer_tool_crud/README.md](../src/craftainer_tool_crud/README.md)'s own "Layering" section for
+the `craftainer-tool-crud` package's `README.md` "Layering" section for
 why `craftainer_tool_crud.controllers` importing back from `app`'s lowest flat modules
 doesn't create a cycle between the two packages.
 
@@ -112,7 +113,7 @@ dedicated router factories, rather than by content negotiation inside
 one route — each format shares the same `CRUDLike` dependency, so none
 can drift in what data it exposes or what validation it applies. See
 [docs/adrs/0005](adrs/0005-multi-format-representations-via-sibling-routers.md)
-and [src/craftainer_tool_crud/controllers/README.md](../src/craftainer_tool_crud/controllers/README.md)'s
+and `craftainer_tool_crud/controllers/README.md`'s
 "Multi-format CRUD"/"Generic CRUD router factories" sections for the
 mechanics.
 
@@ -139,7 +140,7 @@ production)" section.
 - Base any change to this document on
   [src/README.md](../src/README.md)/
   [src/app/README.md](../src/app/README.md)/
-  [src/craftainer_tool_crud/README.md](../src/craftainer_tool_crud/README.md) and their subpackage
+  the `craftainer-tool-crud` package's README and their subpackage
   `README.md`s — those stay authoritative for exact layering and
   mechanics; this document is the higher-level summary.
 - Link to the relevant ADR in [docs/adrs/](adrs/) instead of restating

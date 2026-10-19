@@ -16,6 +16,8 @@ own prefix.
 from datetime import UTC, datetime
 from typing import Annotated
 
+from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
+from craftainer_tool_crud.interfaces.compat import CompatCRUD
 from fastapi import Depends
 
 from app.crud_1.heroes.heroes_v2 import DeleteRoles, HeroCRUD, ReadRoles, WriteRoles
@@ -31,8 +33,6 @@ from app.views.hero_v1 import (
     hero_v2_to_v1,
 )
 from app.views.hero_v2 import HeroV2
-from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
-from craftainer_tool_crud.interfaces.compat import CompatCRUD
 
 SUNSET_AT = datetime(2027, 1, 1, tzinfo=UTC)
 _V2_PREFIX = f"/crud/v{ROUTER_VERSION}/heroes/v2"

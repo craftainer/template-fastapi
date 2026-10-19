@@ -546,6 +546,63 @@ wheels = [
 ]
 
 [[package]]
+name = "craftainer-tool-crud"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "python-multipart" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/aa/66/13c6e10db967224f2e939b9c01825c93a4dcee96302f5120ee6edf4e95fe/craftainer_tool_crud-0.1.1.tar.gz", hash = "sha256:489b316d9e04362a9013f7bf4d748aaa6ea14b232d17fe8830d8ed4370c19db4", size = 280813, upload-time = "2026-10-19T15:51:46.411Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bb/61/672a4bfc50e3e165ee21af99f10baf9852c7a3682f538eb3a0bace6a36d2/craftainer_tool_crud-0.1.1-py3-none-any.whl", hash = "sha256:92f7e9d862c30d9f4f43ab327c3483e870f610fecfdae138e55a46b5f56035ac", size = 112648, upload-time = "2026-10-19T15:51:45.13Z" },
+]
+
+[package.optional-dependencies]
+mqtt = [
+    { name = "aiomqtt" },
+]
+xml = [
+    { name = "defusedxml" },
+]
+
+[[package]]
+name = "craftainer-tool-observability"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastapi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fe/de/47a8554bafa35d603444a6cd6685ce608e1db085352eb69e9cb4307888a0/craftainer_tool_observability-0.1.1.tar.gz", hash = "sha256:f27aeb5f1213b8da8f46040a009203d4bc54e2a83275e09ccc05607a00277e15", size = 192080, upload-time = "2026-10-19T15:51:54.391Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/90/8f2fdeab89bf3ba6095bc302b9d7342f90c5a51906bfaffba487de1e4276/craftainer_tool_observability-0.1.1-py3-none-any.whl", hash = "sha256:b7c142f5aa4b23c6815ae20624217118a8b545db5bc72acabff43eb20b4a8948", size = 35371, upload-time = "2026-10-19T15:51:53.36Z" },
+]
+
+[package.optional-dependencies]
+http = [
+    { name = "httpx" },
+]
+otel = [
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-instrumentation-fastapi" },
+    { name = "opentelemetry-instrumentation-logging" },
+    { name = "opentelemetry-instrumentation-sqlalchemy" },
+    { name = "opentelemetry-sdk" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+redis = [
+    { name = "redis" },
+]
+s3 = [
+    { name = "boto3" },
+]
+sqlalchemy = [
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[[package]]
 name = "cryptography"
 version = "50.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2428,6 +2485,8 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "boto3" },
+    { name = "craftainer-tool-crud", extra = ["mqtt", "xml"] },
+    { name = "craftainer-tool-observability", extra = ["http", "otel", "redis", "s3", "sqlalchemy"] },
     { name = "debugpy" },
     { name = "defusedxml" },
     { name = "fastapi" },
@@ -2478,6 +2537,8 @@ requires-dist = [
     { name = "asyncpg", specifier = "==0.31.0" },
     { name = "boto3", specifier = "==1.43.98" },
     { name = "boto3-stubs", extras = ["s3"], marker = "extra == 'dev'", specifier = "==1.43.98" },
+    { name = "craftainer-tool-crud", extras = ["mqtt", "xml"], specifier = "==0.1.1" },
+    { name = "craftainer-tool-observability", extras = ["otel", "sqlalchemy", "redis", "s3", "http"], specifier = "==0.1.1" },
     { name = "debugpy", specifier = "==1.8.22" },
     { name = "defusedxml", specifier = "==0.7.1" },
     { name = "fastapi", specifier = "==0.141.1" },

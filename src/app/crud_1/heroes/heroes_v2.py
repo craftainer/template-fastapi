@@ -13,12 +13,6 @@ for why a resource-version router should never bake in its own prefix.
 
 from typing import Annotated, Any
 
-from fastapi import Depends
-
-from app.crud_1.wiring import bulk_rate_limit, stats_cache
-from app.models.hero import Hero as HeroModel
-from app.oidc import get_current_claims, require_roles
-from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
 from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
 from craftainer_tool_crud.interfaces.base import (
     CRUDInterface,
@@ -34,6 +28,12 @@ from craftainer_tool_crud.interfaces.dependency import (
 from craftainer_tool_crud.models.base import DBSession
 from craftainer_tool_crud.models.revision import Revision
 from craftainer_tool_crud.repositories.base import Repository
+from fastapi import Depends
+
+from app.crud_1.wiring import bulk_rate_limit, stats_cache
+from app.models.hero import Hero as HeroModel
+from app.oidc import get_current_claims, require_roles
+from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
 
 _hero_repository = build_repository_provider(HeroModel)
 _revision_repository = build_repository_provider(Revision)

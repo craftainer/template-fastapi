@@ -2,7 +2,7 @@
 
 The Model layer: each resource's own SQLAlchemy ORM model. The generic
 declarative base, record-lifecycle mixins, and shared revision model
-live in `../craftainer_tool_crud/models/` instead — see its own `README.md`.
+live in `craftainer_tool_crud/models/` instead — see its own `README.md`.
 
 - `hero.py` — the example `Hero` model, subclassing `craftainer_tool_crud.models.base.
   IdentifiedBase` and opting into `craftainer_tool_crud.models.mixins`' record-lifecycle
@@ -22,4 +22,4 @@ live in `../craftainer_tool_crud/models/` instead — see its own `README.md`.
   `../README.md`'s "Layering" section. Importing from `craftainer_tool_crud.*` is fine —
   a resource's model builds on the generic base/mixins there.
 - Add generic, resource-agnostic model code here — that belongs in
-  `../craftainer_tool_crud/models/` instead.
+  `craftainer_tool_crud/models/` instead.
