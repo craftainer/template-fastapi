@@ -65,6 +65,10 @@ jobs:
         uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
+          # Same minor as the devcontainer's CPython (.devcontainer/Dockerfile's
+          # PYTHON_VERSION); otherwise uv picks the runner's newest Python that
+          # satisfies requires-python.
+          python-version: "3.14"
 
       # Unique per run so concurrent runs never collide on
       # container/volume/network names -- same reasoning as checks.yml/smoke.yml.
@@ -174,6 +178,10 @@ jobs:
         uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
+          # Same minor as the devcontainer's CPython (.devcontainer/Dockerfile's
+          # PYTHON_VERSION); otherwise uv picks the runner's newest Python that
+          # satisfies requires-python.
+          python-version: "3.14"
 
       - name: Set compose project name
         run: echo "COMPOSE_PROJECT_NAME=perf-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
