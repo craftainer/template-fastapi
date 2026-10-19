@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from craftainer_tool_observability.logs import _JSONFormatter, configure_logging
 
 from alembic import command
-from craftainer_tool_observability.logs import _JSONFormatter, configure_logging
 
 _ROOT = Path(__file__).resolve().parents[2]
 

@@ -3,7 +3,7 @@
 The View layer: each resource's own Pydantic schemas, returned by and
 accepted from `app.controllers`'/`app.crud_1`'s routes. The generic view
 bases and response shapes (`ORMView`, bulk/revision/stats results) live
-in `../craftainer_tool_crud/views/` instead — see its own `README.md`.
+in `craftainer_tool_crud/views/` instead — see its own `README.md`.
 
 - `hero_v2.py` — the current (v2) Hero views, built on `craftainer_tool_crud.views.base.
   ORMView`; see `../README.md`'s "Example CRUD resource: Hero".
@@ -20,7 +20,7 @@ in `../craftainer_tool_crud/views/` instead — see its own `README.md`.
 - For a deprecated API version, add a `*_vN.py` module following
   `hero_v1.py`'s shape: that version's own `*Base`/`*Create`/`*Update`/
   plain-name views, plus pure converter functions to/from the current
-  version's views (no I/O — see `../craftainer_tool_crud/controllers/README.md`'s "API
+  version's views (no I/O — see `craftainer_tool_crud/controllers/README.md`'s "API
   and model versioning"). A deprecated version's converters go in
   `views/`, not `craftainer_tool_crud/`, so they stay trivially unit-testable in
   isolation from the HTTP layer.
@@ -33,4 +33,4 @@ in `../craftainer_tool_crud/views/` instead — see its own `README.md`.
   A view converts to/from an ORM instance structurally
   (`from_attributes`), never by importing the model class.
 - Add generic, resource-agnostic view code here — that belongs in
-  `../craftainer_tool_crud/views/` instead.
+  `craftainer_tool_crud/views/` instead.

@@ -8,6 +8,17 @@ from contextlib import AsyncExitStack, asynccontextmanager, suppress
 
 import debugpy
 from alembic.config import Config
+from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION
+from craftainer_tool_crud.interfaces.cache import StatsCache
+from craftainer_tool_observability.health.router import build_health_router
+from craftainer_tool_observability.logs import configure_logging
+from craftainer_tool_observability.middleware import RequestIDMiddleware
+from craftainer_tool_observability.otel import (
+    configure_telemetry,
+    instrument_app,
+    instrument_engine,
+)
+from craftainer_tool_observability.profiling import install_profiling
 from fastapi import FastAPI
 
 from alembic import command
@@ -25,17 +36,6 @@ from app.health_checks import get_health_registry
 from app.http_headers import add_security_headers
 from app.oidc import prefetch_jwks
 from app.problem_details import register_problem_handlers
-from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION
-from craftainer_tool_crud.interfaces.cache import StatsCache
-from craftainer_tool_observability.health.router import build_health_router
-from craftainer_tool_observability.logs import configure_logging
-from craftainer_tool_observability.middleware import RequestIDMiddleware
-from craftainer_tool_observability.otel import (
-    configure_telemetry,
-    instrument_app,
-    instrument_engine,
-)
-from craftainer_tool_observability.profiling import install_profiling
 
 settings = get_settings()
 configure_logging()

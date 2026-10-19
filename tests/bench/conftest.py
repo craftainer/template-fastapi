@@ -7,6 +7,8 @@ from typing import Any
 import httpx
 import jwt
 import pytest
+from craftainer_tool_crud import config as crud_config
+from craftainer_tool_crud.config import CrudConfig
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt import PyJWKClient, PyJWKSet
 
@@ -14,8 +16,6 @@ from app import oidc
 from app.config import get_settings
 from app.main import app
 from app.oidc import get_current_claims
-from craftainer_tool_crud import config as crud_config
-from craftainer_tool_crud.config import CrudConfig
 
 BENCH_KID = "bench-key"
 BENCH_ISSUER = "https://issuer.bench.invalid/realms/bench"

@@ -9,13 +9,13 @@ get_hero_crud's own OwnerScope("owner_id", claims["sub"], read_scoped=False)
 
 from typing import Annotated, Any
 
+from craftainer_tool_crud.interfaces.base import CRUDInterface, OwnerScope
+from craftainer_tool_crud.repositories.memory import InMemoryRepository
 from fastapi import Depends
 
 from app.models.hero import Hero as HeroModel
 from app.oidc import get_current_claims
 from app.views.hero_v2 import HeroV2
-from craftainer_tool_crud.interfaces.base import CRUDInterface, OwnerScope
-from craftainer_tool_crud.repositories.memory import InMemoryRepository
 
 
 def override_hero_crud(

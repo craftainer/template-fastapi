@@ -2,9 +2,8 @@
 
 from typing import Annotated
 
-from pydantic import Field
-
 from craftainer_tool_crud.views.base import IXDTFDatetime, ORMView
+from pydantic import Field
 
 Power = Annotated[str, Field(min_length=1, max_length=200)]
 

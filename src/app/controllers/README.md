@@ -3,7 +3,7 @@
 FastAPI routers with no resource of their own. A resource's own router
 (e.g. Hero) lives in `../crud_1/` instead — see its `README.md`. The
 generic CRUD router factories every resource builds on live in
-`../craftainer_tool_crud/controllers/` instead — see its own `README.md`. Sits below
+`craftainer_tool_crud/controllers/` instead — see its own `README.md`. Sits below
 `crud_1` and `main` in `src/app/`'s import order — may import from any
 other `app/` subpackage, but only `crud_1`/`main` may import from here
 (see `../README.md`'s "Layering" section).
@@ -29,4 +29,4 @@ Add a role requirement to a route with `dependencies=[Depends
 - Add a resource's own router module here — resources live in
   `../crud_1/` instead.
 - Add a generic, resource-agnostic router-building helper here — that
-  belongs in `../craftainer_tool_crud/controllers/` instead.
+  belongs in `craftainer_tool_crud/controllers/` instead.

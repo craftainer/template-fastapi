@@ -1,11 +1,10 @@
 """SQLAlchemy model for the Hero resource -- the example CRUD app's data."""
 
+from craftainer_tool_crud.models.base import IdentifiedBase
+from craftainer_tool_crud.models.mixins import Archivable, Draftable, Lockable, Schedulable
 from sqlalchemy import String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
-
-from craftainer_tool_crud.models.base import IdentifiedBase
-from craftainer_tool_crud.models.mixins import Archivable, Draftable, Lockable, Schedulable
 
 
 class Hero(IdentifiedBase, Archivable, Draftable, Schedulable, Lockable):

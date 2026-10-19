@@ -1,17 +1,17 @@
 """Unit test: get_health_registry's wiring from Settings, and the mounted /health routes.
 
-The checks themselves are tested in tests/unit/craftainer_tool_observability/health/checks/;
-the generic registry/router framework in that directory's test_registry.py/test_router.py.
+The checks themselves and the generic registry/router framework are tested in the
+craftainer-tool-observability package repo.
 """
 
 import pytest
+from craftainer_tool_observability.health.base import HealthCheckResult
+from craftainer_tool_observability.health.registry import HealthRegistry
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.health_checks import MockHealthCheck, get_health_registry
 from app.main import app
-from craftainer_tool_observability.health.base import HealthCheckResult
-from craftainer_tool_observability.health.registry import HealthRegistry
 
 client = TestClient(app)
 

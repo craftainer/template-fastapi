@@ -1,11 +1,11 @@
 """Unit test: /crud/v1/heroes/v2/web/form and /crud/v1/heroes/v2/web/components.js."""
 
+from craftainer_tool_crud.repositories.memory import InMemoryRepository
 from fastapi.testclient import TestClient
 
 from app.crud_1.heroes.heroes_v2 import get_hero_crud
 from app.main import app
 from app.models.hero import Hero as HeroModel
-from craftainer_tool_crud.repositories.memory import InMemoryRepository
 
 from .conftest import override_hero_crud
 

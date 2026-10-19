@@ -5,6 +5,9 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
+from craftainer_tool_crud.interfaces.base import CRUDInterface, OwnerScope, RepositoryRevisionSink
+from craftainer_tool_crud.models.revision import Revision
+from craftainer_tool_crud.repositories.memory import InMemoryRepository
 from fastapi import Depends
 from fastapi.testclient import TestClient
 
@@ -14,9 +17,6 @@ from app.main import app
 from app.models.hero import Hero as HeroModel
 from app.oidc import get_current_claims
 from app.views.hero_v2 import HeroV2
-from craftainer_tool_crud.interfaces.base import CRUDInterface, OwnerScope, RepositoryRevisionSink
-from craftainer_tool_crud.models.revision import Revision
-from craftainer_tool_crud.repositories.memory import InMemoryRepository
 
 from .conftest import override_hero_crud as _override_crud
 

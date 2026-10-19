@@ -7,16 +7,16 @@ import asyncio
 import logging
 from logging.config import fileConfig
 
+from craftainer_tool_crud.models import (
+    revision,  # noqa: F401 -- import registers Revision on Base.metadata
+)
+from craftainer_tool_crud.models.base import Base
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from alembic import context
 from app.config import get_settings
 from app.models import hero  # noqa: F401 -- import registers Hero on Base.metadata
-from craftainer_tool_crud.models import (
-    revision,  # noqa: F401 -- import registers Revision on Base.metadata
-)
-from craftainer_tool_crud.models.base import Base
 
 config = context.config
 
