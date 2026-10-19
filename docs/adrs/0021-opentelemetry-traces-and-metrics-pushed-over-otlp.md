@@ -73,8 +73,25 @@ an OTLP receiver.
 - **Overhead budget.** At the 1 vCPU / 2 GB reference budget
   ([`0019`](0019-per-pr-benchmarks-and-fixed-load-acceptance.md)),
   capacity and fixed-load runs are taken three ways: telemetry unset,
-  sampling 100%, sampling 10%. Measured cost: `TBD`. Recommended default
-  sampling: `TBD` (chosen from that cost).
+  sampling 100%, sampling 10%. Measured cost (fixed load, 25 users, 300 s,
+  exact cgroup CPU, three runs, medians, `nop` exporter against a
+  perf-only collector; baseline for this table is the final pre-OTel
+  state at 7.244 ms and 69 ms p99):
+
+  | Setting | CPU ms/request | p99 | Capacity |
+  | --- | --- | --- | --- |
+  | Telemetry unset | 7.244 | 69 ms | 130 users |
+  | Sampling 100% | 8.069 (+11.4%) | 74 ms (+7.2%, beyond the spread) | 100 users (-23%) |
+  | Sampling 10% | 7.789 (+7.5%) | 71 ms (within the spread) | 130 users (unchanged) |
+
+  Most of the 10% cost is the OTLP log bridge and metrics export, which
+  stay on at any sampling ratio whenever `OTEL_EXPORTER_OTLP_ENDPOINT` is
+  set: about 9.8k log records and about 100 metric points per six-minute
+  run at both ratios. If the cost matters, `OTEL_LOGS_EXPORTER=none` is
+  the lever; it was not A/B'd separately. **Recommended default sampling:
+  `OTEL_TRACES_SAMPLER=parentbased_traceidratio` with
+  `OTEL_TRACES_SAMPLER_ARG=0.1`**, which keeps capacity unchanged and
+  p99 within the spread. 100% sampling is for debugging windows.
 
 ## Consequences
 

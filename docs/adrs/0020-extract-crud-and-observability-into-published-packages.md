@@ -51,8 +51,14 @@ with a 100% coverage gate, `import-linter`, `pip-audit`, all under
 ([`0019`](0019-per-pr-benchmarks-and-fixed-load-acceptance.md)).
 Publishing uses PyPI trusted publishing (GitHub OIDC, no stored token);
 the first release of each package goes to TestPyPI as a dry run. This
-needs one `template-base` change: `id-token: write` on the per-arch job
-that runs `make publish`, a no-op for repos that do not publish.
+needed one `template-base` change, released as v1.5.0:
+`id-token: write` on the per-arch job that runs `make publish`, plus
+passing `PYPI_PUBLISH` through to `make publish` and `release-check`
+(base's `release.yml` did not pass it), both no-ops for repos that do not
+publish. The repository variable `PYPI_PUBLISH` is `testpypi` or `pypi`
+and selects the index. On the bare release runner `uv` is absent, so the
+package Makefile runs `build`, `sbom` and `publish` in a pinned
+`ghcr.io/astral-sh/uv` container image instead.
 
 **Observability package scope.** One package with optional extras:
 
@@ -83,15 +89,22 @@ independence contract forbids either package importing `app`, and
 observability importing `crud`.
 
 **Moving and consuming.** History is preserved with `git filter-repo`
-limited to each package's paths; each package is released as `0.1.0`
-(TestPyPI first, then PyPI) and versioned as SemVer, staying `0.x` until
-the public API settles. This repo then pins exact versions
-(`craftainer-tool-crud[mqtt,xml]`,
-`craftainer-tool-observability[otel,sqlalchemy,redis,s3,http]`), Renovate
+limited to each package's paths; each package was released as `0.1.0`
+(a `0.1.0rc1` release candidate on TestPyPI first, then `0.1.0` on PyPI)
+and is versioned as SemVer, staying `0.x` until the public API settles.
+`0.1.0` shipped without the `py.typed` marker (the extraction deleted the
+template's placeholder package, which carried it), so mypy treated the
+packages as untyped. `0.1.1` added `py.typed` with a guard unit test in
+each package, and the package template's `release-check.sh` now fails a
+release whose wheel lacks `<import>/py.typed`. This repo pins exact versions
+(`craftainer-tool-crud[mqtt,xml]==0.1.1`,
+`craftainer-tool-observability[otel,sqlalchemy,redis,s3,http]==0.1.1`), Renovate
 bumps them, and the in-tree copies and their moved unit tests are
 deleted. The e2e suite and `tests/integration/test_health_checks.py`
 stay here as the packages' integration tests against real backing
-services. Editing a package alongside the app uses a local-only `uv`
+services. Because a package's models now arrive as a lockfile bump, the
+`migration-compat.yml` workflow triggers on `uv.lock` rather than on the
+deleted in-tree model files. Editing a package alongside the app uses a local-only `uv`
 path override that is never committed. Because `src/` is synced to this
 template's instances, they receive the deletion and new pins in their
 next sync PR.
@@ -105,7 +118,9 @@ contracts make a back-import impossible once code has moved.
 Harder: a change spanning a package and the app becomes two PRs and a
 release; the app depends on PyPI availability and exact pins; a `crud`
 model change needs a coordinated app-side migration. Three new repos and
-a template carry maintenance and PyPI trusted-publisher setup. Template
+a template carry maintenance (each repo has one "Protect main" ruleset
+applied by hand, because org rulesets are not enforced on the Free plan;
+`TEMPLATE_SYNC_TOKEN` needs the repos to stay public) and PyPI trusted-publisher setup. Template
 instances take a one-time dependency swap. The packages are `0.x`, so
 their public API may still change, and the GPL-3.0 licence applies to
 every consumer; revisiting it is a separate decision.

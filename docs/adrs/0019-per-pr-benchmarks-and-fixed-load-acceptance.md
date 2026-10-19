@@ -35,7 +35,12 @@ Measured facts that shape the rules (image `perf-baseline:07154b9`,
   210 / 210 / 270 ms (spread 28.6%). These CPU figures came from
   `docker stats` sampling, which understated CPU about 2.6x on an idle
   container, so they are not comparable with later exact cgroup
-  numbers. Exact-method baseline: `TBD`.
+  numbers. Exact-method baseline (cgroup `cpu.stat`, same image,
+  median of three runs): 22.08 CPU ms/request (spread 14.2%), aggregate
+  p99 280 ms, time to ready 1.59 s. The exact-method spread is wider
+  than the `docker stats` one, so the rule below needs a larger effect
+  than the 3.8% first estimated. Capacity was re-measured at 35 users
+  (earlier runs 25 / 30 / 25; 5-user steps).
 - Whole-host stalls of 9-15 minutes hit about one run in five on the
   8 GB development host.
 
@@ -58,7 +63,9 @@ baseline by more than the spread and by 3%" rule).** Each variant gets
 three fixed-load runs at 25 users, just below the baseline break point.
 Keep a change only if api CPU per request, or aggregate p99, improves by
 more than the baseline run-to-run spread and by at least 3%, without the
-other regressing beyond its spread. Capacity is a coarse gate only: a
+other regressing beyond its spread. The spread is the exact-method one
+(14.2% for CPU per request at the baseline); an effect inside it is
+noise. Capacity is a coarse gate only: a
 kept change must not lower the median `max_users_passed` by a step. With
 the current spreads, CPU per request is the deciding metric and p99 is a
 regression guard. Runs with a sampler gap over 10 s or worker heartbeat
@@ -109,5 +116,49 @@ repeats, which costs time. CodSpeed adds an external service and an
 org-level app installation; simulation mode counts instructions, so it
 cannot see I/O or event-loop effects, which the Locust layers still own.
 The relative check is only as trustworthy as the runner it runs on.
-`TBD`: exact-method fixed-load baseline, and the CodSpeed failure
-threshold.
+With the exact-method baseline the CPU spread is 14.2%, not 3.8%, so
+only changes above that are provable. The CodSpeed failure threshold was
+not measured or tuned in this work; it is set in CodSpeed's own
+settings once a few `main` runs show the noise of the instruction
+counts.
+
+## Results
+
+Fixed load, 25 users, 300 s window, exact cgroup CPU, three runs per
+variant, medians (reference budget 1 vCPU / 2 GiB):
+
+| Variant | CPU ms/request | Aggregate p99 | Capacity (`max_users_passed`) |
+| --- | --- | --- | --- |
+| Baseline `07154b9` | 22.08 (spread 14.2%) | 280 ms | 35 users (5-user steps) |
+| HEAD, `DB_POOL_MODE=null` | 19.11 (-13.4%, within the baseline spread) | 200 ms | not re-measured |
+| HEAD, `DB_POOL_MODE=local` | 7.31 (-61.7% vs `null`); p50 11 ms, p95 62 ms | 68 ms | not re-measured |
+| Final, packages 0.1.1 from PyPI (`4a44d9c`), `local`, defaults | 7.244 (`6794d38`: 7.236, no change) | 69 ms | 130 users (10-user steps; `6794d38`: 120) |
+
+Overall, the final state against the baseline: -67% CPU per request,
+p99 280 to 69 ms, capacity about 3.7x. The pool mode
+([`0022`](0022-db-pool-mode-per-deployment.md)) is the one change that
+cleared the rule by a wide margin.
+
+Candidates that did not clear the rule (CPU per request beyond the
+spread and at least 3%):
+
+| Knob | Effect | Outcome |
+| --- | --- | --- |
+| Access log off | -2.1% (`6794d38`) | below 3% and inside the spread |
+| `GC_FREEZE=false` | +0.6% | no effect |
+| Granian instead of uvicorn | +0.8% | uvicorn stays; no ADR for a server switch |
+
+OpenTelemetry overhead is in [`0021`](0021-opentelemetry-traces-and-metrics-pushed-over-otlp.md);
+the shutdown check under load is in the plan's phase 7.6 record
+(2256 of 2256 requests accepted before `SIGTERM` finished without a 5xx,
+exit code 0 within 0.19 s).
+
+### Kept for correctness
+
+The rule decides performance changes, not correctness ones. On
+2026-10-19 the user decided to keep the changes F1-F3, R2 and
+`gc.freeze()` even though their measured CPU effect was within noise,
+because their value is correctness and robustness (no regression was
+measured). A later change of this kind needs the same explicit
+decision; a performance-motivated change without a measured win beyond
+the spread is rejected.
