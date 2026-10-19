@@ -12,7 +12,9 @@ made. A plan can reference an ADR it depends on or that it prompts.
 
 A plan with more than one independent work item is executed by an
 orchestrating session through `plan-executor` subagents (see
-`../../CLAUDE.md`, "Execute multi-item work as an orchestrator"). It
+`../../CLAUDE.md`, "Execute multi-item work as an orchestrator", and the
+`plan-execution` skill; plans themselves are written with the
+`plan-creation` skill, both in `../../.claude/skills/`). It
 needs an `## Execution` section laid out so the orchestrator can turn
 each item straight into a brief:
 
