@@ -162,3 +162,29 @@ because their value is correctness and robustness (no regression was
 measured). A later change of this kind needs the same explicit
 decision; a performance-motivated change without a measured win beyond
 the spread is rejected.
+
+### Considered and not done
+
+Each of these was rejected before or during measurement, and needs a new
+decision (and a measured win under this ADR's rule) to revisit:
+
+- **Caching verified tokens.** RS256 verification costs about 48 µs per
+  call (the `tests/bench` token benchmark measures ~79 µs including PyJWT's
+  claim checks), small next to a Postgres round trip. A verified-claims
+  cache would trade that for stale trust after key rotation or a role
+  change, plus cache-key pitfalls (different encodings of one token). Revisit
+  only if a flame graph shows verification above about 10% of CPU. A
+  hand-rolled verifier is out for the same security reason.
+- **Python's JIT and the free-threaded build.** The JIT is experimental
+  (-10% to +20% depending on workload); the free-threaded build disables
+  it, risks asyncpg/uvloop compatibility and gains nothing at 1 vCPU.
+- **gzip in the app.** It spends the single core's CPU; the ingress
+  should compress.
+- **Granian instead of uvicorn.** Measured: +0.8% CPU per request, no
+  capacity gain, more RSS. uvicorn stays the default; `APP_SERVER=granian`
+  remains available.
+- **Bypassing framework layers** (raw responses instead of typed views,
+  dropping dependency injection, building JSON in the database, batching
+  writes across requests, weaker durability): each either reimplements
+  FastAPI/SQLAlchemy behaviour or trades away correctness, so they're out
+  of scope regardless of numbers.

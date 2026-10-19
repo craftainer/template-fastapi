@@ -70,6 +70,11 @@ headroom.
 
 ## Consequences
 
+Postgres stays the only supported database: the asyncpg driver, its
+prepared-statement handling above, and the models' `ARRAY`/`JSONB` types
+assume it. Supporting MariaDB, Oracle or another engine would be a
+separate portability project, not a pool-mode setting.
+
 Easier: a direct deployment gets connection reuse with one setting and no
 extra process; a pooled deployment has a documented, unit-tested
 `external` recipe; tests and `mock`/`dev` keep their loop-safe default.
