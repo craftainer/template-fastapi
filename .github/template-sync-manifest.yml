@@ -75,8 +75,10 @@ replace:
   - .devcontainer/compose.instance.yml
   - .devcontainer/stack/
   - .vscode/launch.json
+  - .github/workflows/codspeed.yml
   - .github/workflows/perf.yml
   - .github/workflows/smoke.yml
+  - .github/workflows/migration-compat.yml
   - Dockerfile
   - .dockerignore
   # Retired: the runtime image's pre-v1.3.0 (template-base) names. Kept
@@ -88,12 +90,14 @@ replace:
   - app.Dockerfile.dockerignore
   - Makefile
   - compose.yml
+  - compose.perf.yml
   - scripts/builder.sh
   - scripts/builder-sync-app.sh
   - scripts/builder-sync-deps.sh
   - scripts/runner.sh
   - scripts/runner-setup.sh
   - scripts/check-dockerfile-versions.sh
+  - scripts/lint-migrations.sh
   - scripts/develop.d/10-apt.sh
   - scripts/develop.d/20-pyright.sh
   - scripts/develop.d/30-rustfs-cli.sh

@@ -35,6 +35,8 @@ LABELS := \
 	--label io.github.$(OWNER).coverage-report=$(RELEASE_URL)/coverage.xml
 
 BUILD := docker buildx build -f Dockerfile --target runner \
+	--build-arg APP_VERSION=$(RELEASE_VERSION) \
+	--build-arg APP_COMMIT=$(shell git rev-parse HEAD) \
 	--platform linux/$(RELEASE_ARCH) $(LABELS) $(CACHE)
 
 release-arches:

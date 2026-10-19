@@ -284,6 +284,10 @@ duplicates or re-pins it elsewhere:
   development-related; if a future group needs another group's packages,
   reference it as a self-referential extra (e.g. `"template-fastapi[dev]"`,
   per PEP 621) instead of re-pinning the same package a second time.
+- `craftainer-tool-crud` and `craftainer-tool-observability` are published
+  packages (PyPI), pinned to exact versions in `pyproject.toml` and bumped by
+  Renovate; their source, tests and import-linter contracts live in their own
+  repositories, not under `src/`.
 - Everything else pinned (base images, Actions, hook revisions, and the
   devcontainer's `prek`/Claude Code CLI/`snip`/`gh`/`uv`/Node.js):
   pinned once, at its single point of use, to an exact patch version —
@@ -295,6 +299,24 @@ duplicates or re-pins it elsewhere:
   release tarballs, checksum-verified, rather than a devcontainer
   feature, so it's pinned the same way as everything else in the
   `develop` stage.
+
+### Developing a package and the app together
+
+To change `craftainer-tool-crud` or `craftainer-tool-observability` while
+running the app against your edits, point `uv` at a local checkout with an
+editable path override in `pyproject.toml`:
+
+```toml
+[tool.uv.sources]
+craftainer-tool-crud = { path = "../tool-crud", editable = true }
+craftainer-tool-observability = { path = "../tool-observability", editable = true }
+```
+
+then run `uv sync` (not `--locked`: the override changes the lock). This is
+local only and is never committed: `uv lock --check` in CI and the pinned
+`==X.Y.Z` dependencies must stay the source of truth. Revert the override
+(`git checkout pyproject.toml uv.lock`), release the package, and let Renovate
+(or you) bump the pin when the work is done.
 
 `ruff`, `mypy`, and `pytest` all point their cache dirs at
 `/home/vscode/.cache/<tool>` (set once each, in `pyproject.toml`'s

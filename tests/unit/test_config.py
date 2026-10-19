@@ -20,6 +20,7 @@ _PRODUCTION_KWARGS: dict[str, object] = {
     "mqtt_password": "real-mqtt-password",
     "s3_endpoint_url": "https://s3.example.com",
     "redis_url": "rediss://redis.example.com:6379/0",
+    "postgres_sslmode": "verify-full",
 }
 
 
@@ -129,6 +130,78 @@ def test_dev_mode_allows_plain_redis_url() -> None:
     assert Settings().redis_url.startswith("redis://")
 
 
+@pytest.mark.parametrize("sslmode", [None, "disable", "allow", "prefer"])
+def test_production_mode_requires_encrypting_postgres_sslmode(sslmode: str | None) -> None:
+    """Settings(mode="production") with an unset or non-encrypting sslmode raises."""
+    kwargs = {**_PRODUCTION_KWARGS, "postgres_sslmode": sslmode}
+    with pytest.raises(ValidationError, match="postgres_sslmode"):
+        Settings(**kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("sslmode", ["require", "verify-ca", "verify-full"])
+def test_production_mode_accepts_encrypting_postgres_sslmode(sslmode: str) -> None:
+    """require, verify-ca and verify-full satisfy the production guardrail."""
+    settings = Settings(**{**_PRODUCTION_KWARGS, "postgres_sslmode": sslmode})  # type: ignore[arg-type]
+    assert settings.postgres_sslmode == sslmode
+
+
+def test_dev_mode_allows_unset_postgres_sslmode() -> None:
+    """Settings(mode="dev") (the default) keeps postgres_sslmode unset (no TLS)."""
+    assert Settings().postgres_sslmode is None
+
+
+def test_postgres_sslmode_rejects_unknown_value() -> None:
+    """A value outside libpq's sslmode set is rejected."""
+    with pytest.raises(ValidationError, match="postgres_sslmode"):
+        Settings(postgres_sslmode="bogus")  # type: ignore[arg-type]
+
+
+def test_db_settings_defaults_keep_todays_behavior() -> None:
+    """Every new DB setting defaults to today's behavior (nothing consumes them yet)."""
+    settings = Settings()
+    assert settings.db_pool_mode == "null"
+    assert settings.db_pool_size is None
+    assert settings.db_max_overflow is None
+    assert settings.db_pool_recycle is None
+    assert settings.db_connect_timeout is None
+    assert settings.db_command_timeout is None
+    assert settings.run_migrations_on_startup is True
+
+
+def test_db_settings_accept_valid_values() -> None:
+    """Valid pool/timeout values are accepted as given."""
+    settings = Settings(
+        db_pool_mode="local",
+        db_pool_size=5,
+        db_max_overflow=0,
+        db_pool_recycle=1800,
+        db_connect_timeout=2.5,
+        db_command_timeout=30,
+        run_migrations_on_startup=False,
+    )
+    assert settings.db_pool_mode == "local"
+    assert settings.db_pool_size == 5
+    assert settings.db_connect_timeout == 2.5
+    assert settings.run_migrations_on_startup is False
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"db_pool_mode": "bogus"},
+        {"db_pool_size": -1},
+        {"db_max_overflow": -1},
+        {"db_pool_recycle": -1},
+        {"db_connect_timeout": 0},
+        {"db_command_timeout": -1.0},
+    ],
+)
+def test_db_settings_reject_invalid_values(override: dict[str, object]) -> None:
+    """Unknown pool modes, negative sizes and non-positive timeouts are rejected."""
+    with pytest.raises(ValidationError):
+        Settings(**override)  # type: ignore[arg-type]
+
+
 def test_unrelated_env_vars_are_not_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """extra="forbid" only rejects a value passed for a key that maps to no declared field.
 
@@ -165,3 +238,23 @@ def test_mock_mode_with_allow_mock_mode_succeeds() -> None:
     """Settings(mode="mock", allow_mock_mode=True) constructs without error."""
     settings = Settings(mode="mock", allow_mock_mode=True)
     assert settings.mode == "mock"
+
+
+def test_stats_cache_ttl_is_off_by_default_and_accepts_positive_seconds() -> None:
+    """STATS_CACHE_TTL_SECONDS unset disables the shared stats cache; it must be positive."""
+    assert Settings().stats_cache_ttl_seconds is None
+    assert Settings(stats_cache_ttl_seconds=30).stats_cache_ttl_seconds == 30
+    with pytest.raises(ValidationError, match="stats_cache_ttl_seconds"):
+        Settings(stats_cache_ttl_seconds=0)
+
+
+def test_gc_freeze_health_info_and_profiling_defaults_and_overrides() -> None:
+    """gc_freeze is on; /health/info and profiling are off by default, each overridable."""
+    defaults = Settings()
+    assert defaults.gc_freeze is True
+    assert defaults.health_info_enabled is False
+    assert defaults.profiling_enabled is False
+    custom = Settings(gc_freeze=False, health_info_enabled=True, profiling_enabled=True)
+    assert custom.gc_freeze is False
+    assert custom.health_info_enabled is True
+    assert custom.profiling_enabled is True

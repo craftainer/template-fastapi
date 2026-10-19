@@ -27,10 +27,39 @@ a binary directly:
   the dependency-install layer.
 - `runner-setup.sh` — `../Dockerfile`'s `runner` stage user/permission
   setup.
-- `runner.sh` — the `runner` stage's entrypoint (starts the app).
+- `runner.sh` — the `runner` stage's entrypoint (starts the app, as PID 1
+  via `exec`). `APP_SERVER` picks the server: `uvicorn` (default) or
+  `granian`; any other value exits 64 with a message.
+  - uvicorn runs with `--loop uvloop --http httptools` (a missing wheel
+    fails loudly). Every other tunable is an unset-by-default
+    `UVICORN_*` env var that uvicorn's CLI reads natively, e.g.
+    `UVICORN_ACCESS_LOG=false`, `UVICORN_PROXY_HEADERS`,
+    `UVICORN_BACKLOG`, `UVICORN_TIMEOUT_KEEP_ALIVE`,
+    `UVICORN_LIMIT_CONCURRENCY`, `UVICORN_WORKERS`. Note that
+    `--limit-concurrency` makes uvicorn answer with its own plain-text 503
+    before the app runs, so that response is not RFC 9457 problem details.
+  - granian runs `--interface asgi` on the same host/port; tune it with
+    `GRANIAN_*` env vars (`GRANIAN_WORKERS`, `GRANIAN_BACKLOG`,
+    `GRANIAN_LOOP`, `GRANIAN_LOG_ACCESS_ENABLED`, ...).
+  - `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS` (unset by default) maps to
+    uvicorn's `--timeout-graceful-shutdown`. Granian has no such option;
+    the closest is `GRANIAN_WORKERS_KILL_TIMEOUT`, which runner.sh sets
+    to the same value.
+  - `APP_VERSION` / `APP_COMMIT` are baked in by the `Dockerfile`
+    `ARG`s (set by `make build`).
 - `check-dockerfile-versions.sh` — pre-commit check that
   `../.devcontainer/Dockerfile` and `../Dockerfile` agree on
   `PYTHON_VERSION`/`DEBIAN_VERSION`.
+
+- `lint-migrations.sh` — the `lint-migrations` prek hook and
+  `../.github/workflows/migration-compat.yml`'s Squawk step (NFR-0027):
+  renders each given revision under `../alembic/versions/` to SQL with
+  `alembic upgrade <down_revision>:<revision> --sql` (offline, no
+  database) and lints it with `squawk`, which flags locking and rewriting
+  operations. `--changed-only` first narrows the files to those that
+  differ from the merge base with `origin/main`/`main` (applied
+  migrations are frozen, NFR-0019); without it every given file is
+  linted. `SQUAWK_ARGS` passes extra arguments to `squawk`.
 
 ## Do
 

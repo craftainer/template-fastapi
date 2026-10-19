@@ -2,12 +2,13 @@
 
 from datetime import UTC, datetime, timedelta
 
+from craftainer_tool_crud.models.base import Base
+from craftainer_tool_crud.repositories.sqlalchemy import SQLAlchemyRepository
 from sqlalchemy import delete
 
+from app.db import session_factory as async_session_factory
 from app.maintenance import purge_archived
 from app.models.hero import Hero
-from crud.models.base import Base, async_session_factory
-from crud.repositories.sqlalchemy import SQLAlchemyRepository
 
 
 async def test_purge_archived_deletes_only_rows_past_older_than() -> None:

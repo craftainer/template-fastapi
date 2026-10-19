@@ -23,22 +23,6 @@
     "ask": [
       "Bash(gh workflow run release.yml *)",
       "Bash(gh variable set *)"
-    ],
-    "deny": [
-      "mcp__s3-mcp__put_object",
-      "mcp__s3-mcp__delete_object",
-      "mcp__s3-mcp__copy_object",
-      "mcp__s3-mcp__create_bucket",
-      "mcp__s3-mcp__delete_bucket",
-      "mcp__s3-mcp__presign_put",
-      "Bash(uv publish *)",
-      "Bash(twine *)",
-      "Bash(git push --force *)",
-      "Bash(git push -f *)",
-      "Bash(git push origin main*)",
-      "Bash(gh repo delete *)",
-      "Bash(gh pr merge *)",
-      "Bash(gh release create *)"
     ]
   },
   "hooks": {

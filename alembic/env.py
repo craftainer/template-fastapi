@@ -1,26 +1,31 @@
-"""Alembic environment: autogenerate against crud.models.base's metadata, migrate over asyncpg."""
+"""Alembic environment: autogenerate against craftainer_tool_crud.models.base metadata.
+
+Migrates over asyncpg.
+"""
 
 import asyncio
+import logging
 from logging.config import fileConfig
 
+from craftainer_tool_crud.models import (
+    revision,  # noqa: F401 -- import registers Revision on Base.metadata
+)
+from craftainer_tool_crud.models.base import Base
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from alembic import context
 from app.config import get_settings
 from app.models import hero  # noqa: F401 -- import registers Hero on Base.metadata
-from crud.models import revision  # noqa: F401 -- import registers Revision on Base.metadata
-from crud.models.base import Base
 
 config = context.config
 
-if config.config_file_name is not None:
-    # disable_existing_loggers=False: fileConfig's default (True) disables every
-    # already-instantiated logger not declared in alembic.ini's own [loggers] section
-    # -- since app.main's lifespan runs migrations before serving any request, that
-    # would permanently silence every app.* logger (app.oidc, app.problem_details,
-    # crud.controllers.crud_actions, ...) for the rest of the process on every real
-    # startup, not just in a test.
+# Configure alembic's own logging only when running standalone (`alembic upgrade` from
+# the CLI), where the root logger has no handlers yet. Invoked from the app (lifespan
+# migrations) the root logger already carries the JSON/OTLP handlers from
+# `configure_logging()`, and `fileConfig` would replace them with alembic.ini's stderr
+# handler. `disable_existing_loggers=False` keeps already-created app.* loggers enabled.
+if config.config_file_name is not None and not logging.getLogger().handlers:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata

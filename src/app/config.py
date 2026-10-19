@@ -15,6 +15,7 @@ from pydantic import Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Mode = Literal["dev", "mock", "production"]
+PostgresSslMode = Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
 
 
 class Settings(BaseSettings):
@@ -59,7 +60,7 @@ class Settings(BaseSettings):
 
     # A bulk PATCH/DELETE with a technically-non-empty but always-true filter (e.g.
     # id__gte=0) would otherwise still match every row -- see
-    # crud.controllers.crud_actions, which counts matches before applying either
+    # craftainer_tool_crud.controllers.crud_actions, which counts matches before applying either
     # action and refuses to proceed above this threshold.
     bulk_action_max_matched: int = 1000
 
@@ -71,7 +72,8 @@ class Settings(BaseSettings):
     rate_limit_mock_token: str = "10/minute"  # noqa: S105 -- a rate-limit expression, not a secret
     rate_limit_bulk_action: str = "20/minute"
 
-    # app.maintenance.purge_archived: how old an archived row (see crud.models.mixins.
+    # app.maintenance.purge_archived: how old an archived row (see
+    # craftainer_tool_crud.models.mixins.
     # Archivable) must be before that out-of-request-path script hard-deletes it.
     # None (the default) disables purge entirely -- this devcontainer-only stack has
     # no scheduler/worker service to invoke it automatically either way (see
@@ -84,6 +86,38 @@ class Settings(BaseSettings):
     postgres_db: str = "app"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
+    # libpq sslmode, passed through to asyncpg's `ssl` argument by the engine
+    # factory. None (the default) means no TLS, as before; production requires
+    # an encrypting mode, see _require_postgres_tls_in_production below.
+    postgres_sslmode: PostgresSslMode | None = None
+
+    # SQLAlchemy pool tuning. "null" (NullPool, one connection per use) is
+    # today's behavior; "local" is an in-process QueuePool; "external" assumes a
+    # pooler such as PgBouncer. The three sizes are None (unset) so the engine
+    # factory passes only what is set and SQLAlchemy's own defaults apply.
+    db_pool_mode: Literal["null", "local", "external"] = "null"
+    db_pool_size: int | None = Field(default=None, ge=0)
+    db_max_overflow: int | None = Field(default=None, ge=0)
+    db_pool_recycle: int | None = Field(default=None, ge=0)
+
+    # asyncpg timeouts in seconds; None (unset) keeps asyncpg's own defaults.
+    db_connect_timeout: float | None = Field(default=None, gt=0)
+    db_command_timeout: float | None = Field(default=None, gt=0)
+
+    # Whether the api process runs Alembic migrations itself on startup.
+    run_migrations_on_startup: bool = True
+
+    # Run `gc.collect(); gc.freeze()` once startup finishes, moving the import-time object
+    # graph out of the cyclic GC's generations so collections stop rescanning it (and a
+    # forked worker doesn't copy-on-write its pages). A switch so a load test can A/B it.
+    gc_freeze: bool = True
+
+    # Expose GET /health/info (version and commit). Off by default: it discloses the version.
+    health_info_enabled: bool = False
+
+    # Honor `?profile=1` with a pyinstrument HTML profile (app.main -> install_profiling).
+    # Startup fails if this is set under MODE=production.
+    profiling_enabled: bool = False
 
     s3_endpoint_url: str = "http://localhost:9000"
     s3_access_key: str = Field(default="rustfsadmin", validation_alias="RUSTFS_ACCESS_KEY")
@@ -91,8 +125,13 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
-    # crud.interfaces.dependency.build_event_sink_provider/build_event_source_provider's
-    # real (non-MODE=mock) backend -- see .devcontainer/stack/mqtt/.
+    # app.cache: how long a cached /stats or /predict response lives, in seconds. None
+    # (the default, env STATS_CACHE_TTL_SECONDS unset) turns the shared cache off. Writes
+    # invalidate it through the CRUD event stream; this TTL is the safety net.
+    stats_cache_ttl_seconds: int | None = Field(default=None, gt=0)
+
+    # craftainer_tool_crud.interfaces.dependency.build_event_sink_provider/
+    # build_event_source_provider's real (non-MODE=mock) backend -- see .devcontainer/stack/mqtt/.
     # mqtt_keepalive_seconds is the aiomqtt.Client keepalive passed to both
     # MQTTEventSink and MQTTEventSource. mqtt_username/mqtt_password/mqtt_use_tls
     # default to unset/False -- matching .devcontainer/stack/mqtt/mosquitto.conf's
@@ -105,7 +144,7 @@ class Settings(BaseSettings):
     mqtt_password: str | None = None
     mqtt_use_tls: bool = False
 
-    # crud.controllers.crud_router's `GET <prefix>/events` SSE route: how often an
+    # craftainer_tool_crud.controllers.crud_router's `GET <prefix>/events` SSE route: how often an
     # idle stream sends a `: keep-alive` comment, so intermediary proxies/load
     # balancers don't time out the connection.
     sse_keepalive_seconds: float = 15.0
@@ -211,6 +250,24 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _require_postgres_tls_in_production(self) -> Self:
+        """Refuse to construct production Settings with Postgres TLS off or unverified-weak.
+
+        postgres_sslmode unset (or disable/allow/prefer) can leave the connection in
+        cleartext, sending credentials and query traffic unencrypted; production
+        must pick require, verify-ca or verify-full.
+        """
+        if self.mode == "production" and self.postgres_sslmode not in (  # pragma: no cover
+            "require",
+            "verify-ca",
+            "verify-full",
+        ):
+            raise ValueError(
+                "postgres_sslmode must be require, verify-ca, or verify-full when MODE=production"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _require_https_oidc_issuer_in_production(self) -> Self:
         """Refuse to construct production Settings with a non-https oidc_issuer_url.
 
@@ -229,7 +286,7 @@ class Settings(BaseSettings):
     def _require_mqtt_auth_in_production(self) -> Self:
         """Refuse to construct production Settings with an unauthenticated MQTT broker.
 
-        crud.interfaces.base.MQTTEventSink/MQTTEventSource connect with no
+        craftainer_tool_crud.interfaces.base.MQTTEventSink/MQTTEventSource connect with no
         credentials/TLS unless these are set, matching mosquitto.conf's own
         no-auth/no-TLS local-dev default (see .devcontainer/stack/mqtt/
         mosquitto.conf's "Don't" section) -- a production broker reachable over

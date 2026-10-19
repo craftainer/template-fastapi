@@ -1,9 +1,9 @@
 """Deprecated v1 Hero view (single superpower) and its converters to/from v2."""
 
+from craftainer_tool_crud.views.base import IXDTFDatetime, ORMView
 from pydantic import Field
 
 from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
-from crud.views.base import IXDTFDatetime, ORMView
 
 
 class HeroV1Base(ORMView):
@@ -40,7 +40,7 @@ def hero_v2_to_v1(hero: HeroV2) -> HeroV1:
     but never see more than one power even if v2 has several.
 
     v2's `name`/`powers` are optional (a Draftable Hero -- see
-    crud.models.mixins -- may have either or both still unset); v1 predates
+    craftainer_tool_crud.models.mixins -- may have either or both still unset); v1 predates
     draft and has no way to represent "unset" (`name`/`superpower` are both
     required, non-empty strings), so a still-draft field falls back to a
     fixed placeholder rather than crashing a v1 client that lists a hero it
