@@ -230,8 +230,8 @@ batched into one request.
 | --- | --- |
 | G0 | Kickoff: pre-flight complete, decisions P-D1…P-D9 answered. |
 | G-pr | Merging a PR in a repo the user merges (per P-D6). Raised per wave, together. |
-| G-rel | The first release of each **published package** (PyPI, npm, crates.io), the `0.1.2` notice releases, and both `0.2.0` releases under the new names. Templates release under the standing approval. |
-| G-tp | After a package's first npm or crates.io release: the user adds its trusted publisher on the registry and deletes the bootstrap token (pre-flight P-4/P-5). Batched: one request after Wave 3's releases, one after the axum releases. |
+| G-rel | The first release of each **published package** (PyPI, npm, crates.io), the `0.1.2` notice releases, and both `0.2.0` releases under the new names. Templates release under the standing approval. An npm first release is staged: the same request asks the user to approve it with 2FA (`npm stage approve <stage-id>` or npmjs.com). |
+| G-tp | After a package's first npm or crates.io release: the user adds its trusted publisher on the registry and deletes the bootstrap token (pre-flight P-4/P-5). Batched: one request after Wave 3's releases, one after the axum releases. npm expires a trusted-publisher config that hasn't published within 48 hours, so raise each request just before that package's next release, not earlier. |
 | G-choice | Decisions with no common best practice (`CLAUDE.md`, "Decide alone only where a common best practice exists"). Known in advance: the aesthetic direction for `template-react` (RS3). |
 | G-legacy | After the `0.1.2` notice releases of `craftainer-tool-crud` and `craftainer-tool-observability`: the user archives both projects on PyPI (project settings, owner only). |
 | G-esc | Escalations that are really the user's (the `plan-execution` skill, plus a taken registry or repo name). |
@@ -274,7 +274,7 @@ them as templates and prepares their rulesets (P-D6).
 | DK1 | `template-docker`: `Makefile` image contract (multi-arch build, SBOM, GHCR publish, `finalize` manifest list, `release-check` image smoke), `scripts/` it needs | template-docker: `Makefile`, `scripts/` | RS1 |
 | DK2 | `template-docker`: hooks (hadolint, Dockerfile version check, image scan), sync manifest, `docs/TEMPLATE.md` section, ADR 0001, Renovate docker datasource | template-docker: `.pre-commit-config.yaml`, `.github/`, `docs/` | RS1 |
 | NP1 | `template-npm-package` scaffold: pnpm via Corepack in `scripts/develop.d/`, `package.json`, strict `tsconfig`, ESM build (tool per RS5/context7), `src/`, `tests/`, vitest with a 100% gate, oxlint, prettier, publint, arethetypeswrong; all dependencies and the lockfile | template-npm-package: those paths, `.pre-commit-config.yaml` | B2 |
-| NP2 | `template-npm-package` release: `Makefile` (`npm pack`, SBOM, `npm publish --provenance` via OIDC with the bootstrap-token fallback, npm ≥ 11.5.1), `release-check` (install from the registry and import), docs, ADR 0001 | template-npm-package: `Makefile`, `scripts/release-*`, `docs/`, `.github/` | B2 |
+| NP2 | `template-npm-package` release: `Makefile` (`npm pack`, SBOM, `npm publish --provenance` via OIDC; without a trusted publisher, `npm stage publish` with the stage-only bootstrap token; npm ≥ 11.15.0), `release-check` (install from the registry and import), docs, ADR 0001 | template-npm-package: `Makefile`, `scripts/release-*`, `docs/`, `.github/` | B2 |
 | RC1 | `template-rust-crate` scaffold: rustup in `scripts/develop.d/`, `Cargo.toml` workspace, clippy `-D warnings`, rustfmt, cargo-llvm-cov gate, cargo-deny, cargo-semver-checks; `Cargo.lock` | template-rust-crate: those paths, `.pre-commit-config.yaml` | B2 |
 | RC2 | `template-rust-crate` release: `Makefile` (`cargo package`, SBOM, `cargo publish` via crates.io trusted publishing with the bootstrap-token fallback), `release-check`, docs, ADR 0001 | template-rust-crate: `Makefile`, `scripts/release-*`, `docs/`, `.github/` | B2 |
 
@@ -302,7 +302,7 @@ MF1 is frozen).** The orchestrator creates `lib-crud-sdk-py`,
 | FA0 | `template-fastapi` re-parent onto `template-docker`: sync state, drop files template-docker now owns, manifest tiers | this repo: `.github/template-sync-*`, `Makefile`, `scripts/` (per RS1), ADR 0024 | DK1, DK2, earlier plan's G-final |
 
 Then (release lane): `craftainer-crud` 0.2.0 (G-rel), client 0.1.0 releases
-(G-rel; TS via the bootstrap token, then G-tp), template-docker sync PRs.
+(G-rel; TS staged via the bootstrap token and approved by the user, then G-tp), template-docker sync PRs.
 
 **Wave 3: views and server wiring (after `craftainer-crud` 0.2.0 and
 `@craftainer/crud-sdk` 0.1.0 are published).**
@@ -380,7 +380,11 @@ release contract (template-base's `Makefile` targets; version only in the
 tag; `make build` stamps it; `release-check` installs the published
 artifact back). npm and crates.io have no pending publishers: a package's
 first release uses a short-lived, scope-limited bootstrap token from
-pre-flight, then trusted publishing takes over (G-tp). npm's OIDC path
+pre-flight, then trusted publishing takes over (G-tp). On npm that token
+is stage-only: the first release is `npm stage publish`, which creates a
+public `0.0.0-stage` placeholder and holds the real version until the
+user approves it with 2FA (npm ≥ 11.15.0; npm is removing direct
+publishing for 2FA-bypass tokens, targeted January 2027). npm's OIDC path
 needs npm ≥ 11.5.1 and breaks if `NODE_AUTH_TOKEN` is set to an empty
 string, so `publish` unsets it rather than blanking it.
 
@@ -414,6 +418,7 @@ gap analysis lists, each A/B-tested with the earlier plan's rule.
 | 2026-10-19 | Plan drafted. Discovery goes through `/.well-known/api-catalog` (RFC 9727) pointing at `/_crud/manifest`, not an unregistered `/.well-known/crud`. Confirmed or changed in pre-flight P-D2. |
 | 2026-10-19 | Concurrency: rolling queue, 4 agents; at most 1 compiling Rust; 0 during bench measurements. |
 | 2026-10-19 | First npm and crates.io publishes use pre-flight bootstrap tokens; trusted publishing afterwards (G-tp). Neither registry supports pending publishers. |
+| 2026-10-20 | User decision: the npm bootstrap token is **stage-only** ("Read and write (stage only)"), per npm's deprecation of direct publishing with 2FA-bypass tokens ([discussion](https://github.com/orgs/community/discussions/201329), [staged publishing](https://docs.npmjs.com/staged-publishing)). First npm releases are staged and approved by the user at G-rel; NP2 needs npm ≥ 11.15.0. |
 | 2026-10-19 | User decision: the orchestrator decides alone only where a common best practice exists; anything else goes to the user with options, sources and a labeled lean (G-choice). A standing rule in `CLAUDE.md` since template-base v1.6.0. |
 | 2026-10-19 | User decision, naming: repos `lib-<name>-<py\|ts\|rs>`; registries `craftainer-<name>` (PyPI, crates.io) and `@craftainer/<name>` (npm); SDKs are `crud-sdk`; Python import names match the distribution (`craftainer_crud`, `craftainer_observability`, `craftainer_crud_sdk`). `tool-crud`/`tool-observability` are renamed on GitHub in pre-flight. |
 | 2026-10-19 | User decision, old PyPI projects: `craftainer-tool-crud` and `craftainer-tool-observability` get a final `0.1.2` notice release (old code, `DeprecationWarning`, README pointer), then are archived on PyPI, not yanked, so existing pins keep working (RN3, G-legacy). |

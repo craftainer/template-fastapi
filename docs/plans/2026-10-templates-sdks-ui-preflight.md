@@ -11,16 +11,16 @@ This file belongs to the plan and is deleted with it.
 
 ## Checklist
 
-- [ ] P-1. Close the earlier plan
-- [ ] P-1b. Rename the two package repos
-- [ ] P-2. Answer decisions P-D1…P-D9 (Part 1)
-- [ ] P-3. PyPI and TestPyPI: publishers for the new and renamed projects
-- [ ] P-4. npm: org and bootstrap token
-- [ ] P-5. crates.io: account and bootstrap token
-- [ ] P-6. GitHub org: check secrets, apps and packages
-- [ ] P-7. Docker resources
-- [ ] P-8. Local permissions
-- [ ] P-9. Power settings
+- [x] P-1. Close the earlier plan
+- [x] P-1b. Rename the two package repos
+- [x] P-2. Answer decisions P-D1…P-D9 (Part 1)
+- [x] P-3. PyPI and TestPyPI: publishers for the new and renamed projects
+- [x] P-4. npm: org and bootstrap token (`NPM_TOKEN` expires 2026-11-19)
+- [x] P-5. crates.io: account and bootstrap token (`CARGO_REGISTRY_TOKEN` expires ~2026-12-19)
+- [x] P-6. GitHub org: check secrets, apps and packages
+- [x] P-7. Docker resources (host has 8 GB total; Docker stays at ~7.7 GB, P-D8 unchanged)
+- [x] P-8. Local permissions
+- [x] P-9. Power settings
 - [ ] P-10. Start a fresh session and kick off
 
 ---
@@ -32,18 +32,18 @@ recommendation. The orchestrator copies the answers into the plan's
 Decision log at G0 and never reopens them.
 
 **P-D1. `template-docker` layer.**
-- [ ] Create it; `template-fastapi`, `template-axum` and `template-react`
+- [x] Create it; `template-fastapi`, `template-axum` and `template-react`
   sync from it (recommended).
 - [ ] Skip it; each app template keeps its own image release.
 
 **P-D2. Where clients discover the CRUD manifest.**
-- [ ] `/.well-known/api-catalog` (RFC 9727, a registered well-known name)
+- [x] `/.well-known/api-catalog` (RFC 9727, a registered well-known name)
   linking to `/openapi.json` and `/api/_crud/manifest` (recommended).
 - [ ] An unregistered `/.well-known/crud-manifest` serving the manifest
   directly (simpler, non-standard).
 
 Also: should the manifest require authentication?
-- [ ] Same roles as reading the resource; unauthenticated callers see only
+- [x] Same roles as reading the resource; unauthenticated callers see only
   public resources (recommended).
 - [ ] Always public.
 
@@ -55,7 +55,7 @@ Python import names match (`craftainer_crud`); `tool-crud` and
 `0.1.2` notice release and are then archived. Nothing to tick.
 
 **P-D4. UI library for `template-react` and `lib-crud-views-ts`.**
-- [ ] Stay on MUI (recommended): already in the template, official MCP
+- [x] Stay on MUI (recommended): already in the template, official MCP
   server for Claude, MUI X DataGrid and Charts (MIT tier) cover
   list/filter/sort/stats, and it ships as a normal npm dependency.
 - [ ] Switch to shadcn/ui + Tailwind: strong agent tooling (registry +
@@ -64,12 +64,12 @@ Python import names match (`craftainer_crud`); `tool-crud` and
   an npm package, and `template-react` is rewritten.
 
 **P-D5. Axum track in this plan.**
-- [ ] Yes, as the last waves (recommended).
+- [x] Yes, as the last waves (recommended).
 - [ ] No, a separate plan later (drops RC1/RC2, AX*, L2; `template-rust-crate`
   is then created later too).
 
 **P-D6. Who merges PRs.**
-- [ ] The orchestrator merges PRs **in repos this plan creates**, once CI is
+- [x] The orchestrator merges PRs **in repos this plan creates**, once CI is
   green and a `/code-review` pass found nothing blocking; you merge PRs in
   existing repos (template-base, template-fastapi, lib-crud-py,
   lib-observability-py, template-react, template-axum) (recommended: cuts
@@ -81,18 +81,22 @@ approving review? An orchestrator can't approve its own PR. Either the
 ruleset requires a PR but no approvals (as on the earlier repos, if that's
 how you set them up), or pick the second option.
 
+**Answer (2026-10-20):** the earlier repos' "Protect main" requires 1
+approval, so each new repo's ruleset copy sets
+`required_approving_review_count` to **0** (PR still required).
+
 **P-D7. License for the new libraries (SDKs, views, crates).**
-- [ ] GPL-3.0, like every other repo (recommended for consistency).
+- [x] GPL-3.0, like every other repo (recommended for consistency).
 - [ ] A permissive license (MIT or Apache-2.0) for libraries apps link
   against, so apps under other licenses can use them; templates stay GPL.
 
 **P-D8. Concurrency.** 4 agents, at most 1 compiling Rust.
-- [ ] Yes (recommended at the current ~7.7 GB of Docker memory).
+- [x] Yes (recommended at the current ~7.7 GB of Docker memory).
 - [ ] Other, after raising memory in P-7: …… agents, …… Rust.
 
 **P-D9. CRUD view variants.** RS2 picks the five variants per view from its
 survey.
-- [ ] The orchestrator decides from RS2's counts and records it
+- [x] The orchestrator decides from RS2's counts and records it
   (recommended; no stop). Ties or close calls still come to you
   (G-choice).
 - [ ] Show me RS2's report before Wave 3 starts (one extra gate).
@@ -172,11 +176,14 @@ token; trusted publishing is configured after it exists (gate G-tp, mid-run).
    **Unlimited public packages (free)**.
 3. Create a **granular access token** (avatar → Access Tokens → Generate New
    Token → Granular Access Token):
-   - Packages and scopes: **Read and write**, limited to the
-     `@craftainer` scope;
+   - Packages and scopes: **Read and write (stage only)**, limited to
+     the `@craftainer` scope. npm is removing direct publishing for
+     2FA-bypass tokens (targeted January 2027), so CI only *stages* the
+     first release (`npm stage publish`) and you approve it with 2FA at
+     G-rel (decided 2026-10-20, see the plan's Decision log);
    - Organizations: no access;
    - **Bypass two-factor authentication** for automation: on (CI can't
-     answer a 2FA prompt);
+     answer a 2FA prompt; with stage-only it can't publish on its own);
    - Expiration: long enough to cover the run (30 days or more; npm may cap
      it lower, in which case note the date and tell the orchestrator).
 4. Add it as a GitHub **organization secret** `NPM_TOKEN`:
