@@ -12,9 +12,9 @@ a binary directly:
   either.
 - `post-create.sh` — the devcontainer's `postCreateCommand`: git
   `safe.directory`, `prek install`, then every `post-create.d/*.sh`.
-- `develop.d/`, `post-create.d/` — instance hook directories; see
-  `docs/TEMPLATE.md`'s "Instance extension points". template-fastapi's
-  own hooks:
+- `develop.d/`, `post-create.d/`, `runner-setup.d/` — instance hook
+  directories; see `docs/TEMPLATE.md`'s "Instance extension points".
+  template-fastapi's own hooks:
   - `develop.d/NN-*.sh` — FastAPI-specific extra develop tooling (apt
     clients, pyright, rustfs CLI, `kcadm`), run after `develop.sh`; each
     pins its own version with a `# renovate:` comment.
@@ -25,8 +25,6 @@ a binary directly:
 - `builder-sync-deps.sh` / `builder-sync-app.sh` — the `builder` stage's
   two `uv sync` steps, split so a source-only change doesn't invalidate
   the dependency-install layer.
-- `runner-setup.sh` — `../Dockerfile`'s `runner` stage user/permission
-  setup.
 - `runner.sh` — the `runner` stage's entrypoint (starts the app, as PID 1
   via `exec`). `APP_SERVER` picks the server: `uvicorn` (default) or
   `granian`; any other value exits 64 with a message.
@@ -47,10 +45,6 @@ a binary directly:
     to the same value.
   - `APP_VERSION` / `APP_COMMIT` are baked in by the `Dockerfile`
     `ARG`s (set by `make build`).
-- `check-dockerfile-versions.sh` — pre-commit check that
-  `../.devcontainer/Dockerfile` and `../Dockerfile` agree on
-  `PYTHON_VERSION`/`DEBIAN_VERSION`.
-
 - `lint-migrations.sh` — the `lint-migrations` prek hook and
   `../.github/workflows/migration-compat.yml`'s Squawk step (NFR-0027):
   renders each given revision under `../alembic/versions/` to SQL with
@@ -60,6 +54,22 @@ a binary directly:
   differ from the merge base with `origin/main`/`main` (applied
   migrations are frozen, NFR-0019); without it every given file is
   linted. `SQUAWK_ARGS` passes extra arguments to `squawk`.
+- `runner-setup.sh` — the top-level `Dockerfile`'s `runner` stage setup:
+  group-0 runtime user for arbitrary-UID platforms (run before copying
+  app code, which is then copied read-only), then every
+  `runner-setup.d/*.sh`.
+- `image-scan.sh` — the manual-stage `image-scan` hook: Trivy over the
+  tars in `dist/`.
+- `image-smoke.sh` — `make image-smoke` (a `release-check` prerequisite):
+  converts the arch's image in the release OCI tar from `dist/` to a
+  docker-archive with the pinned skopeo (`docker load` can't read a buildx
+  OCI tar on the classic image store), loads and runs it, and polls
+  `IMAGE_SMOKE_PATH` until 2xx. Needs `SKOPEO_IMAGE`, which the Makefile
+  exports; usage in the script's header.
+- `skopeo.sh` — runs the pinned skopeo image as the caller's user with
+  `dist/` mounted at `/dist`; used by `make publish` and `image-smoke.sh`.
+- `check-dockerfile-versions.sh ARG...` — fails when a named `ARG` default
+  differs between `.devcontainer/Dockerfile` and the top-level `Dockerfile`.
 
 ## Do
 

@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Accepted. The `release.yml` build/manifest mechanics are superseded by
+[0024](0024-re-parent-onto-template-docker.md): template-docker now owns
+that workflow and the Makefile behind it (the per-arch tag is the tested tar
+pushed with skopeo; `finalize` builds the manifest list from the pushed
+digests). Native arm64 runners and the `CI_RUNNER_AMD64`/`CI_RUNNER_ARM64`
+split stand.
 
 ## Context
 

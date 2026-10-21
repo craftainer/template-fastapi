@@ -3,14 +3,18 @@
 .git
 .github
 .devcontainer
+.secrets
+.vscode
+.claude
+docs
+README.md
+CLAUDE.md
+dist
+# template-fastapi's own entries
 .venv
 __pycache__
 *.pyc
 .pytest_cache
 .mypy_cache
 .ruff_cache
-.secrets
-docs
 tests
-README.md
-CLAUDE.md

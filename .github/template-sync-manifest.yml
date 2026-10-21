@@ -12,9 +12,10 @@
 #
 # This is template-fastapi's own manifest, classifying its full tracked-file
 # set for its instances. template-fastapi is itself an instance of
-# template-base, whose manifest is "merge" tier, so this file keeps its
-# FastAPI-specific entries across base syncs and takes base's additions by
-# hand -- see docs/TEMPLATE.md. It is "merge" tier here too: a repo that's
+# template-docker (the shared image layer, on top of template-base), whose
+# manifest is "merge" tier, so this file keeps its FastAPI-specific entries
+# across docker syncs and takes docker's additions by hand -- see
+# docs/TEMPLATE.md. It is "merge" tier here too: a repo that's
 # both an instance of template-fastapi and its own template for further
 # instances edits this file directly, covering its own (larger) tracked-file
 # set, and resolves this file's additions by hand.
@@ -65,8 +66,21 @@ replace:
   - scripts/develop.d/README.md
   - scripts/post-create.d/README.md
 
-  # template-fastapi's own layer on top of base: the app image, its release
-  # Makefile, the smoke-stack compose file, the backing-services stack, the
+  # template-docker's image layer (ADR 0024): the image-release Makefile,
+  # the smoke test, the runner-setup driver and its README, the tag-
+  # consistency check, the Trivy scan and the skopeo wrapper. Hook scripts
+  # are listed one by one, not as globs: an instance's own
+  # scripts/runner-setup.d/*.sh are ignore tier (below).
+  - Makefile
+  - scripts/image-smoke.sh
+  - scripts/runner-setup.sh
+  - scripts/runner-setup.d/README.md
+  - scripts/check-dockerfile-versions.sh
+  - scripts/image-scan.sh
+  - scripts/skopeo.sh
+
+  # template-fastapi's own layer on top of docker: the app image, the
+  # smoke-stack compose file, the backing-services stack, the
   # FastAPI-specific workflows, and the hook scripts that install the
   # stack's CLI tools. Listed one by one where base's hook directories are
   # "ignore" for plain base instances -- an instance's own extra hook
@@ -80,23 +94,19 @@ replace:
   - .github/workflows/smoke.yml
   - .github/workflows/migration-compat.yml
   - Dockerfile
-  - .dockerignore
   # Retired: the runtime image's pre-v1.3.0 (template-base) names. Kept
   # listed with no file behind them, so a sync deletes them from instances
-  # created before the rename, while Dockerfile/.dockerignore above replace
-  # the old base-owned files at the same paths. Safe to drop once every
-  # instance has synced past this change.
+  # created before the rename, while Dockerfile above replaces the old
+  # base-owned file at the same path. Safe to drop once every instance has
+  # synced past this change.
   - app.Dockerfile
   - app.Dockerfile.dockerignore
-  - Makefile
   - compose.yml
   - compose.perf.yml
   - scripts/builder.sh
   - scripts/builder-sync-app.sh
   - scripts/builder-sync-deps.sh
   - scripts/runner.sh
-  - scripts/runner-setup.sh
-  - scripts/check-dockerfile-versions.sh
   - scripts/lint-migrations.sh
   - scripts/develop.d/10-apt.sh
   - scripts/develop.d/20-pyright.sh
@@ -161,6 +171,9 @@ ignore:
   # body when that happens).
   - uv.lock
 
+  # Instance hook scripts for template-docker's runner-setup.sh driver.
+  - scripts/runner-setup.d/*.sh
+
   # An instance's own extra "ignore" patterns for paths this manifest can't
   # know about (see docs/TEMPLATE.md's "Template sync" section).
   - .github/template-sync-manifest.local.yml
@@ -170,6 +183,11 @@ merge:
   # everything else in these two files is template-owned.
   - README.md
   - pyproject.toml
+
+  # Baseline excludes the instance extends with its own entries, and the
+  # per-repo values for template-docker's Makefile (`-include image.mk`).
+  - .dockerignore
+  - image.mk
 
   # Files with no include mechanism of their own (JSON configs, prek's
   # .pre-commit-config.yaml), and docs an instance appends to: a three-way

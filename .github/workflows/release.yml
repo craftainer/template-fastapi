@@ -70,8 +70,9 @@ jobs:
         arch: ${{ fromJSON(needs.version.outputs.arches) }}
     # Job-level permissions replace the workflow-level ones, so
     # `contents: write` is repeated. `id-token: write` lets `make publish`
-    # mint a GitHub OIDC token for PyPI trusted publishing; repos that
-    # don't publish to PyPI never request one, so it is unused for them.
+    # mint a GitHub OIDC token for PyPI, npm and crates.io trusted
+    # publishing; repos that publish to none of them never request one,
+    # so it is unused for them.
     permissions:
       contents: write
       id-token: write
@@ -88,6 +89,12 @@ jobs:
       # Package repos only: `testpypi` or `pypi` selects the index
       # `make publish` uploads to via trusted publishing; unset skips it.
       PYPI_PUBLISH: ${{ vars.PYPI_PUBLISH }}
+      # Package repos only: any non-empty value makes `make publish` push
+      # to npm / crates.io; unset skips it. The bootstrap secrets
+      # (NPM_TOKEN, CARGO_REGISTRY_TOKEN) are NOT here -- see the Publish
+      # step.
+      NPM_PUBLISH: ${{ vars.NPM_PUBLISH }}
+      CARGO_PUBLISH: ${{ vars.CARGO_PUBLISH }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Check out repository
@@ -115,7 +122,14 @@ jobs:
       - name: Populate release assets
         run: make release-assets
 
+      # The only step that sees the registry bootstrap tokens. Unset
+      # secrets arrive as empty strings, which the Makefile must treat as
+      # absent. Never map NPM_TOKEN to NODE_AUTH_TOKEN: npm's OIDC trusted
+      # publishing breaks when NODE_AUTH_TOKEN is set, even if empty.
       - name: Publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: make publish
 
       - name: Upload release assets
@@ -155,12 +169,16 @@ jobs:
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
           # So a package's release-check can also install what publish uploaded.
           PYPI_PUBLISH: ${{ vars.PYPI_PUBLISH }}
+          NPM_PUBLISH: ${{ vars.NPM_PUBLISH }}
+          CARGO_PUBLISH: ${{ vars.CARGO_PUBLISH }}
         with:
           runCmd: make release-check
           env: |
             RELEASE_VERSION
             RELEASE_TAG
             PYPI_PUBLISH
+            NPM_PUBLISH
+            CARGO_PUBLISH
 
       # devcontainers/ci starts the full compose stack but never tears it
       # down -- see checks.yml's identical step.
