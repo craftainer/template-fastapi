@@ -50,7 +50,7 @@ services:
       MQTT_HOST: mqtt
       MQTT_PORT: "1883"
       MODE: dev
-      # OTel service.name, read by craftainer_tool_observability.logs.
+      # OTel service.name, read by craftainer_observability.logs.
       OTEL_SERVICE_NAME: template-fastapi
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"

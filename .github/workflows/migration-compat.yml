@@ -14,7 +14,7 @@ on:
     paths:
       - alembic/versions/**
       - src/app/models/**
-      # craftainer-tool-crud's models (revision table, base columns) arrive as a
+      # craftainer-crud's models (revision table, base columns) arrive as a
       # version bump in the lockfile now that the package is published.
       - uv.lock
       - scripts/lint-migrations.sh

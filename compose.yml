@@ -222,7 +222,7 @@ services:
       # Pooled connections reuse asyncpg's prepared statements; see
       # docs/adrs/0022-db-pool-mode-per-deployment.md. The app default stays `null`.
       DB_POOL_MODE: local
-      # OTel service.name, read by craftainer_tool_observability.logs's
+      # OTel service.name, read by craftainer_observability.logs's
       # Resource.create() (OTEL_SERVICE_NAME is OTel's own env var).
       OTEL_SERVICE_NAME: template-fastapi
       S3_ENDPOINT_URL: https://s3:9000
