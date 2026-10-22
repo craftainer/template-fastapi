@@ -37,12 +37,16 @@ plus the newer `release.yml` and workflow docs, Renovate managers and the
 `hadolint`, `check-dockerfile-versions` and manual-stage `image-scan` hooks.
 `.dockerignore` becomes merge tier (docker's baseline plus fastapi's
 entries); `image.mk` is merge tier; `Dockerfile` stays replace tier for
-fastapi's own instances; `scripts/runner-setup.d/*.sh` is ignore tier.
+fastapi's own instances; `scripts/runner-setup.d/10-remove-pip.sh` is replace
+tier (listed one by one, no ignore glob), and an instance's own runner hooks go in
+its `template-sync-manifest.local.yml`.
 
 **`Dockerfile`** follows docker's layout: `syntax=dockerfile:1.28`; the runner
 stage runs `runner-setup.sh` (user, group-0 home, `/app/data`) before the
 app is copied; `runner.sh`, `alembic.ini` and `alembic/` are then copied
-read-only (`--chown=<uid>:0 --chmod=u=rX,g=rX,o=`). The old script's recursive
+read-only (`--chown=<uid>:0`, with numeric `--chmod` 0440 for `alembic.ini` and
+0550 for `alembic/`: the symbolic `u=rX,g=rX,o=` form failed on the CI runner's
+stock Docker, where alembic could list `alembic/versions` but not open the files). The old script's recursive
 `chgrp`/`chmod` of `/app` is gone, and so is `/app` being group-writable:
 the app does not write there (bytecode writing is off, migrations only read
 `alembic/`). The venv keeps its `--chown`/`--chmod=750` copy.

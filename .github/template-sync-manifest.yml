@@ -69,12 +69,17 @@ replace:
   # template-docker's image layer (ADR 0024): the image-release Makefile,
   # the smoke test, the runner-setup driver and its README, the tag-
   # consistency check, the Trivy scan and the skopeo wrapper. Hook scripts
-  # are listed one by one, not as globs: an instance's own
-  # scripts/runner-setup.d/*.sh are ignore tier (below).
+  # are listed one by one, not as globs: a script a template ships is
+  # replace tier here, and an instance's own scripts/runner-setup.d/*.sh
+  # go in its template-sync-manifest.local.yml (like the develop.d and
+  # post-create.d hooks).
   - Makefile
   - scripts/image-smoke.sh
   - scripts/runner-setup.sh
   - scripts/runner-setup.d/README.md
+  # template-fastapi's own runner hook (drops pip/setuptools/wheel from the
+  # runtime image); instances receive it with the Dockerfile that runs it.
+  - scripts/runner-setup.d/10-remove-pip.sh
   - scripts/check-dockerfile-versions.sh
   - scripts/image-scan.sh
   - scripts/skopeo.sh
@@ -170,9 +175,6 @@ ignore:
   # `uv lock` after a sync PR changes pyproject.toml (called out in the PR
   # body when that happens).
   - uv.lock
-
-  # Instance hook scripts for template-docker's runner-setup.sh driver.
-  - scripts/runner-setup.d/*.sh
 
   # An instance's own extra "ignore" patterns for paths this manifest can't
   # know about (see docs/TEMPLATE.md's "Template sync" section).

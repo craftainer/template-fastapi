@@ -401,7 +401,9 @@ An instance that isn't itself a template shouldn't edit that manifest to
 list its own files: it's `merge`-tier, so edits would conflict with later
 syncs. It lists them under an `ignore:` key in the instance-owned
 `.github/template-sync-manifest.local.yml` instead — including any extra
-`scripts/develop.d/`/`scripts/post-create.d/` hook scripts of its own; the
+`scripts/develop.d/`/`scripts/post-create.d/`/`scripts/runner-setup.d/`
+hook scripts of its own (the template's own `10-remove-pip.sh` is
+`replace` tier); the
 `template-sync-manifest` check merges that file in, but sync never reads
 it, and it accepts no other tier.
 

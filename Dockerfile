@@ -96,8 +96,12 @@ WORKDIR /app
 # "Don't put fixtures/sample data/documentation here"), so they need copying in
 # explicitly for app.main's lifespan hook to find at its CWD-relative "alembic.ini"
 # and auto-apply pending migrations on startup -- see CLAUDE.md's "Alembic" section.
-COPY --chown=${APP_UID}:0 --chmod=u=rX,g=rX,o= alembic.ini ./
-COPY --chown=${APP_UID}:0 --chmod=u=rX,g=rX,o= alembic ./alembic/
+# Numeric modes, not the symbolic `u=rX,g=rX,o=`: the smoke job builds with
+# the CI runner's stock Docker, where the symbolic form left alembic/versions
+# without the execute bit (so alembic listed the revisions but couldn't open
+# them). 0550 also makes the .py files executable, which is harmless.
+COPY --chown=${APP_UID}:0 --chmod=0440 alembic.ini ./
+COPY --chown=${APP_UID}:0 --chmod=0550 alembic ./alembic/
 
 USER $APP_UID
 EXPOSE 8000
