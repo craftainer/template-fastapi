@@ -5,13 +5,13 @@ Source layout for the installable package.
 - `app/` — the FastAPI application package (`app.main:app`); see its own
   `README.md`.
 
-The generic CRUD framework (`craftainer_tool_crud`: router factories, interface,
+The generic CRUD framework (`craftainer_crud`: router factories, interface,
 repositories, model/view bases) and the observability toolkit
-(`craftainer_tool_observability`: `health/`, `logs.py`, OTel, middleware) are
-no longer in this tree. They are the published `craftainer-tool-crud` and
-`craftainer-tool-observability` packages, pinned in `pyproject.toml`, each with
+(`craftainer_observability`: `health/`, `logs.py`, OTel, middleware) are
+no longer in this tree. They are the published `craftainer-crud` and
+`craftainer-observability` packages, pinned in `pyproject.toml`, each with
 its own repository, README and import-linter contracts. Paths such as
-`craftainer_tool_crud/controllers/README.md` in this repository's docs refer
+`craftainer_crud/controllers/README.md` in this repository's docs refer
 to files in those packages. To edit a package and the app together, see
 "Developing a package and the app together" in `../docs/TEMPLATE.md`.
 

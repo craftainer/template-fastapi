@@ -20,7 +20,7 @@ handler body runs. Decorated handlers must be coroutine functions with a
 `request: Request` parameter (FastAPI injects it).
 
 Applied to a route's update/delete/restore handler as a whole (see
-craftainer_tool_crud.controllers.crud_router), not just its bulk branch -- a single-record
+craftainer_crud.controllers.crud_router), not just its bulk branch -- a single-record
 edit (`?id=`) shares the same budget as a bulk one, since exempting single-
 record calls would leave per-record updates/deletes unrated regardless of
 how many a single client issues.

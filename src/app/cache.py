@@ -1,6 +1,6 @@
 """Shared server-side cache for the generic `/stats` and `/predict` routes.
 
-Implements `craftainer_tool_crud.interfaces.cache.StatsCache` over this app's Redis
+Implements `craftainer_crud.interfaces.cache.StatsCache` over this app's Redis
 service (`redis.asyncio`, `Settings.redis_url`, so `rediss://` TLS works exactly as it
 does for `app.rate_limit`), or in process under `MODE=mock`. Only non-per-user aggregates
 go through it (docs/adrs/0023-http-conditional-requests-and-stats-cache.md); the
@@ -29,8 +29,8 @@ from importlib import metadata
 from typing import cast
 
 import redis.asyncio as aioredis
-from craftainer_tool_crud.interfaces.base import EventSource
-from craftainer_tool_crud.interfaces.cache import StatsCache
+from craftainer_crud.interfaces.base import EventSource
+from craftainer_crud.interfaces.cache import StatsCache
 from redis.exceptions import RedisError
 
 from app.config import Settings

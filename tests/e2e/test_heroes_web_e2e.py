@@ -111,9 +111,9 @@ def test_hero_archive_restore_and_history_through_the_rendered_ui(
     """The rendered <hero-list>'s Archive(Delete)/Restore row actions and History panel
     (new for this plan's archivable=True/revisions UI) work end to end -- Hero is
     Archivable, so its own row-level "Delete" button already archives rather than
-    hard-deleting (see craftainer_tool_crud.models.mixins.Archivable), and the generated JS adds a
+    hard-deleting (see craftainer_crud.models.mixins.Archivable), and the generated JS adds a
     "Restore"/"History" action once a row is archived (see
-    craftainer_tool_crud.web_components.render_crud_component_js).
+    craftainer_crud.web_components.render_crud_component_js).
     """
     headers = {"Authorization": f"Bearer {access_token('maintainer')}"}
     page.set_extra_http_headers(headers)

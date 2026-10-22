@@ -1,12 +1,12 @@
 """Unit test: get_health_registry's wiring from Settings, and the mounted /health routes.
 
 The checks themselves and the generic registry/router framework are tested in the
-craftainer-tool-observability package repo.
+craftainer-observability package repo.
 """
 
 import pytest
-from craftainer_tool_observability.health.base import HealthCheckResult
-from craftainer_tool_observability.health.registry import HealthRegistry
+from craftainer_observability.health.base import HealthCheckResult
+from craftainer_observability.health.registry import HealthRegistry
 from fastapi.testclient import TestClient
 
 from app.config import get_settings

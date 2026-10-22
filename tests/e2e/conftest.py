@@ -202,7 +202,7 @@ def _reset_dev_database(app_mode: str) -> None:
 
     Unlike mock's InMemoryRepository (fresh per uvicorn subprocess), dev's real
     Postgres persists across every e2e run against this same devcontainer stack.
-    Every role journey creates test heroes, and craftainer_tool_crud.interfaces.base.OwnerScope
+    Every role journey creates test heroes, and craftainer_crud.interfaces.base.OwnerScope
     means
     tests/e2e/editor's own cleanup can never actually delete what it creates (a
     known, accepted gap -- see docs/adrs/0011-owner-scoped-crud-example-resource.md),
@@ -211,7 +211,7 @@ def _reset_dev_database(app_mode: str) -> None:
     assert their hero shows up in that default list start failing -- starting each
     dev-mode leg (`dev` and `bare`) from empty tables is what prevents that. `revisions` isn't
     FK-linked to
-    `heroes` (see craftainer_tool_crud.models.revision's own docstring: it's an intentionally
+    `heroes` (see craftainer_crud.models.revision's own docstring: it's an intentionally
     append-only audit log that outlives the record it describes), so it needs its
     own truncate rather than relying on `heroes`'s cascade to reach it -- and to
     avoid stale rows colliding with a hero id that `RESTART IDENTITY` lets a later
@@ -349,7 +349,7 @@ def app_handle(_running_app: AppHandle) -> AppHandle:
 def backdate_hero(app_mode: str) -> Callable[[int, datetime], None]:
     """Return a function that sets an existing hero's `created_at` directly via SQL.
 
-    `craftainer_tool_crud.controllers.crud_stats.forecast`'s success path (and its week/month
+    `craftainer_crud.controllers.crud_stats.forecast`'s success path (and its week/month
     bucket-math branches) needs at least two distinct calendar buckets of history
     -- unreachable by simply creating heroes through the API, since every e2e run
     creates its own test data within one real day. This bypasses the API's

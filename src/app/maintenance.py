@@ -10,9 +10,9 @@ None (disabled) for exactly that reason.
 
 `purge_archived` needs no per-resource wiring: it walks SQLAlchemy's own mapper
 registry (`Base.registry.mappers`) for every model carrying `archived_at` (see
-craftainer_tool_crud.models.mixins.Archivable), the same `hasattr` detection
-craftainer_tool_crud.repositories.
-sqlalchemy/craftainer_tool_crud.repositories.memory already use, so a future Archivable model is
+craftainer_crud.models.mixins.Archivable), the same `hasattr` detection
+craftainer_crud.repositories.
+sqlalchemy/craftainer_crud.repositories.memory already use, so a future Archivable model is
 purged automatically the moment it's added -- no line here needs to change.
 
 This does *not* introduce an operational dependency on an external scheduler:
@@ -20,7 +20,7 @@ This does *not* introduce an operational dependency on an external scheduler:
 template that never configures it, or never runs `python -m app.maintenance` at
 all, behaves exactly as if purge didn't exist -- archived rows just accumulate
 until something chooses to run it, on whatever cadence (or none) that
-deployment picks. Revision history rows (see craftainer_tool_crud.models.revision.Revision) are
+deployment picks. Revision history rows (see craftainer_crud.models.revision.Revision) are
 left out of `purge_archived` for the same "not blocking the Hero demo" reason
 its own storage growth is unbounded by this module -- a retention policy for
 those, if a high-write-volume resource ever needs one, belongs here too, folded
@@ -28,7 +28,7 @@ in alongside archived-row purging rather than as a separate job.
 
 This whole module is omitted from the coverage report (see
 `[tool.coverage.run] omit` in `../../pyproject.toml`), for the same reason as
-craftainer_tool_crud.repositories.sqlalchemy's module docstring explains its own narrower
+craftainer_crud.repositories.sqlalchemy's module docstring explains its own narrower
 per-line pragmas: it's invoked externally (`python -m app.maintenance`), never
 imported by the running app or by any `tests/e2e` journey against it, so
 nothing here -- not even its own top-level imports -- ever executes in that
@@ -43,8 +43,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
-from craftainer_tool_crud.models.base import Base
-from craftainer_tool_crud.models.revision import Revision  # noqa: F401 -- see above
+from craftainer_crud.models.base import Base
+from craftainer_crud.models.revision import Revision  # noqa: F401 -- see above
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +59,7 @@ async def purge_archived(session: AsyncSession, *, older_than: datetime) -> int:
     """Hard-delete every archived row (across every Archivable model) past `older_than`.
 
     Iterates `Base.registry.mappers` rather than a hardcoded model list, so it
-    needs no update when a future resource adopts craftainer_tool_crud.models.mixins.Archivable.
+    needs no update when a future resource adopts craftainer_crud.models.mixins.Archivable.
     Returns the total number of rows deleted, across every model. Does not commit
     -- the caller (`_run` below, or a test's own fixture session) controls that.
     """
