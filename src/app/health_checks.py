@@ -1,20 +1,20 @@
 """This app's health registry, built from `Settings` -- the checks themselves live in
-`craftainer_tool_observability.health.checks`.
+`craftainer_observability.health.checks`.
 
 Also MockHealthCheck, a network-free always-healthy stand-in used when MODE=mock.
 It is excluded from the coverage gate for the same MODE-only reason as
-craftainer_tool_crud.repositories.memory -- see its module docstring.
+craftainer_crud.repositories.memory -- see its module docstring.
 """
 
 from functools import lru_cache
 
 import boto3
-from craftainer_tool_observability.health.base import HealthCheckResult
-from craftainer_tool_observability.health.checks.http import HTTPCheck
-from craftainer_tool_observability.health.checks.postgres import PostgresCheck
-from craftainer_tool_observability.health.checks.redis import RedisCheck
-from craftainer_tool_observability.health.checks.s3 import S3Check
-from craftainer_tool_observability.health.registry import HealthRegistry
+from craftainer_observability.health.base import HealthCheckResult
+from craftainer_observability.health.checks.http import HTTPCheck
+from craftainer_observability.health.checks.postgres import PostgresCheck
+from craftainer_observability.health.checks.redis import RedisCheck
+from craftainer_observability.health.checks.s3 import S3Check
+from craftainer_observability.health.registry import HealthRegistry
 
 from app.config import get_settings
 from app.db import engine
@@ -37,7 +37,7 @@ def get_health_registry() -> HealthRegistry:
     """Return the process-wide cached HealthRegistry, with every external service registered.
 
     MODE=mock registers MockHealthCheck for every service instead of the real checks --
-    there's nothing real to reach (see craftainer_tool_crud.repositories.memory, app.oidc's mock
+    there's nothing real to reach (see craftainer_crud.repositories.memory, app.oidc's mock
     decode path).
     """
     settings = get_settings()

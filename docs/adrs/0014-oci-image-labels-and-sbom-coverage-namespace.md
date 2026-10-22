@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+Accepted. How the labels and SBOM are produced is superseded by
+[0024](0024-re-parent-onto-template-docker.md): the Makefile of
+template-docker now sets the label set (no `docker/metadata-action`, no
+`anchore/sbom-action`; Syft runs from `make sbom`, `licenses` is
+`GPL-3.0-or-later`, the coverage label is set through `image.mk`'s
+`COVERAGE_REPORT`). The label namespace, the pointers at release assets and
+the Python-specific coverage limitation stand.
 
 ## Context
 

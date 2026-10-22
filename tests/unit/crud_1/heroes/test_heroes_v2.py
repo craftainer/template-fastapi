@@ -5,9 +5,9 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from craftainer_tool_crud.interfaces.base import CRUDInterface, OwnerScope, RepositoryRevisionSink
-from craftainer_tool_crud.models.revision import Revision
-from craftainer_tool_crud.repositories.memory import InMemoryRepository
+from craftainer_crud.interfaces.base import CRUDInterface, OwnerScope, RepositoryRevisionSink
+from craftainer_crud.models.revision import Revision
+from craftainer_crud.repositories.memory import InMemoryRepository
 from fastapi import Depends
 from fastapi.testclient import TestClient
 
@@ -219,7 +219,7 @@ def test_caller_cannot_publish_another_owners_draft(authed: None) -> None:
 
     `crud.get` (unscoped, see OwnerScope's read_scoped=False) lets Bob see Alice's
     draft exists, but `crud.update` (always owner-scoped) returns None since he
-    doesn't own it -- craftainer_tool_crud.controllers.crud_router's publish_record must turn that
+    doesn't own it -- craftainer_crud.controllers.crud_router's publish_record must turn that
     into a 404, not return None as its `-> schema` response.
     """
     repository = InMemoryRepository(HeroModel)
@@ -415,7 +415,7 @@ def test_hero_record_lifecycle_draft_through_revisions(authed: None) -> None:
         revisions = revisions_response.json()
         # Newest first; the clone's own "create" is filed under *its* id, not
         # hero_id (see crud_router.py's clone_record), restore() isn't itself
-        # revision-logged (see craftainer_tool_crud.interfaces.base.CRUDInterface.restore), and the
+        # revision-logged (see craftainer_crud.interfaces.base.CRUDInterface.restore), and the
         # locked edit above never reached a mutation -- so this hero's own log is
         # just its own create plus every update/delete that actually applied.
         assert [revision["action"] for revision in revisions] == [
@@ -474,7 +474,7 @@ def test_hero_bulk_lock_blocks_bulk_update_and_delete(authed: None) -> None:
     """A locked hero is skipped by neither -- bulk PATCH/DELETE against it 423s, matching
     single-record lock enforcement, since Hero's OwnerScope routes even single-record
     update/delete through the repository's update_many/delete_many (see
-    craftainer_tool_crud.interfaces.base.OwnerScope's own docstring).
+    craftainer_crud.interfaces.base.OwnerScope's own docstring).
     """
     repository = InMemoryRepository(HeroModel)
     app.dependency_overrides[get_hero_crud] = _override_crud(repository)
@@ -575,7 +575,7 @@ def test_hero_xml_router_lifecycle_parity(authed: None) -> None:
         restore_response = client.post("/crud/v1/heroes/v2/xml/restore", params={"id": hero_id})
         assert restore_response.status_code == 200
         # A None field is omitted entirely, not rendered as literal "None" text --
-        # see craftainer_tool_crud.xml_codec.to_xml's own docstring.
+        # see craftainer_crud.xml_codec.to_xml's own docstring.
         assert "<archived_at>" not in restore_response.text
 
         clone_response = client.post("/crud/v1/heroes/v2/xml/clone", params={"id": hero_id})

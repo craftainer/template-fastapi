@@ -1,7 +1,12 @@
-# syntax=docker/dockerfile:1.27
-# Runtime image (builder → runner), the repo's only top-level Dockerfile.
-# The devcontainer image is the base-owned .devcontainer/Dockerfile's
-# `develop` stage.
+# syntax=docker/dockerfile:1.28
+# Runtime image (builder → runner), the repo's only top-level Dockerfile, in
+# the layout template-docker expects (docs/TEMPLATE.md's "Image layer"). The
+# devcontainer image is the base-owned .devcontainer/Dockerfile's `develop`
+# stage.
+
+# PYTHON_VERSION and DEBIAN_VERSION are also declared in
+# .devcontainer/Dockerfile; scripts/check-dockerfile-versions.sh keeps the
+# two equal.
 
 # renovate: datasource=python-version depName=python
 ARG PYTHON_VERSION=3.14.8
@@ -56,7 +61,8 @@ FROM python:${PYTHON_VERSION}-slim-${DEBIAN_VERSION} AS runner
 ARG APP_UID
 ARG SSL_CERT_FILE
 ARG SSL_CERT_DIR
-# Set by `make build` (Makefile's BUILD); empty when built any other way.
+# Set by `make build` through BUILD_ARGS in image.mk; empty when built any
+# other way.
 ARG APP_VERSION=
 ARG APP_COMMIT=
 
@@ -72,23 +78,34 @@ ENV PYTHONUNBUFFERED=1 \
     CURL_CA_BUNDLE=${SSL_CERT_FILE} \
     MODE=production
 
-COPY scripts/runner.sh /usr/local/bin/runner.sh
-# Group 0, not the numeric owner, is what an arbitrary UID actually gets
-# under OpenShift's restricted SCC — see runner-setup.sh's comment. Set
-# here rather than with a recursive RUN chmod, which would be slow over a
-# whole venv.
-COPY --from=builder --chown=${APP_UID}:0 --chmod=750 /opt/venv /opt/venv
+# Create the user and the few writable directories first (home, /app/data),
+# then copy the app read-only on top: no recursive chgrp/chmod layer, and the
+# runtime user can't modify what it runs. Group 0, not the numeric owner, is
+# what an arbitrary UID actually gets under OpenShift's restricted SCC.
+COPY scripts/runner-setup.sh /tmp/runner-setup.sh
+COPY scripts/runner-setup.d/ /tmp/runner-setup.d/
+RUN bash /tmp/runner-setup.sh "$APP_UID" && rm -rf /tmp/runner-setup.sh /tmp/runner-setup.d
+
+# Numeric 0550, like the rest of the runner stage: executable and group-0
+# readable, not writable by the runtime user.
+COPY --chmod=0550 scripts/runner.sh /usr/local/bin/runner.sh
+# The venv gets its group-0 ownership through COPY --chown/--chmod rather than
+# a recursive RUN chmod, which would be slow over a whole venv. 0550 for the
+# same reason as alembic/ below: one numeric mode for a mixed tree, read-only
+# to the runtime user (the .py files become executable too, which is harmless).
+COPY --from=builder --chown=${APP_UID}:0 --chmod=0550 /opt/venv /opt/venv
 WORKDIR /app
 
 # alembic.ini/alembic/ aren't part of the installed app package (see src/README.md's
 # "Don't put fixtures/sample data/documentation here"), so they need copying in
 # explicitly for app.main's lifespan hook to find at its CWD-relative "alembic.ini"
 # and auto-apply pending migrations on startup -- see CLAUDE.md's "Alembic" section.
-COPY alembic.ini ./
-COPY alembic ./alembic/
-
-COPY scripts/runner-setup.sh /tmp/runner-setup.sh
-RUN bash /tmp/runner-setup.sh "$APP_UID"
+# Numeric modes, not the symbolic `u=rX,g=rX,o=`: the smoke job builds with
+# the CI runner's stock Docker, where the symbolic form left alembic/versions
+# without the execute bit (so alembic listed the revisions but couldn't open
+# them). 0550 also makes the .py files executable, which is harmless.
+COPY --chown=${APP_UID}:0 --chmod=0440 alembic.ini ./
+COPY --chown=${APP_UID}:0 --chmod=0550 alembic ./alembic/
 
 USER $APP_UID
 EXPOSE 8000

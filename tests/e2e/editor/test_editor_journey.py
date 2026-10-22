@@ -79,7 +79,7 @@ def test_editor_can_create_and_update_but_not_delete(
         assert audit_response.status == 403
     finally:
         # Best-effort only: Hero is now owner-scoped
-        # (craftainer_tool_crud.interfaces.base.OwnerScope,
+        # (craftainer_crud.interfaces.base.OwnerScope,
         # read_scoped=False -- see docs/adrs/0011-owner-scoped-crud-example-resource.md),
         # so DELETE only ever reaches a hero's own creator. Editor owns these heroes but
         # lacks the maintainer-only delete role; maintainer has the role but isn't the

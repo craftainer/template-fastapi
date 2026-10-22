@@ -14,8 +14,8 @@ independent suite alongside `../unit/`, `../integration/`, `../e2e/` and
   (crud's in-memory repository, `settings.mode`), overrides auth with fixed
   claims, and restores everything afterwards.
 
-Benchmarks of the extracted packages (`craftainer_tool_crud`,
-`craftainer_tool_observability`) belong in those packages' own repos, not here.
+Benchmarks of the extracted packages (`craftainer_crud`,
+`craftainer_observability`) belong in those packages' own repos, not here.
 
 Not collected by a plain `pytest` run (`pyproject.toml`'s `addopts` ignores
 this directory); run it explicitly, without coverage (a benchmark run is not

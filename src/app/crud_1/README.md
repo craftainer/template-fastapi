@@ -2,11 +2,11 @@
 
 Resource routers for the `/crud/v{ROUTER_VERSION}` API: one subpackage per
 resource, each combining that resource's versioned sibling routers (built
-from `craftainer_tool_crud/controllers/`'s generic factories) into one router,
+from `craftainer_crud/controllers/`'s generic factories) into one router,
 which this package's own `__init__.py` then combines into the single
 `router` `app.main` mounts at `/crud/v{ROUTER_VERSION}`. Sits after
 `controllers` in `src/app/`'s import order — may import from
-`app.controllers`/`craftainer_tool_crud.controllers` (the generic router factories) or
+`app.controllers`/`craftainer_crud.controllers` (the generic router factories) or
 any lower layer, but nothing else may import from here except `main`
 (see `../README.md`'s "Layering" section).
 
@@ -33,8 +33,8 @@ module, so each version's controller stays its own file (`heroes_v2.py`,
 one module. The package's `__init__.py` is the only thing this package's
 own `__init__.py` ever imports for that resource — it combines every
 version's own router (each built by
-`craftainer_tool_crud.controllers.crud_router.build_resource_router`, see
-`craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories") into one
+`craftainer_crud.controllers.crud_router.build_resource_router`, see
+`craftainer_crud/controllers/README.md`'s "Generic CRUD router factories") into one
 `router`, so a resource stays a single `include_router` call at the
 mount site no matter how many versions it carries internally:
 
@@ -61,7 +61,7 @@ needs, not a rule every resource follows.
 non-empty `prefix` argument — no exceptions.** That applies to app-level
 mounts (`app.main`), this package's resource mounts, a resource
 package's per-version mounts, and the per-format mounts inside
-`craftainer_tool_crud.controllers.crud_router.build_resource_router` alike, in tests as
+`craftainer_crud.controllers.crud_router.build_resource_router` alike, in tests as
 well as in `src/`.
 
 The point is readability and maintainability: the full URL of any route
@@ -70,7 +70,10 @@ that mount it, without opening the included module to discover a prefix
 it carries silently. A bare `include_router(some_router)` hides a
 segment (or hides that there is none), and `prefix=""` is not a
 substitute — if a mount genuinely adds no segment, restructure so the
-segment it *should* own is named there instead. This is the mirror image
+segment it *should* own is named there instead.
+The one exception is a library router whose route carries an absolute path fixed by a
+standard: `api_catalog_router` serves `/.well-known/api-catalog` (RFC 9727) and so is
+mounted by `app.main` with `prefix=""` (see `docs/adrs/0025-crud-manifest-and-api-catalog.md`). This is the mirror image
 of the "Don't" rule below: routers are built with `prefix=""` at their
 factory call, and every real segment is named at a mount site.
 
@@ -86,7 +89,7 @@ version, a resource-shape version, and a format explicitly. See
 for the full reasoning; it supersedes
 `docs/adrs/0002-api-and-model-versioning.md`.
 
-`router_version` (`craftainer_tool_crud.controllers.crud_router`'s `ROUTER_VERSION`
+`router_version` (`craftainer_crud.controllers.crud_router`'s `ROUTER_VERSION`
 constant) names a version of the generic router factories themselves,
 not a resource's shape. It's applied exactly once, at this package's own
 mount site in `app.main` (`app.include_router(crud_v1_router,
@@ -102,7 +105,7 @@ router still needs the full, absolute `/crud/v{ROUTER_VERSION}/...`
 path is `build_resource_router`'s `api_prefix` argument, since that gets
 baked into rendered HTML/JS at build time and can't be derived from the
 `include_router` calls that do the actual mounting — see
-`craftainer_tool_crud/controllers/README.md`'s "Generic CRUD router factories". The DB
+`craftainer_crud/controllers/README.md`'s "Generic CRUD router factories". The DB
 model (`app.models`) always represents
 the *current* shape only — an older API version is a `views` + `crud`
 concern, never a second table/model. Only `app.views` classes carry a
@@ -114,13 +117,13 @@ A deprecated version follows the `*_vN.py` pattern: a `views/hero_vN.py`
 module defining that version's Pydantic shape plus pure converter
 functions to/from the current version's views (see
 `app.views.hero_v1`), and a sibling controller module (`heroes_v1.py`)
-that calls the same `build_resource_router` `craftainer_tool_crud/controllers/
+that calls the same `build_resource_router` `craftainer_crud/controllers/
 README.md`'s "Generic CRUD router factories" describes, with
 `crud_dependency` pointing at a `CompatCRUD`-typed dependency instead of a
-`CRUDInterface`-typed one. `craftainer_tool_crud.interfaces.compat.CompatCRUD` is the reusable
+`CRUDInterface`-typed one. `craftainer_crud.interfaces.compat.CompatCRUD` is the reusable
 wrapper that adapts the current version's `CRUDInterface` to speak in
 the deprecated view's shape, so the deprecated router needs no new
-persistence wiring — see `craftainer_tool_crud/interfaces/README.md`. Apply
+persistence wiring — see `craftainer_crud/interfaces/README.md`. Apply
 `app.http_headers.sunset(...)` via the deprecated resource-version's
 `router_dependencies=[...]` `build_resource_router` argument (not per
 format) so every route under it — JSON/XML/web alike — advertises
@@ -139,9 +142,9 @@ successor resource-version's base, full absolute path (e.g.
   will never carry more than one version): a per-request `CRUDInterface`
   builder function (`get_<resource>_crud`, depended on via
   `Annotated[..., Depends(...)]` for reuse across that router's routes,
-  following `heroes/heroes_v2.py`'s shape — `craftainer_tool_crud.interfaces.dependency.
+  following `heroes/heroes_v2.py`'s shape — `craftainer_crud.interfaces.dependency.
   build_repository_provider` supplies the MODE-aware repository it
-  wraps), then one `craftainer_tool_crud.controllers.crud_router.build_resource_router(...)`
+  wraps), then one `craftainer_crud.controllers.crud_router.build_resource_router(...)`
   call (or a single `build_json_router(...)` call directly, for a
   resource that only ever needs JSON).
 - `include_router` a new resource's router in this package's own
@@ -154,11 +157,11 @@ successor resource-version's base, full absolute path (e.g.
 ## Don't
 
 - Put persistence or conversion logic directly in a route body — that
-  belongs in `craftainer_tool_crud.interfaces`/`craftainer_tool_crud.repositories`; a route should stay a thin
+  belongs in `craftainer_crud.interfaces`/`craftainer_crud.repositories`; a route should stay a thin
   translation between HTTP and a `CRUDInterface` call.
 - Add resource-agnostic router-building logic here — a new generic
   factory (usable by any resource) belongs in
-  `craftainer_tool_crud.controllers.crud_router`, not duplicated inside a resource
+  `craftainer_crud.controllers.crud_router`, not duplicated inside a resource
   package.
 - **Have a resource-version's own router bake in any part of its own
   mount prefix** (e.g. `build_resource_router(prefix="/heroes/v2", ...)`)

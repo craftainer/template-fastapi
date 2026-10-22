@@ -2,23 +2,26 @@
 
 import asyncio
 import gc
+import os
 import socket
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from importlib import metadata
 
 import debugpy
 from alembic.config import Config
-from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION
-from craftainer_tool_crud.interfaces.cache import StatsCache
-from craftainer_tool_observability.health.router import build_health_router
-from craftainer_tool_observability.logs import configure_logging
-from craftainer_tool_observability.middleware import RequestIDMiddleware
-from craftainer_tool_observability.otel import (
+from craftainer_crud.controllers.crud_manifest import api_catalog_router, crud_manifest_router
+from craftainer_crud.controllers.crud_router import ROUTER_VERSION
+from craftainer_crud.interfaces.cache import StatsCache
+from craftainer_observability.health.router import build_health_router
+from craftainer_observability.logs import configure_logging
+from craftainer_observability.middleware import RequestIDMiddleware
+from craftainer_observability.otel import (
     configure_telemetry,
     instrument_app,
     instrument_engine,
 )
-from craftainer_tool_observability.profiling import install_profiling
+from craftainer_observability.profiling import install_profiling
 from fastapi import FastAPI
 
 from alembic import command
@@ -30,7 +33,7 @@ from app.controllers import (
 )
 from app.crud_1 import router as crud_v1_router
 from app.crud_1.heroes import heroes_v2
-from app.crud_1.wiring import stats_cache
+from app.crud_1.wiring import manifest_registry, stats_cache
 from app.db import engine
 from app.health_checks import get_health_registry
 from app.http_headers import add_security_headers
@@ -84,7 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Migrate, warm the JWKS cache, start cache invalidation; undo it in reverse on shutdown.
 
     MODE=mock skips migrations entirely -- there's no database to migrate against
-    (see craftainer_tool_crud.repositories.memory), as does RUN_MIGRATIONS_ON_STARTUP=false
+    (see craftainer_crud.repositories.memory), as does RUN_MIGRATIONS_ON_STARTUP=false
     (migrations then run as a separate deploy step). `# pragma: no branch` below is for
     tests/e2e specifically: its live processes always run with the flag at its default and
     one of them in a migrating mode, so the other branch can never run there --
@@ -108,6 +111,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             yield
     finally:
         await engine.dispose()
+
+
+def _service_version() -> str:
+    """`APP_VERSION` if set, else this distribution's installed version (as `/health/info`)."""
+    return os.environ.get("APP_VERSION") or metadata.version("template-fastapi")
 
 
 def _docs_path(path: str, mode: str) -> str | None:
@@ -188,6 +196,29 @@ app.include_router(
 )
 app.include_router(crud_v1_router, prefix=f"/crud/v{ROUTER_VERSION}")
 app.include_router(audit.router, prefix="/audit")
+# The CRUD manifest (GET /api/_crud/manifest, filtered to what the caller may read) and the
+# RFC 9727 api-catalog that points clients at it. The catalog route carries its absolute
+# /.well-known/api-catalog path itself (the well-known location is fixed by the RFC), so it is
+# the one mount with no segment of its own -- see crud_1/README.md's "Every mount names its
+# own segment".
+app.include_router(
+    crud_manifest_router(
+        manifest_registry,
+        service_name=settings.app_name,
+        service_version=_service_version(),
+        stats_ttl=settings.stats_cache_ttl_seconds,
+        oidc_discovery_url=f"{settings.oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration",
+        prefix="",
+    ),
+    prefix="/api/_crud",
+)
+app.include_router(
+    api_catalog_router(
+        manifest_url="/api/_crud/manifest",
+        openapi_url="/openapi.json",
+    ),
+    prefix="",
+)
 _mount_mode_specific_routers(app, settings.mode)
 
 # Middleware order, outermost first: OTel server span, RequestIDMiddleware, profiling,
