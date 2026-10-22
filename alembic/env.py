@@ -1,4 +1,4 @@
-"""Alembic environment: autogenerate against craftainer_tool_crud.models.base metadata.
+"""Alembic environment: autogenerate against craftainer_crud.models.base metadata.
 
 Migrates over asyncpg.
 """
@@ -7,10 +7,10 @@ import asyncio
 import logging
 from logging.config import fileConfig
 
-from craftainer_tool_crud.models import (
+from craftainer_crud.models import (
     revision,  # noqa: F401 -- import registers Revision on Base.metadata
 )
-from craftainer_tool_crud.models.base import Base
+from craftainer_crud.models.base import Base
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 

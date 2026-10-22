@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from craftainer_tool_observability.logs import _JSONFormatter, configure_logging
+from craftainer_observability.logs import _JSONFormatter, configure_logging
 
 from alembic import command
 

@@ -7,8 +7,8 @@ from typing import Any
 import httpx
 import jwt
 import pytest
-from craftainer_tool_crud import config as crud_config
-from craftainer_tool_crud.config import CrudConfig
+from craftainer_crud import config as crud_config
+from craftainer_crud.config import CrudConfig
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt import PyJWKClient, PyJWKSet
 

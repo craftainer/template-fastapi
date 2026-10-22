@@ -13,7 +13,7 @@ conventions rather than re-modeling them as app settings.
 
 ## Source
 
-Operators/SRE. Implemented in `craftainer_tool_observability.logs` (the craftainer-tool-observability package).
+Operators/SRE. Implemented in `craftainer_observability.logs` (the craftainer-observability package).
 
 ## Acceptance criteria
 

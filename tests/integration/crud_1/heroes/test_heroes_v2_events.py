@@ -18,7 +18,7 @@ request finishes, and closing the connection is what actually delivers an ASGI
 `http.disconnect` message to the running app. `_live_server` below runs the real app
 under `uvicorn` on a loopback TCP port, as a task on this test's own event loop (not a
 separate thread) so the shared async engine/session singleton (see
-craftainer_tool_crud.models.base) stays
+craftainer_crud.models.base) stays
 on the one event loop tests/README.md's "Do" section requires.
 """
 

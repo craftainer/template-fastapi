@@ -4,10 +4,10 @@ Also covers /health/ready end-to-end, via app.main's actually-wired registry.
 """
 
 import boto3
-from craftainer_tool_observability.health.checks.http import HTTPCheck
-from craftainer_tool_observability.health.checks.postgres import PostgresCheck
-from craftainer_tool_observability.health.checks.redis import RedisCheck
-from craftainer_tool_observability.health.checks.s3 import S3Check
+from craftainer_observability.health.checks.http import HTTPCheck
+from craftainer_observability.health.checks.postgres import PostgresCheck
+from craftainer_observability.health.checks.redis import RedisCheck
+from craftainer_observability.health.checks.s3 import S3Check
 from fastapi.testclient import TestClient
 
 from app.config import get_settings

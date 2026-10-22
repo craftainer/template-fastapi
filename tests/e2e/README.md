@@ -24,6 +24,11 @@ coverage reaches 100%:
   and a trusted `X-Forwarded-For` for the rate-limit journey.
 - `bare` (`:8002`, `MODE=dev`): none of the optional settings, i.e. the defaults.
 
+`test_crud_sdk_discovery_e2e.py` uses `craftainer_crud_sdk` (a dev dependency; sync and
+async clients) to discover the manifest through `/.well-known/api-catalog` and read heroes
+with it, and checks the manifest's role filtering and ETag over plain HTTP; it runs on every
+leg.
+
 `test_observability_e2e.py` holds the journeys for these features; each adapts to its
 leg and skips when the api was started elsewhere (its environment is unknown). Those
 journeys: request-ID echo, trace/request IDs in JSON logs, spans and metrics arriving at

@@ -13,24 +13,25 @@ for why a resource-version router should never bake in its own prefix.
 
 from typing import Annotated, Any
 
-from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
-from craftainer_tool_crud.interfaces.base import (
+from craftainer_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
+from craftainer_crud.interfaces.base import (
     CRUDInterface,
     EventSource,
     OwnerScope,
     RepositoryRevisionSink,
 )
-from craftainer_tool_crud.interfaces.dependency import (
+from craftainer_crud.interfaces.dependency import (
     build_event_sink_provider,
     build_event_source_provider,
     build_repository_provider,
 )
-from craftainer_tool_crud.models.base import DBSession
-from craftainer_tool_crud.models.revision import Revision
-from craftainer_tool_crud.repositories.base import Repository
+from craftainer_crud.manifest import ManifestOptions
+from craftainer_crud.models.base import DBSession
+from craftainer_crud.models.revision import Revision
+from craftainer_crud.repositories.base import Repository
 from fastapi import Depends
 
-from app.crud_1.wiring import bulk_rate_limit, stats_cache
+from app.crud_1.wiring import bulk_rate_limit, manifest_registry, stats_cache
 from app.models.hero import Hero as HeroModel
 from app.oidc import get_current_claims, require_roles
 from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
@@ -65,20 +66,20 @@ def get_hero_crud(
     `owner=OwnerScope("owner_id", claims["sub"], read_scoped=False)`: every
     authenticated caller reads every hero (list/get), same as before this was
     added, but `update`/`delete` (single or bulk) only ever reach heroes the
-    caller themselves created -- see craftainer_tool_crud.interfaces.base.OwnerScope's own
+    caller themselves created -- see craftainer_crud.interfaces.base.OwnerScope's own
     docstring and docs/adrs/0011-owner-scoped-crud-example-resource.md for why
     Hero uses `read_scoped=False` rather than the fully-scoped default.
 
     `revisions=RepositoryRevisionSink(...)`/`resource="hero"`/`actor=claims["sub"]`:
     every create/update/update_many/delete/delete_many is logged to the shared
-    Revision table -- see craftainer_tool_crud.interfaces.base.RevisionSink's own docstring and
+    Revision table -- see craftainer_crud.interfaces.base.RevisionSink's own docstring and
     `GET <prefix>/revisions?id=`, added below via `revision_repository_dependency`.
     `actor` is resolved from the same per-request claims `owner` already reads,
-    the same pattern craftainer_tool_crud.interfaces.README.md's "Do" section describes.
+    the same pattern craftainer_crud.interfaces.README.md's "Do" section describes.
 
     `events=_hero_event_sink()`: every create/update/update_many/delete/
     delete_many **and** restore/restore_many is published for real-time streaming
-    -- see craftainer_tool_crud.interfaces.base.EventSink's own docstring and `GET <prefix>/events`,
+    -- see craftainer_crud.interfaces.base.EventSink's own docstring and `GET <prefix>/events`,
     added below via `event_source_dependency`.
 
     MODE=mock uses the shared in-memory repository instead of `session` -- an
@@ -108,9 +109,12 @@ def get_hero_crud(
 
 HeroCRUD = Annotated[CRUDInterface[HeroV2, HeroModel], Depends(get_hero_crud)]
 
-ReadRoles = Depends(require_roles("viewer", "editor", "maintainer", "detective"))
-WriteRoles = Depends(require_roles("editor", "maintainer"))
-DeleteRoles = Depends(require_roles("maintainer"))
+READ_ROLE_NAMES = ("viewer", "editor", "maintainer", "detective")
+WRITE_ROLE_NAMES = ("editor", "maintainer")
+DELETE_ROLE_NAMES = ("maintainer",)
+ReadRoles = Depends(require_roles(*READ_ROLE_NAMES))
+WriteRoles = Depends(require_roles(*WRITE_ROLE_NAMES))
+DeleteRoles = Depends(require_roles(*DELETE_ROLE_NAMES))
 
 router = build_resource_router(
     bulk_rate_limit=bulk_rate_limit,
@@ -135,4 +139,15 @@ router = build_resource_router(
     event_source_dependency=HeroEventSource,
     stats_enabled=True,
     stats_cache=stats_cache,
+    manifest=ManifestOptions(
+        registry=manifest_registry,
+        name="heroes",
+        api_version="v2",
+        title="Heroes",
+        model=HeroModel,
+        owner_scoped=False,
+        read_roles=READ_ROLE_NAMES,
+        write_roles=WRITE_ROLE_NAMES,
+        delete_roles=DELETE_ROLE_NAMES,
+    ),
 )

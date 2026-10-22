@@ -1,6 +1,6 @@
 """Unit test: /crud/v1/heroes/v1/json CRUD routes -- the deprecated single-power Hero shape."""
 
-from craftainer_tool_crud.repositories.memory import InMemoryRepository
+from craftainer_crud.repositories.memory import InMemoryRepository
 from fastapi.testclient import TestClient
 
 from app.crud_1.heroes.heroes_v2 import get_hero_crud

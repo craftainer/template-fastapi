@@ -457,8 +457,8 @@ duplicates or re-pins it elsewhere:
   development-related; if a future group needs another group's packages,
   reference it as a self-referential extra (e.g. `"template-fastapi[dev]"`,
   per PEP 621) instead of re-pinning the same package a second time.
-- `craftainer-tool-crud` and `craftainer-tool-observability` are published
-  packages (PyPI), pinned to exact versions in `pyproject.toml` and bumped by
+- `craftainer-crud` and `craftainer-observability` are published
+  packages (PyPI), held to a `>=X.Y.Z,<X.(Y+1)` range in `pyproject.toml` and bumped by
   Renovate; their source, tests and import-linter contracts live in their own
   repositories, not under `src/`.
 - Everything else pinned (base images, Actions, hook revisions, and the
@@ -475,14 +475,14 @@ duplicates or re-pins it elsewhere:
 
 ### Developing a package and the app together
 
-To change `craftainer-tool-crud` or `craftainer-tool-observability` while
+To change `craftainer-crud` or `craftainer-observability` while
 running the app against your edits, point `uv` at a local checkout with an
 editable path override in `pyproject.toml`:
 
 ```toml
 [tool.uv.sources]
-craftainer-tool-crud = { path = "../tool-crud", editable = true }
-craftainer-tool-observability = { path = "../tool-observability", editable = true }
+craftainer-crud = { path = "../lib-crud-py", editable = true }
+craftainer-observability = { path = "../lib-observability-py", editable = true }
 ```
 
 then run `uv sync` (not `--locked`: the override changes the lock). This is

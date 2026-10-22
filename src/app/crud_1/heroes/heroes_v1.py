@@ -2,7 +2,7 @@
 
 Deprecated in favor of heroes_v2.py, which supports multiple powers per
 hero. Wraps the same CRUD heroes_v2.py already builds via
-craftainer_tool_crud.interfaces.compat.CompatCRUD, converting to/from the v1 view with
+craftainer_crud.interfaces.compat.CompatCRUD, converting to/from the v1 view with
 app.views.hero_v1's converter functions -- no new persistence code, only the
 version-compatibility shape. `prefix=""` below: this router carries none of
 its own mount prefix -- `app.crud_1.heroes`'s `__init__.py` assigns
@@ -16,12 +16,21 @@ own prefix.
 from datetime import UTC, datetime
 from typing import Annotated
 
-from craftainer_tool_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
-from craftainer_tool_crud.interfaces.compat import CompatCRUD
+from craftainer_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
+from craftainer_crud.interfaces.compat import CompatCRUD
+from craftainer_crud.manifest import ManifestOptions
 from fastapi import Depends
 
-from app.crud_1.heroes.heroes_v2 import DeleteRoles, HeroCRUD, ReadRoles, WriteRoles
-from app.crud_1.wiring import bulk_rate_limit
+from app.crud_1.heroes.heroes_v2 import (
+    DELETE_ROLE_NAMES,
+    READ_ROLE_NAMES,
+    WRITE_ROLE_NAMES,
+    DeleteRoles,
+    HeroCRUD,
+    ReadRoles,
+    WriteRoles,
+)
+from app.crud_1.wiring import bulk_rate_limit, manifest_registry
 from app.http_headers import sunset
 from app.models.hero import Hero as HeroModel
 from app.views.hero_v1 import (
@@ -68,4 +77,15 @@ router = build_resource_router(
     write_roles=WriteRoles,
     delete_roles=DeleteRoles,
     router_dependencies=[Depends(sunset(SUNSET_AT, link=_V2_PREFIX))],
+    manifest=ManifestOptions(
+        registry=manifest_registry,
+        name="heroes",
+        api_version="v1",
+        title="Heroes (v1, deprecated)",
+        model=HeroModel,
+        owner_scoped=False,
+        read_roles=READ_ROLE_NAMES,
+        write_roles=WRITE_ROLE_NAMES,
+        delete_roles=DELETE_ROLE_NAMES,
+    ),
 )
