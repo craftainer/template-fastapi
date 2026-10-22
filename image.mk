@@ -7,7 +7,8 @@
 # `runner`); ARCHES (`amd64 arm64`) and OCI_LICENSE (`GPL-3.0-or-later`) too.
 
 # The app reads APP_VERSION / APP_COMMIT (Dockerfile ARGs, exposed as env).
-BUILD_ARGS := --build-arg APP_VERSION=$(RELEASE_VERSION) --build-arg APP_COMMIT=$(shell git rev-parse HEAD)
+# Recursive (`=`) so git runs only in recipes that build, as the Makefile does.
+BUILD_ARGS = --build-arg APP_VERSION=$(RELEASE_VERSION) --build-arg APP_COMMIT=$(shell git rev-parse HEAD)
 
 OCI_DESCRIPTION := FastAPI REST service with generic CRUD, OIDC auth and health checks
 
