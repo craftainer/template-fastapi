@@ -86,10 +86,14 @@ COPY scripts/runner-setup.sh /tmp/runner-setup.sh
 COPY scripts/runner-setup.d/ /tmp/runner-setup.d/
 RUN bash /tmp/runner-setup.sh "$APP_UID" && rm -rf /tmp/runner-setup.sh /tmp/runner-setup.d
 
-COPY --chmod=755 scripts/runner.sh /usr/local/bin/runner.sh
+# Numeric 0550, like the rest of the runner stage: executable and group-0
+# readable, not writable by the runtime user.
+COPY --chmod=0550 scripts/runner.sh /usr/local/bin/runner.sh
 # The venv gets its group-0 ownership through COPY --chown/--chmod rather than
-# a recursive RUN chmod, which would be slow over a whole venv.
-COPY --from=builder --chown=${APP_UID}:0 --chmod=750 /opt/venv /opt/venv
+# a recursive RUN chmod, which would be slow over a whole venv. 0550 for the
+# same reason as alembic/ below: one numeric mode for a mixed tree, read-only
+# to the runtime user (the .py files become executable too, which is harmless).
+COPY --from=builder --chown=${APP_UID}:0 --chmod=0550 /opt/venv /opt/venv
 WORKDIR /app
 
 # alembic.ini/alembic/ aren't part of the installed app package (see src/README.md's

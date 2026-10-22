@@ -83,6 +83,7 @@ replace:
   - scripts/check-dockerfile-versions.sh
   - scripts/image-scan.sh
   - scripts/skopeo.sh
+  - scripts/test-image-scripts.sh
 
   # template-fastapi's own layer on top of docker: the app image, the
   # smoke-stack compose file, the backing-services stack, the
