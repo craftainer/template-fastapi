@@ -9,7 +9,11 @@ a binary directly:
   regardless of instance language. An instance adds its own language
   runtime/tooling install on top, either by extending this script or
   copying its shape into a second script. Prefer the hook below over
-  either.
+  either. Every download goes through its `fetch` helper (bounded curl
+  retries with backoff; GitHub URLs authenticated when the optional
+  `github_token` BuildKit secret is present) and the installers that
+  download for themselves through `retry`, so CI's shared-IP HTTP 429s
+  don't fail the image build. Local builds need no token.
 - `post-create.sh` — the devcontainer's `postCreateCommand`: git
   `safe.directory`, `prek install`, then every `post-create.d/*.sh`.
 - `develop.d/`, `post-create.d/`, `runner-setup.d/` — instance hook
@@ -77,6 +81,8 @@ a binary directly:
 
 ## Do
 
+- Pass a token to the build as a BuildKit secret (`github_token`), never
+  a `--build-arg`/`ARG`: an ARG is baked into the image history.
 - Keep each script runnable and idempotent on its own (`bash
   scripts/develop.sh <args>`) so you can debug a stage without a full
   build.
