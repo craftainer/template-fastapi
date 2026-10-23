@@ -2,7 +2,6 @@
 
 import asyncio
 import gc
-import socket
 from typing import Any
 
 import debugpy
@@ -69,6 +68,11 @@ def events(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     monkeypatch.setattr(main_module, "prefetch_jwks", _prefetch)
     monkeypatch.setattr(main_module, "engine", _FakeEngine(recorded))
+
+    async def _close_health() -> None:
+        recorded.append("close_health")
+
+    monkeypatch.setattr(main_module, "close_health_checks", _close_health)
     monkeypatch.setattr(main_module, "_run_migrations", lambda: recorded.append("migrate"))
 
     def _collect() -> int:
@@ -111,7 +115,15 @@ async def test_lifespan_orders_startup_and_shutdown(
     monkeypatch.setattr(main_module.settings, "gc_freeze", True)
     async with main_module.lifespan(main_module.app):
         events.append("serving")
-    assert events == ["migrate", "prefetch", "collect", "freeze", "serving", "dispose"]
+    assert events == [
+        "migrate",
+        "prefetch",
+        "collect",
+        "freeze",
+        "serving",
+        "close_health",
+        "dispose",
+    ]
 
 
 async def test_lifespan_skips_gc_freeze_when_disabled(
@@ -146,9 +158,9 @@ async def test_lifespan_runs_and_cancels_stats_cache_invalidation(
     started = asyncio.Event()
 
     async def _fake_run_invalidation(
-        got_cache: object, got_source: object, *, resource: str, subscriber_id: str | None
+        got_cache: object, got_source: object, *, resource: str
     ) -> None:
-        seen.update(cache=got_cache, source=got_source, resource=resource, sub=subscriber_id)
+        seen.update(cache=got_cache, source=got_source, resource=resource)
         started.set()
         try:
             await asyncio.Event().wait()
@@ -159,14 +171,12 @@ async def test_lifespan_runs_and_cancels_stats_cache_invalidation(
     monkeypatch.setattr(main_module, "stats_cache", cache)
     monkeypatch.setattr(main_module, "run_invalidation", _fake_run_invalidation)
     monkeypatch.setattr(heroes_v2, "get_hero_event_source", lambda: source)
-    monkeypatch.setattr(socket, "gethostname", lambda: "host-1")
     async with main_module.lifespan(main_module.app):
         await started.wait()
     assert seen == {
         "cache": cache,
         "source": source,
         "resource": "hero",
-        "sub": "stats-cache-host-1",
     }
     assert events.index("invalidation cancelled") < events.index("dispose")
 
@@ -193,7 +203,7 @@ async def test_lifespan_closes_redis_cache_after_cancelling_invalidation(
     monkeypatch.setattr(heroes_v2, "get_hero_event_source", object)
     async with main_module.lifespan(main_module.app):
         await asyncio.sleep(0)
-    assert events[-3:] == ["cancelled", "aclose", "dispose"]
+    assert events[-4:] == ["cancelled", "aclose", "close_health", "dispose"]
 
 
 def test_docs_path_is_off_only_in_production() -> None:

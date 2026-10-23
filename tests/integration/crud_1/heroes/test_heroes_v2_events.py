@@ -26,7 +26,6 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
-from uuid import uuid4
 
 import httpx
 import pytest
@@ -97,7 +96,7 @@ async def test_hero_events_survive_a_disconnect_with_the_same_subscriber_id() ->
     """A hero mutation published while the subscriber is disconnected is still delivered
     once it reconnects with the same subscriber_id -- the delivery guarantee's whole point.
     """
-    subscriber_id = f"integration-test-{uuid4()}"
+    subscriber_id: str | None = None
 
     async with _live_server() as port:
         base_url = f"http://127.0.0.1:{port}"
@@ -110,8 +109,11 @@ async def test_hero_events_survive_a_disconnect_with_the_same_subscriber_id() ->
             http.stream("GET", _events_url, params={"subscriber_id": subscriber_id}) as response,
         ):
             assert response.status_code == 200
-            first_line = await anext(response.aiter_lines())
-            assert first_line == "id: 0"
+            lines = response.aiter_lines()
+            assert await anext(lines) == "id: 0"
+            # The server mints the subscriber id (a client-chosen one is ignored); a client
+            # resumes by handing the minted id back.
+            subscriber_id = json.loads((await anext(lines)).removeprefix("data: "))["subscriber_id"]
 
         # Exiting the `async with` above only closes *this* end of the socket --
         # nothing here guarantees the server has noticed yet. Server-side, that

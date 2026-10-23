@@ -636,21 +636,21 @@ def test_hero_boolean_filters_and_invalid_include_archived(
     try:
         not_draft = page.request.get(
             f"{base_url}/crud/v1/heroes/v2/json",
-            params={"id": hero["id"], "is_draft": "false"},
+            params={"name": hero["name"], "is_draft": "false"},
             headers=headers,
         )
         assert not_draft.ok
 
         not_locked = page.request.get(
             f"{base_url}/crud/v1/heroes/v2/json",
-            params={"id": hero["id"], "is_locked": "false", "include_archived": "false"},
+            params={"name": hero["name"], "is_locked": "false", "include_archived": "false"},
             headers=headers,
         )
         assert not_locked.ok
 
         invalid_include_archived = page.request.get(
             f"{base_url}/crud/v1/heroes/v2/json",
-            params={"id": hero["id"], "include_archived": "maybe"},
+            params={"name": hero["name"], "include_archived": "maybe"},
             headers=headers,
             fail_on_status_code=False,
         )

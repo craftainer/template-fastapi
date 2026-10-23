@@ -14,8 +14,6 @@ from app.config import get_settings
 from app.db import engine
 from app.main import app
 
-client = TestClient(app)
-
 
 async def test_database_check_against_real_postgres() -> None:
     """PostgresCheck reports healthy against the live postgres stack service."""
@@ -25,7 +23,11 @@ async def test_database_check_against_real_postgres() -> None:
 
 async def test_redis_check_against_real_redis() -> None:
     """RedisCheck reports healthy against the live redis stack service."""
-    result = await RedisCheck(get_settings().redis_url).check()
+    check = RedisCheck(get_settings().redis_url)
+    try:
+        result = await check.check()
+    finally:
+        await check.aclose()
     assert result.healthy is True
 
 
@@ -52,7 +54,9 @@ async def test_oidc_check_against_real_keycloak() -> None:
 
 def test_ready_reports_every_stack_service_healthy() -> None:
     """GET /health/ready returns 200 with every real external service healthy."""
-    response = client.get("/health/ready")
+    # `with`: the lifespan's shutdown closes the wired RedisCheck's client on the same loop.
+    with TestClient(app) as ready_client:
+        response = ready_client.get("/health/ready")
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"

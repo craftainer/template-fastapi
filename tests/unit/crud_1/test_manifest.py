@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.crud_1.wiring import manifest_registry
-from app.main import app
+from app.main import _api_catalog_router, app
 from app.oidc import get_current_claims
 
 client = TestClient(app)
@@ -39,6 +39,19 @@ def test_api_catalog_points_at_the_manifest_without_authentication() -> None:
     assert entry["describedby"] == [
         {"href": _MANIFEST, "type": "application/json", "profile": MANIFEST_PROFILE}
     ]
+
+
+@pytest.mark.parametrize(("mode", "advertised"), [("dev", True), ("production", False)])
+def test_api_catalog_advertises_openapi_only_where_it_is_served(
+    mode: str, advertised: bool
+) -> None:
+    """Production serves no /openapi.json, so its catalog carries no service-desc link."""
+    catalog_app = FastAPI()
+    catalog_app.include_router(_api_catalog_router(mode))
+
+    entry = TestClient(catalog_app).get("/.well-known/api-catalog").json()["linkset"][0]
+
+    assert ("service-desc" in entry) is advertised
 
 
 def test_anonymous_caller_sees_no_resource_because_none_is_public() -> None:

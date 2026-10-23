@@ -179,6 +179,14 @@ heroes are owner-scoped, see ADR-0011). Off unless set:
 | --- | --- | --- |
 | `STATS_CACHE_TTL_SECONDS` | unset (cache off) | Lifetime in seconds of a cached `/stats`/`/predict` body, integer > 0. Also the staleness bound if an invalidation event is missed. |
 
+Event-stream subscriber ids are minted and signed by the server (`craftainer_crud` 0.3):
+a client can only hand back an id it was given, so `?subscriber_id=` / `Last-Event-ID` resume a
+session only if the id verifies. By default the signing key is random per process, so ids
+survive neither a restart nor a second worker; set `SUBSCRIBER_SECRET` (at least 32
+characters, the same on every replica) to let clients resume across both. It is required
+under `MODE=production`: `config.py` refuses to construct `Settings` without it. `dev`/`mock`
+leave it unset and use the per-process key.
+
 `app.cache.build_stats_cache(settings)` returns the cache (Redis over `REDIS_URL`, so
 `rediss://` TLS works as for rate limiting; in-process under `MODE=mock`), which is
 passed to the router factories as `stats_cache=`. Redis keys are
