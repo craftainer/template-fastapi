@@ -3,12 +3,11 @@
 - `workflows/` — GitHub Actions; see its own `README.md`.
 - `scripts/` — helper scripts used by the workflows; see its own
   `README.md`.
-- `renovate.json` — weekly update PRs for Python deps (`pyproject.toml`),
-  GitHub Actions, every
+- `renovate.json` — weekly update PRs for GitHub Actions, every
   Dockerfile/compose image tag repo-wide (scanned recursively, unlike
   Dependabot), and the `# renovate:` comment-annotated version pins in
   `.devcontainer/Dockerfile` (and an instance's top-level runtime
-  `Dockerfile`). `Makefile` and `image.mk` `*_VERSION` pins carry the same
+  `Dockerfile` and `.claude/mcp/playwright_selenium_bridge.py`). `Makefile` and `image.mk` `*_VERSION` pins carry the same
   marker; the hadolint image in `.pre-commit-config.yaml`, the Trivy
   image in `scripts/image-scan.sh` and the skopeo image in the `Makefile`
   (the last two by tag and digest) have their own regex managers. An instance's own `renovate.json` additions cover its
