@@ -9,8 +9,9 @@ from craftainer_observability.health.base import HealthCheckResult
 from craftainer_observability.health.registry import HealthRegistry
 from fastapi.testclient import TestClient
 
+from app import health_checks
 from app.config import get_settings
-from app.health_checks import MockHealthCheck, get_health_registry
+from app.health_checks import MockHealthCheck, close_health_checks, get_health_registry
 from app.main import app
 
 client = TestClient(app)
@@ -32,8 +33,8 @@ def test_get_health_registry_registers_mock_checks_in_mock_mode(
     monkeypatch.setattr(get_settings(), "mode", "mock")
     try:
         registry = get_health_registry()
-        assert all(isinstance(check, MockHealthCheck) for check in registry._checks)
-        assert {check.name for check in registry._checks} == {
+        assert all(isinstance(check, MockHealthCheck) for check, _ in registry._checks)
+        assert {check.name for check, _ in registry._checks} == {
             "database",
             "redis",
             "s3",
@@ -51,8 +52,8 @@ def test_get_health_registry_registers_real_checks_outside_mock_mode(
     monkeypatch.setattr(get_settings(), "mode", "real")
     try:
         registry = get_health_registry()
-        assert not any(isinstance(check, MockHealthCheck) for check in registry._checks)
-        assert {check.name for check in registry._checks} == {
+        assert not any(isinstance(check, MockHealthCheck) for check, _ in registry._checks)
+        assert {check.name for check, _ in registry._checks} == {
             "database",
             "redis",
             "s3",
@@ -112,3 +113,24 @@ def test_health_ready_route_reports_degraded_on_failure() -> None:
         del app.dependency_overrides[get_health_registry]
     assert response.status_code == 503
     assert response.json()["status"] == "degraded"
+
+
+async def test_close_health_checks_closes_the_redis_checks_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shutdown closes the RedisCheck's reused client once it has been created."""
+    closed: list[str] = []
+
+    class _Redis:
+        async def aclose(self) -> None:
+            closed.append("redis")
+
+    health_checks._redis_check.cache_clear()
+    try:
+        await close_health_checks()  # nothing created yet: a no-op
+        assert closed == []
+        monkeypatch.setattr(health_checks._redis_check(), "_client", _Redis())
+        await close_health_checks()
+        assert closed == ["redis"]
+    finally:
+        health_checks._redis_check.cache_clear()

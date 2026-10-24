@@ -6,7 +6,7 @@ It is excluded from the coverage gate for the same MODE-only reason as
 craftainer_crud.repositories.memory -- see its module docstring.
 """
 
-from functools import lru_cache
+from functools import cache, lru_cache
 
 import boto3
 from craftainer_observability.health.base import HealthCheckResult
@@ -32,6 +32,18 @@ class MockHealthCheck:  # pragma: no cover -- see module docstring
         return HealthCheckResult(self.name, healthy=True, detail="mocked")
 
 
+@cache
+def _redis_check() -> RedisCheck:
+    """The process's one RedisCheck: it keeps a Redis client alive, so it must be closed."""
+    return RedisCheck(get_settings().redis_url, name="redis")
+
+
+async def close_health_checks() -> None:
+    """Close what the registry's checks hold open (the RedisCheck's client); call on shutdown."""
+    if _redis_check.cache_info().currsize:
+        await _redis_check().aclose()
+
+
 @lru_cache
 def get_health_registry() -> HealthRegistry:
     """Return the process-wide cached HealthRegistry, with every external service registered.
@@ -49,7 +61,7 @@ def get_health_registry() -> HealthRegistry:
         registry.register(MockHealthCheck("oidc"))
         return registry
     registry.register(PostgresCheck(engine, name="database"))
-    registry.register(RedisCheck(settings.redis_url))
+    registry.register(_redis_check())
     registry.register(
         S3Check(
             boto3.client(
@@ -57,7 +69,8 @@ def get_health_registry() -> HealthRegistry:
                 endpoint_url=settings.s3_endpoint_url,
                 aws_access_key_id=settings.s3_access_key,
                 aws_secret_access_key=settings.s3_secret_key,
-            )
+            ),
+            name="s3",
         )
     )
     discovery_url = f"{settings.oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration"

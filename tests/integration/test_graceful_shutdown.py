@@ -62,6 +62,8 @@ def _uvicorn(tmp_path: Path, name: str) -> Iterator[tuple[subprocess.Popen[bytes
         "RATE_LIMIT_MOCK_TOKEN": "1000/minute",
         "RATE_LIMIT_BULK_ACTION": "1000/minute",
         "SSE_KEEPALIVE_SECONDS": "0.2",
+        # Both processes sign subscriber ids with one key, so the second accepts the first's.
+        "SUBSCRIBER_SECRET": "graceful-shutdown-test-secret-0123456789",
     }
     with (tmp_path / f"{name}.log").open("wb") as log:
         # Fixed args plus a port this function itself picked, not external input.

@@ -3,7 +3,6 @@
 import asyncio
 import gc
 import os
-import socket
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from importlib import metadata
@@ -22,7 +21,7 @@ from craftainer_observability.otel import (
     instrument_engine,
 )
 from craftainer_observability.profiling import install_profiling
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 from alembic import command
 from app.cache import RedisStatsCache, run_invalidation
@@ -35,7 +34,7 @@ from app.crud_1 import router as crud_v1_router
 from app.crud_1.heroes import heroes_v2
 from app.crud_1.wiring import manifest_registry, stats_cache
 from app.db import engine
-from app.health_checks import get_health_registry
+from app.health_checks import close_health_checks, get_health_registry
 from app.http_headers import add_security_headers
 from app.oidc import prefetch_jwks
 from app.problem_details import register_problem_handlers
@@ -69,7 +68,6 @@ async def _stats_cache_invalidation(cache: StatsCache) -> AsyncIterator[None]:
             cache,
             heroes_v2.get_hero_event_source(),
             resource="hero",
-            subscriber_id=f"stats-cache-{socket.gethostname()}",
         )
     )
     try:
@@ -95,7 +93,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Once startup work is done (and `GC_FREEZE` isn't false), `gc.collect(); gc.freeze()`
     moves everything allocated so far out of the cyclic GC's reach. Shutdown ends with
-    `engine.dispose()` so pooled connections close cleanly.
+    `close_health_checks()` (the Redis check's client) and `engine.dispose()`, so clients
+    and pooled connections close cleanly.
     """
     if settings.run_migrations_on_startup and settings.mode != "mock":  # pragma: no branch
         await asyncio.to_thread(_run_migrations)
@@ -110,7 +109,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 gc.freeze()
             yield
     finally:
-        await engine.dispose()
+        try:
+            await close_health_checks()
+        finally:
+            await engine.dispose()
 
 
 def _service_version() -> str:
@@ -121,6 +123,18 @@ def _service_version() -> str:
 def _docs_path(path: str, mode: str) -> str | None:
     """`path` for the interactive docs/schema routes, or None (route off) in production."""
     return None if mode == "production" else path
+
+
+def _api_catalog_router(mode: str) -> APIRouter:
+    """The api-catalog router; `service-desc` only where `/openapi.json` is actually served.
+
+    Production serves no OpenAPI document (see `_docs_path`), so advertising it would leave
+    a dangling link.
+    """
+    return api_catalog_router(
+        manifest_url="/api/_crud/manifest",
+        openapi_url=_docs_path("/openapi.json", mode),
+    )
 
 
 def _enable_debugger() -> None:
@@ -212,13 +226,7 @@ app.include_router(
     ),
     prefix="/api/_crud",
 )
-app.include_router(
-    api_catalog_router(
-        manifest_url="/api/_crud/manifest",
-        openapi_url="/openapi.json",
-    ),
-    prefix="",
-)
+app.include_router(_api_catalog_router(settings.mode), prefix="")
 _mount_mode_specific_routers(app, settings.mode)
 
 # Middleware order, outermost first: OTel server span, RequestIDMiddleware, profiling,

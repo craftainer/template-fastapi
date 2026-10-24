@@ -260,5 +260,6 @@ async def test_run_invalidation_invalidates_on_subscribe_and_each_event(
         await task
     # failed subscribe: nothing; stream 1: subscribe + 2 events; stream 2: subscribe + 1 event
     assert cache.invalidated == ["hero"] * 5
-    assert source.subscribed_with == ["pod-1"] * 3
+    # the id the source returned ("sub") is presented on every later subscribe
+    assert source.subscribed_with == ["pod-1", "pod-1", "sub"]
     assert "invalidation stream failed" in caplog.text

@@ -142,6 +142,12 @@ class Settings(BaseSettings):
     mqtt_keepalive_seconds: int = 60
     mqtt_username: str | None = None
     mqtt_password: str | None = None
+    # craftainer_crud signs the event-stream subscriber ids it mints (a client cannot choose
+    # one). Unset (the default) uses a random per-process secret: ids then survive neither a
+    # restart nor a second worker. Set the same value (>= 32 characters) on every replica to
+    # let a client resume its stream across restarts and replicas. Env SUBSCRIBER_SECRET.
+    # Required (and checked) under MODE=production.
+    subscriber_secret: str | None = Field(default=None, min_length=32)
     mqtt_use_tls: bool = False
 
     # craftainer_crud.controllers.crud_router's `GET <prefix>/events` SSE route: how often an
@@ -200,6 +206,18 @@ class Settings(BaseSettings):
         """
         if self.mode == "mock" and not self.allow_mock_mode:  # pragma: no cover
             raise ValueError("MODE=mock requires ALLOW_MOCK_MODE=1 to be set")
+        return self
+
+    @model_validator(mode="after")
+    def _require_subscriber_secret_in_production(self) -> Self:
+        """Refuse to construct production Settings without a subscriber-id signing key.
+
+        Without one, craftainer_crud signs event-stream subscriber ids with a random
+        per-process key, so no client could resume a stream after a restart or on another
+        replica. (`subscriber_secret`'s own `min_length` rejects a too-short value.)
+        """
+        if self.mode == "production" and self.subscriber_secret is None:  # pragma: no cover
+            raise ValueError("subscriber_secret must be set when MODE=production")
         return self
 
     @model_validator(mode="after")

@@ -35,6 +35,9 @@ configure(
             password=_settings.mqtt_password,
             use_tls=_settings.mqtt_use_tls,
         ),
+        subscriber_secret=(
+            _settings.subscriber_secret.encode() if _settings.subscriber_secret else None
+        ),
     ),
     session_factory,
 )
