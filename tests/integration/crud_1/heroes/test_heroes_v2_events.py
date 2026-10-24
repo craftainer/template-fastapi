@@ -96,7 +96,6 @@ async def test_hero_events_survive_a_disconnect_with_the_same_subscriber_id() ->
     """A hero mutation published while the subscriber is disconnected is still delivered
     once it reconnects with the same subscriber_id -- the delivery guarantee's whole point.
     """
-    subscriber_id: str | None = None
 
     async with _live_server() as port:
         base_url = f"http://127.0.0.1:{port}"
@@ -106,7 +105,7 @@ async def test_hero_events_survive_a_disconnect_with_the_same_subscriber_id() ->
         #    an ASGI http.disconnect to the still-running app).
         async with (
             httpx.AsyncClient(base_url=base_url) as http,
-            http.stream("GET", _events_url, params={"subscriber_id": subscriber_id}) as response,
+            http.stream("GET", _events_url) as response,
         ):
             assert response.status_code == 200
             lines = response.aiter_lines()
