@@ -8,7 +8,10 @@
   build-context excludes. Owned by template-base. The top-level
   `../Dockerfile` is the app's runtime image (`../docs/TEMPLATE.md`).
 - `compose.yml` — the dev service (`myapp`), built from `Dockerfile`'s
-  `develop` stage. Owned by template-base.
+  `develop` stage. Owned by template-base. It also declares the optional
+  `github_token` build secret (from the `GITHUB_TOKEN` environment
+  variable, which CI exports) that authenticates
+  `../scripts/develop.sh`'s downloads; unset locally, it is simply absent.
 - `compose.instance.yml` — template-fastapi's layer on top of
   `compose.yml`: the `include:` list pulling in every `stack/` fragment,
   plus `services.myapp`'s stack credentials (`env_file:`), `depends_on`
