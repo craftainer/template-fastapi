@@ -22,6 +22,7 @@ a miss and logs a warning.
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import time
@@ -178,9 +179,12 @@ async def run_invalidation(
     while True:
         try:
             _, events = await source.subscribe(None, durable=False)
-            await cache.invalidate(resource)
-            async for _event in events:
+            # aclosing: the iterator owns the subscription (craftainer-crud ADR 0006), so
+            # it must be closed on every exit, including a failing invalidate() or a cancel.
+            async with contextlib.aclosing(events):
                 await cache.invalidate(resource)
+                async for _event in events:
+                    await cache.invalidate(resource)
         # e2e-unreachable: needs a failing event stream; covered by tests/unit/test_cache.py
         except Exception:  # pragma: no cover
             logger.warning("stats cache invalidation stream failed", exc_info=True)
