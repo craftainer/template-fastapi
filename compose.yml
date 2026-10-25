@@ -258,6 +258,8 @@ services:
       MQTT_USE_TLS: "true"
       MQTT_USERNAME: *smoke_mqtt_user
       MQTT_PASSWORD: *smoke_mqtt_password
+      # Required under MODE=production (config.py); smoke-test-only value.
+      SUBSCRIBER_SECRET: smoke-test-subscriber-secret-0123456789
     volumes:
       - smoke-tls:/tls:ro
     depends_on:

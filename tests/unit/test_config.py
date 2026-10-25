@@ -21,6 +21,7 @@ _PRODUCTION_KWARGS: dict[str, object] = {
     "s3_endpoint_url": "https://s3.example.com",
     "redis_url": "rediss://redis.example.com:6379/0",
     "postgres_sslmode": "verify-full",
+    "subscriber_secret": "production-test-subscriber-key-0123456789",
 }
 
 
@@ -258,3 +259,20 @@ def test_gc_freeze_health_info_and_profiling_defaults_and_overrides() -> None:
     assert custom.gc_freeze is False
     assert custom.health_info_enabled is True
     assert custom.profiling_enabled is True
+
+
+def test_subscriber_secret_is_optional_but_must_be_a_real_key() -> None:
+    """SUBSCRIBER_SECRET is unset by default; a set one must be at least 32 characters."""
+    assert Settings().subscriber_secret is None
+    assert Settings(subscriber_secret="k" * 32).subscriber_secret == "k" * 32
+    with pytest.raises(ValidationError, match="subscriber_secret"):
+        Settings(subscriber_secret="short")  # noqa: S106 -- a too-short test value, not a secret
+
+
+def test_production_mode_requires_subscriber_secret() -> None:
+    """Settings(mode="production") with no subscriber_secret, or a short one, raises."""
+    kwargs = {k: v for k, v in _PRODUCTION_KWARGS.items() if k != "subscriber_secret"}
+    with pytest.raises(ValidationError, match="subscriber_secret must be set"):
+        Settings(**kwargs)  # type: ignore[arg-type]
+    with pytest.raises(ValidationError, match="subscriber_secret"):
+        Settings(**{**kwargs, "subscriber_secret": "short"})  # type: ignore[arg-type]

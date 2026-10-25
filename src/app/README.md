@@ -179,12 +179,20 @@ heroes are owner-scoped, see ADR-0011). Off unless set:
 | --- | --- | --- |
 | `STATS_CACHE_TTL_SECONDS` | unset (cache off) | Lifetime in seconds of a cached `/stats`/`/predict` body, integer > 0. Also the staleness bound if an invalidation event is missed. |
 
+Event-stream subscriber ids are minted and signed by the server (`craftainer_crud` 0.3):
+a client can only hand back an id it was given, so `?subscriber_id=` / `Last-Event-ID` resume a
+session only if the id verifies. By default the signing key is random per process, so ids
+survive neither a restart nor a second worker; set `SUBSCRIBER_SECRET` (at least 32
+characters, the same on every replica) to let clients resume across both. It is required
+under `MODE=production`: `config.py` refuses to construct `Settings` without it. `dev`/`mock`
+leave it unset and use the per-process key.
+
 `app.cache.build_stats_cache(settings)` returns the cache (Redis over `REDIS_URL`, so
 `rediss://` TLS works as for rate limiting; in-process under `MODE=mock`), which is
 passed to the router factories as `stats_cache=`. Redis keys are
 `stats-cache:<APP_VERSION>:<resource>:<hash>`; the version keeps a canary release's
 differently-shaped responses apart. Writes publish CRUD events (ADR-0015); each replica
-runs `app.cache.run_invalidation(cache, event_source, resource=..., subscriber_id=...)`
+runs `app.cache.run_invalidation(cache, event_source, resource=...)`
 as a lifespan background task, which empties the resource's entries on every event (and
 once per (re)subscribe). A read racing a write can still store a stale body, so the TTL
 stays the safety net. A Redis outage degrades to uncached responses.
@@ -197,10 +205,10 @@ setting asks for it.
 Lifespan, in order: Alembic migrations (off the event loop; skipped under `MODE=mock` or
 `RUN_MIGRATIONS_ON_STARTUP=false`), `oidc.prefetch_jwks()` (warm-only, an unreachable
 IdP just logs), the stats-cache invalidation task (only when `STATS_CACHE_TTL_SECONDS` is
-set: `app.cache.run_invalidation` over Hero's event source, `resource="hero"`,
-`subscriber_id="stats-cache-<hostname>"`), then `gc.collect(); gc.freeze()` (unless
+set: `app.cache.run_invalidation` over Hero's event source, `resource="hero"`; the source mints its subscriber id and each resubscribe presents it), then `gc.collect(); gc.freeze()` (unless
 `GC_FREEZE=false`). Shutdown runs in reverse: cancel and await the invalidation task,
-close the Redis cache client, then `engine.dispose()` so pooled connections close cleanly.
+close the Redis cache client, close the health registry's Redis check
+(`close_health_checks()`), then `engine.dispose()` so pooled connections close cleanly.
 `crud_1/wiring.py` builds the `stats_cache` once at import time because the Hero v2
 router takes it as `stats_cache=`.
 
