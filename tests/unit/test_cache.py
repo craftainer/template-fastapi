@@ -3,12 +3,12 @@
 import asyncio
 import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from importlib import metadata
 from typing import Any
 
 import pytest
-from craftainer_crud.interfaces.base import InMemoryEventSink
+from craftainer_crud.interfaces.base import EventIterator, InMemoryEventSink
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app import cache as cache_module
@@ -220,23 +220,42 @@ class _RecordingCache:
         self.invalidated.append(resource)
 
 
+class _Stream:
+    """EventIterator that counts aclose() calls, even on a stream that was never started."""
+
+    def __init__(self, inner: AsyncGenerator[dict[str, Any]], source: _ScriptedSource) -> None:
+        self._inner = inner
+        self._source = source
+
+    def __aiter__(self) -> _Stream:
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        return await self._inner.__anext__()
+
+    async def aclose(self) -> None:
+        self._source.closed += 1
+        await self._inner.aclose()
+
+
 class _ScriptedSource:
     """EventSource: each subscribe() consumes the next script (events, or an exception)."""
 
     def __init__(self, scripts: list[list[dict[str, Any]] | Exception]) -> None:
         self.scripts = scripts
         self.subscribed_with: list[tuple[str | None, bool]] = []
+        self.closed = 0
 
     async def subscribe(
         self, subscriber_id: str | None, *, durable: bool = True
-    ) -> tuple[str, AsyncIterator[dict[str, Any]]]:
+    ) -> tuple[str, EventIterator[dict[str, Any]]]:
         self.subscribed_with.append((subscriber_id, durable))
         script = self.scripts.pop(0)
         if isinstance(script, Exception):
             raise script
-        return "sub", self._iterate(script)
+        return "sub", _Stream(self._iterate(script), self)
 
-    async def _iterate(self, events: list[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
+    async def _iterate(self, events: list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any]]:
         for event in events:
             yield event
         if not self.scripts:
@@ -282,3 +301,24 @@ async def test_run_invalidation_invalidates_on_subscribe_and_each_event(
     # every subscribe is transient with a fresh id; the id the source returned is not carried over
     assert source.subscribed_with == [(None, False)] * 3
     assert "invalidation stream failed" in caplog.text
+
+
+class _FailingCache(_RecordingCache):
+    async def invalidate(self, resource: str) -> None:
+        raise RuntimeError("redis down")
+
+
+async def test_run_invalidation_closes_the_event_iterator_when_invalidate_fails() -> None:
+    """The iterator owns the subscription (craftainer-crud ADR 0006): it is closed on a failure."""
+    source = _ScriptedSource([[{"a": 1}], [{"a": 2}]])
+    task = asyncio.create_task(
+        run_invalidation(_FailingCache(), source, resource="hero", retry_seconds=0)
+    )
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if source.closed >= 2:
+            break
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert source.closed >= 2
