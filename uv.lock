@@ -563,7 +563,7 @@ wheels = [
 
 [[package]]
 name = "craftainer-crud"
-version = "0.3.0"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
@@ -571,9 +571,9 @@ dependencies = [
     { name = "python-multipart" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9a/d6/32f45d35677188881596c6476c2ec1423eaa51d31aabea5389106f3d6e3e/craftainer_crud-0.3.0.tar.gz", hash = "sha256:6c518a269dc768d78722c59b862dbf2aa90e1c8ea32d053997e3a9103a04af52", size = 332793, upload-time = "2026-10-23T12:50:06.907Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/5d/bf200bdc985aa1862639e56a4638e1c2741f6b0011e10e8985be6b620c6a/craftainer_crud-0.4.0.tar.gz", hash = "sha256:92b1ccbd0276849cdac598e2de8a589370a25199a304969e149a3c67888c5936", size = 335541, upload-time = "2026-10-25T09:21:24.902Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/14/d16a24a9d4f57ebbf0280b4fe07dc29c283e1956b5e297a13a3b2b782bba/craftainer_crud-0.3.0-py3-none-any.whl", hash = "sha256:e2c132b9509874b684b10177d1e7aab912c5e8c27821d0294e3bfc729a589699", size = 127500, upload-time = "2026-10-23T12:50:05.707Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/f1/271fc60768cbc34500cbc9fa8177ce581d776f6f99d7fd21ee1f01ae1193/craftainer_crud-0.4.0-py3-none-any.whl", hash = "sha256:c131bf9cb6139d03b1a2696334955b85248df41878a24f2aace2e0625acc1f74", size = 128506, upload-time = "2026-10-25T09:21:23.699Z" },
 ]
 
 [package.optional-dependencies]
@@ -2597,7 +2597,7 @@ requires-dist = [
     { name = "asyncpg", specifier = "==0.31.0" },
     { name = "boto3", specifier = "==1.43.98" },
     { name = "boto3-stubs", extras = ["s3"], marker = "extra == 'dev'", specifier = "==1.43.98" },
-    { name = "craftainer-crud", extras = ["mqtt", "xml"], specifier = ">=0.3.0,<0.4" },
+    { name = "craftainer-crud", extras = ["mqtt", "xml"], specifier = ">=0.4.0,<0.5" },
     { name = "craftainer-crud-sdk", marker = "extra == 'dev'", specifier = ">=0.1.0,<0.2" },
     { name = "craftainer-observability", extras = ["otel", "sqlalchemy", "redis", "s3", "http"], specifier = ">=0.3.0,<0.4" },
     { name = "debugpy", specifier = "==1.8.22" },

@@ -194,8 +194,12 @@ passed to the router factories as `stats_cache=`. Redis keys are
 differently-shaped responses apart. Writes publish CRUD events (ADR-0015); each replica
 runs `app.cache.run_invalidation(cache, event_source, resource=...)`
 as a lifespan background task, which empties the resource's entries on every event (and
-once per (re)subscribe). A read racing a write can still store a stale body, so the TTL
-stays the safety net. A Redis outage degrades to uncached responses.
+once per (re)subscribe). It subscribes transiently (`source.subscribe(None, durable=False)`,
+`craftainer_crud` 0.4): a fresh id and a clean MQTT session each time, which the broker
+drops when the connection ends, whether it closes cleanly or crashes, so a replica leaves
+no session behind and nothing is resumed (the subscriber ids above matter to clients of
+`GET /events`, not to this task). A read racing a write, or an event published while the
+task was disconnected, can still leave a stale body, so the TTL stays the safety net. A Redis outage degrades to uncached responses.
 
 ## Startup, shutdown and middleware wiring
 
@@ -205,7 +209,7 @@ setting asks for it.
 Lifespan, in order: Alembic migrations (off the event loop; skipped under `MODE=mock` or
 `RUN_MIGRATIONS_ON_STARTUP=false`), `oidc.prefetch_jwks()` (warm-only, an unreachable
 IdP just logs), the stats-cache invalidation task (only when `STATS_CACHE_TTL_SECONDS` is
-set: `app.cache.run_invalidation` over Hero's event source, `resource="hero"`; the source mints its subscriber id and each resubscribe presents it), then `gc.collect(); gc.freeze()` (unless
+set: `app.cache.run_invalidation` over Hero's event source, `resource="hero"`; each (re)subscribe is transient, `durable=False` with a fresh id), then `gc.collect(); gc.freeze()` (unless
 `GC_FREEZE=false`). Shutdown runs in reverse: cancel and await the invalidation task,
 close the Redis cache client, close the health registry's Redis check
 (`close_health_checks()`), then `engine.dispose()` so pooled connections close cleanly.

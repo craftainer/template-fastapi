@@ -158,7 +158,6 @@ async def run_invalidation(
     source: EventSource,
     *,
     resource: str,
-    subscriber_id: str | None = None,
     retry_seconds: float = 5.0,
 ) -> None:
     """Invalidate `resource`'s cache entries on every CRUD event from `source`, until cancelled.
@@ -166,18 +165,19 @@ async def run_invalidation(
     Meant to run for the life of a replica as a lifespan background task, one per cached
     resource (`asyncio.create_task(run_invalidation(...))`, cancelled on shutdown); every
     replica runs its own, so a write handled by any replica reaches every replica's cache
-    through the event stream (ADR-0015). The source mints the subscriber id
-    (a caller-chosen one is only honoured if it was minted by a server sharing the signing
-    key), so each resubscribe presents the id the last subscribe returned, keeping one
-    persistent session per run rather than opening a new one after every failure.
+    through the event stream (ADR-0015). Each subscribe is transient
+    (`source.subscribe(None, durable=False)`: a fresh id and a clean MQTT session the broker
+    drops when the connection ends, cleanly or not), so a replica leaves no session behind
+    and nothing is resumed.
 
     On every (re)subscribe the resource is invalidated once, covering events that could
-    not have been delivered while disconnected. A failing subscription or stream is logged
-    and retried after `retry_seconds`; cancellation propagates.
+    not have been delivered while disconnected (a transient session queues none). A failing
+    subscription or stream is logged and retried after `retry_seconds`; cancellation
+    propagates.
     """
     while True:
         try:
-            subscriber_id, events = await source.subscribe(subscriber_id)
+            _, events = await source.subscribe(None, durable=False)
             await cache.invalidate(resource)
             async for _event in events:
                 await cache.invalidate(resource)

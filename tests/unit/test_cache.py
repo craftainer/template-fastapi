@@ -8,6 +8,7 @@ from importlib import metadata
 from typing import Any
 
 import pytest
+from craftainer_crud.interfaces.base import InMemoryEventSink
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app import cache as cache_module
@@ -224,12 +225,12 @@ class _ScriptedSource:
 
     def __init__(self, scripts: list[list[dict[str, Any]] | Exception]) -> None:
         self.scripts = scripts
-        self.subscribed_with: list[str | None] = []
+        self.subscribed_with: list[tuple[str | None, bool]] = []
 
     async def subscribe(
-        self, subscriber_id: str | None
+        self, subscriber_id: str | None, *, durable: bool = True
     ) -> tuple[str, AsyncIterator[dict[str, Any]]]:
-        self.subscribed_with.append(subscriber_id)
+        self.subscribed_with.append((subscriber_id, durable))
         script = self.scripts.pop(0)
         if isinstance(script, Exception):
             raise script
@@ -242,15 +243,33 @@ class _ScriptedSource:
             await asyncio.Event().wait()  # last stream stays open until cancelled
 
 
+async def test_run_invalidation_accepts_the_real_in_memory_event_source() -> None:
+    """The installed craftainer_crud source takes `durable=False`; a published event invalidates."""
+    cache = _RecordingCache()
+    sink = InMemoryEventSink("hero")
+    task = asyncio.create_task(run_invalidation(cache, sink, resource="hero"))
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if cache.invalidated:
+            break
+    await sink.publish(resource="hero", record_id=1, action="create", snapshot={})
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if len(cache.invalidated) >= 2:
+            break
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert cache.invalidated == ["hero", "hero"]
+
+
 async def test_run_invalidation_invalidates_on_subscribe_and_each_event(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Resubscribes after failures, invalidating on each subscribe and each event."""
     cache = _RecordingCache()
     source = _ScriptedSource([RuntimeError("broker down"), [{"a": 1}, {"a": 2}], [{"a": 3}]])
-    task = asyncio.create_task(
-        run_invalidation(cache, source, resource="hero", subscriber_id="pod-1", retry_seconds=0)
-    )
+    task = asyncio.create_task(run_invalidation(cache, source, resource="hero", retry_seconds=0))
     for _ in range(50):
         await asyncio.sleep(0)
         if len(cache.invalidated) >= 6:
@@ -260,6 +279,6 @@ async def test_run_invalidation_invalidates_on_subscribe_and_each_event(
         await task
     # failed subscribe: nothing; stream 1: subscribe + 2 events; stream 2: subscribe + 1 event
     assert cache.invalidated == ["hero"] * 5
-    # the id the source returned ("sub") is presented on every later subscribe
-    assert source.subscribed_with == ["pod-1", "pod-1", "sub"]
+    # every subscribe is transient with a fresh id; the id the source returned is not carried over
+    assert source.subscribed_with == [(None, False)] * 3
     assert "invalidation stream failed" in caplog.text
