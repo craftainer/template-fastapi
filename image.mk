@@ -4,7 +4,7 @@
 # edits this file for its own values and a sync keeps them.
 
 # DOCKERFILE and TARGET keep template-docker's defaults (`Dockerfile`,
-# `runner`); ARCHES (`amd64 arm64`) and OCI_LICENSE (`GPL-3.0-or-later`) too.
+# `runner`); ARCHES (`amd64 arm64`) and OCI_LICENSE (`GPL-3.0-only`) too.
 
 # The app reads APP_VERSION / APP_COMMIT (Dockerfile ARGs, exposed as env).
 # Recursive (`=`) so git runs only in recipes that build, as the Makefile does.
