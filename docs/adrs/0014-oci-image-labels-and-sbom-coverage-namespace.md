@@ -10,6 +10,8 @@ template-docker now sets the label set (no `docker/metadata-action`, no
 `COVERAGE_REPORT`). The label namespace, the pointers at release assets and
 the Python-specific coverage limitation stand.
 
+Note (2026-10-26, LIC1): the `licenses` label is now `GPL-3.0-only`; the `GPL-3.0-or-later` above records the earlier state.
+
 ## Context
 
 `release.yml` published an OCI image (tarball, plus an optional registry
