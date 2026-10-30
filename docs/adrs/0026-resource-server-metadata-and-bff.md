@@ -41,7 +41,7 @@ We will:
   variable set it is both, as before. Each new variable falls back to the other
   source (`OIDC_ISSUER` to `OIDC_ISSUER_URL`; the discovery URL to the expected
   issuer plus the well-known suffix).
-- Verify `aud` always. `OIDC_AUDIENCE` defaults to `api` and cannot be blank or
+- Verify `aud` always, stricter than merely "on by default" (RFC 9700 section 2.3). `OIDC_AUDIENCE` defaults to `api` and cannot be blank or
   switched off; `exp`, `iss` and `aud` are required claims.
 - Serve `GET /.well-known/oauth-protected-resource` (RFC 9728) with `resource`,
   `authorization_servers` (the expected, public issuer), `scopes_supported`,

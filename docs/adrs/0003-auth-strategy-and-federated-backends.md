@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Amended by [ADR 0026](0026-resource-server-metadata-and-bff.md).
 
 ## Context
 
