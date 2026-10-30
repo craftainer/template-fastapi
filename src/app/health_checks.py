@@ -73,6 +73,5 @@ def get_health_registry() -> HealthRegistry:
             name="s3",
         )
     )
-    discovery_url = f"{settings.oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration"
-    registry.register(HTTPCheck(discovery_url, name="oidc"))
+    registry.register(HTTPCheck(settings.discovery_url, name="oidc"))
     return registry

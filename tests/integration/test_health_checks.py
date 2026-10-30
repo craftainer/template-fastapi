@@ -46,9 +46,7 @@ async def test_s3_check_against_real_s3() -> None:
 
 async def test_oidc_check_against_real_keycloak() -> None:
     """HTTPCheck reports healthy against the live keycloak stack service."""
-    result = await HTTPCheck(
-        f"{get_settings().oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration"
-    ).check()
+    result = await HTTPCheck(get_settings().discovery_url).check()
     assert result.healthy is True
 
 
