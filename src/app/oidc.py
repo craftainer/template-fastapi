@@ -30,7 +30,33 @@ from app.config import get_settings
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-oauth2_scheme = OAuth2AuthorizationCodeBearer(
+
+def bearer_challenge(error: str | None = None) -> dict[str, str]:
+    """The `WWW-Authenticate` header for a 401, pointing at the RFC 9728 metadata document.
+
+    `resource_metadata` is built from configuration (settings.resource_metadata_url),
+    never from the request, so a spoofed Host header cannot steer a client elsewhere.
+    `error` adds the RFC 6750 error code (e.g. "invalid_token"); a request that carried
+    no credentials at all gets the bare challenge, per RFC 6750 section 3.1.
+    """
+    challenge = f'Bearer resource_metadata="{settings.resource_metadata_url}"'
+    if error is not None:
+        challenge += f', error="{error}"'
+    return {"WWW-Authenticate": challenge}
+
+
+class _ResourceServerBearer(OAuth2AuthorizationCodeBearer):
+    """OAuth2AuthorizationCodeBearer whose missing-token 401 carries the RFC 9728 challenge."""
+
+    def make_not_authenticated_error(self) -> HTTPException:
+        return HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers=bearer_challenge(),
+        )
+
+
+oauth2_scheme = _ResourceServerBearer(
     authorizationUrl=settings.oidc_authorization_url,
     tokenUrl=settings.oidc_token_url,
 )
@@ -51,9 +77,8 @@ def _get_jwks_client() -> PyJWKClient:
     branch -- tests/unit/test_oidc.py exercises it directly (with httpx.get
     monkeypatched to raise) and still counts toward its own 95% gate.
     """
-    discovery_url = f"{settings.oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration"
     try:
-        response = httpx.get(discovery_url, timeout=10)
+        response = httpx.get(settings.discovery_url, timeout=10)
         response.raise_for_status()
         jwks_uri: str = response.json()["jwks_uri"]
     except (httpx.HTTPError, KeyError, ValueError) as exc:  # pragma: no cover -- see docstring
@@ -83,14 +108,14 @@ def decode_bearer_token(token: str) -> dict[str, Any]:
             signing_key.key,
             algorithms=[settings.oidc_algorithm],
             audience=settings.oidc_audience,
-            issuer=settings.oidc_issuer_url,
-            options={"verify_aud": settings.oidc_audience is not None},
+            issuer=settings.expected_issuer,
+            options={"require": ["exp", "iss", "aud"]},
         )
     except jwt.PyJWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers=bearer_challenge("invalid_token"),
         ) from exc
 
 

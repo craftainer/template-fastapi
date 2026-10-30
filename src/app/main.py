@@ -38,6 +38,7 @@ from app.health_checks import close_health_checks, get_health_registry
 from app.http_headers import add_security_headers
 from app.oidc import prefetch_jwks
 from app.problem_details import register_problem_handlers
+from app.well_known import build_well_known_router
 
 settings = get_settings()
 configure_logging()
@@ -221,12 +222,15 @@ app.include_router(
         service_name=settings.app_name,
         service_version=_service_version(),
         stats_ttl=settings.stats_cache_ttl_seconds,
-        oidc_discovery_url=f"{settings.oidc_issuer_url.rstrip('/')}/.well-known/openid-configuration",
+        # The public issuer's discovery URL (what a client can reach), not settings.discovery_url.
+        oidc_discovery_url=f"{settings.expected_issuer.rstrip('/')}/.well-known/openid-configuration",
         prefix="",
     ),
     prefix="/api/_crud",
 )
 app.include_router(_api_catalog_router(settings.mode), prefix="")
+# RFC 9728 oauth-protected-resource, and security.txt when SECURITY_TXT_CONTACT is set.
+app.include_router(build_well_known_router(settings), prefix="")
 _mount_mode_specific_routers(app, settings.mode)
 
 # Middleware order, outermost first: OTel server span, RequestIDMiddleware, profiling,

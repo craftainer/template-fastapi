@@ -1,7 +1,9 @@
 """Unit test: Settings.database_url assembles the async Postgres DSN, plus its
-mode-dependent validation (production requires oidc_audience/non-default
+mode-dependent validation (production requires public_base_url/non-default
 credentials/https issuer/authenticated MQTT, mock requires allow_mock_mode).
 """
+
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +17,7 @@ _PRODUCTION_KWARGS: dict[str, object] = {
     "RUSTFS_ACCESS_KEY": "real-access-key",
     "RUSTFS_SECRET_KEY": "real-secret-key",
     "oidc_issuer_url": "https://issuer.example.com/realms/prod",
+    "public_base_url": "https://api.example.com",
     "mqtt_use_tls": True,
     "mqtt_username": "real-mqtt-user",
     "mqtt_password": "real-mqtt-password",
@@ -37,17 +40,115 @@ def test_database_url_assembles_dsn_from_pieces() -> None:
     assert settings.database_url == "postgresql+asyncpg://u:p@h:1234/d"
 
 
-def test_production_mode_requires_oidc_audience(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Settings(mode="production") with no oidc_audience raises ValidationError."""
-    monkeypatch.delenv("OIDC_AUDIENCE", raising=False)
-    with pytest.raises(ValidationError, match="oidc_audience"):
-        Settings(mode="production")
+def test_production_mode_requires_public_base_url() -> None:
+    """Settings(mode="production") with no public_base_url raises (RFC 9728 needs one)."""
+    kwargs = {k: v for k, v in _PRODUCTION_KWARGS.items() if k != "public_base_url"}
+    with pytest.raises(ValidationError, match="public_base_url must be set"):
+        Settings(**kwargs)  # type: ignore[arg-type]
 
 
-def test_production_mode_with_oidc_audience_succeeds() -> None:
+def test_production_mode_requires_https_public_base_url() -> None:
+    """An http:// public base URL is refused in production."""
+    kwargs = {**_PRODUCTION_KWARGS, "public_base_url": "http://api.example.com"}
+    with pytest.raises(ValidationError, match="public_base_url must use https"):
+        Settings(**kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("url", ["https://api.example.com/v1", "ftp://x", "https://a?b=1", "api"])
+def test_public_base_url_must_be_an_origin(url: str) -> None:
+    """A path, query or non-http(s) scheme is not an origin."""
+    with pytest.raises(ValidationError, match="http\\(s\\) origin"):
+        Settings(public_base_url=url)
+
+
+def test_production_mode_with_full_config_succeeds() -> None:
     """A fully-configured production Settings (non-default creds, https issuer) constructs fine."""
     settings = Settings(**_PRODUCTION_KWARGS)  # type: ignore[arg-type]
     assert settings.oidc_audience == "api"
+    assert settings.resource_metadata_url == (
+        "https://api.example.com/.well-known/oauth-protected-resource"
+    )
+
+
+def test_oidc_audience_defaults_on_and_cannot_be_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The aud check has a default value and no way to switch it off."""
+    monkeypatch.delenv("OIDC_AUDIENCE", raising=False)
+    assert Settings().oidc_audience == "api"
+    with pytest.raises(ValidationError, match="oidc_audience"):
+        Settings(oidc_audience="")
+    with pytest.raises(ValidationError, match="oidc_audience"):
+        Settings(oidc_audience=None)  # type: ignore[arg-type]
+
+
+def test_legacy_issuer_url_alone_drives_issuer_and_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only OIDC_ISSUER_URL set: expected issuer and discovery URL both derive from it."""
+    for name in ("OIDC_ISSUER", "OIDC_DISCOVERY_URL"):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings(oidc_issuer_url="http://idp.test/realms/r/")
+    assert settings.expected_issuer == "http://idp.test/realms/r/"
+    assert settings.discovery_url == "http://idp.test/realms/r/.well-known/openid-configuration"
+
+
+def test_issuer_and_discovery_url_are_independent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OIDC_ISSUER sets the expected `iss`; OIDC_DISCOVERY_URL sets where discovery is fetched."""
+    monkeypatch.delenv("OIDC_DISCOVERY_URL", raising=False)
+    settings = Settings(oidc_issuer="http://localhost:8080/realms/r")
+    assert (
+        settings.discovery_url == "http://localhost:8080/realms/r/.well-known/openid-configuration"
+    )
+    settings = Settings(
+        oidc_issuer="http://localhost:8080/realms/r",
+        oidc_discovery_url="http://keycloak:8080/realms/r/.well-known/openid-configuration",
+    )
+    assert settings.expected_issuer == "http://localhost:8080/realms/r"
+    assert settings.discovery_url.startswith("http://keycloak:8080/")
+
+
+def test_production_mode_requires_https_discovery_url() -> None:
+    """An http:// discovery URL is refused in production even with an https issuer."""
+    kwargs = {**_PRODUCTION_KWARGS, "oidc_discovery_url": "http://keycloak:8080/x"}
+    with pytest.raises(ValidationError, match="oidc_discovery_url must use https"):
+        Settings(**kwargs)  # type: ignore[arg-type]
+
+
+def _security_txt(**overrides: object) -> dict[str, object]:
+    expires = datetime.now(UTC) + timedelta(days=180)
+    return {
+        "security_txt_contact": "https://github.com/craftainer/x/security/advisories/new",
+        "security_txt_expires": expires,
+        **overrides,
+    }
+
+
+def test_security_txt_off_without_contact() -> None:
+    """No contact: nothing to validate, nothing served."""
+    assert Settings().security_txt_contact is None
+
+
+def test_security_txt_valid_config_constructs() -> None:
+    """A contact with a near-term, zoned Expires is accepted."""
+    assert Settings(**_security_txt()).security_txt_contact is not None  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"security_txt_expires": None}, "security_txt_expires must be set"),
+        ({"security_txt_expires": datetime(2099, 1, 1, tzinfo=UTC)}, "at most one year"),
+        ({"security_txt_expires": datetime(2020, 1, 1, tzinfo=UTC)}, "in the future"),
+        ({"security_txt_expires": datetime(2099, 1, 1)}, "time zone"),
+        ({"security_txt_contact": "http://insecure.example"}, "https:, mailto: or tel:"),
+        ({"security_txt_policy": "http://p.example"}, "security_txt_policy must be an https"),
+        ({"security_txt_canonical": "ftp://c.example"}, "security_txt_canonical must be an https"),
+        ({"security_txt_preferred_languages": "en\nContact: evil"}, "single line"),
+    ],
+)
+def test_security_txt_rejects_bad_config(overrides: dict[str, object], message: str) -> None:
+    """Missing/out-of-range Expires, weak URIs and multi-line values refuse to start."""
+    with pytest.raises(ValidationError, match=message):
+        Settings(**_security_txt(**overrides))  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -221,12 +322,6 @@ def test_unrecognized_constructor_keyword_is_rejected() -> None:
     """extra="forbid" rejects an unrecognized key passed directly to the constructor."""
     with pytest.raises(ValidationError, match="extra_forbidden"):
         Settings(this_field_does_not_exist="x")  # type: ignore[call-arg]
-
-
-def test_dev_mode_does_not_require_oidc_audience(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Settings(mode="dev") (the default) constructs fine with no oidc_audience set."""
-    monkeypatch.delenv("OIDC_AUDIENCE", raising=False)
-    assert Settings(mode="dev").oidc_audience is None
 
 
 def test_mock_mode_requires_allow_mock_mode_flag() -> None:
