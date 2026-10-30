@@ -58,6 +58,9 @@ beyond what it's explicitly passed or reads from `app.config`.
 - `http_headers.py` — the `Sunset`/`Deprecation` header dependency and
   the baseline security-headers middleware; see "Sunset/Deprecation
   headers" below.
+- `analytics.py` — `AnalyticsContextMiddleware`, which hands each request's Global Privacy
+  Control / DNT / consent signals to `craftainer_observability.analytics`' `track()`; see
+  "Product analytics" below.
 - `db.py` — the async `engine` and `session_factory` (`NullPool`), built
   from `Settings.database_url`. `crud_1/wiring.py` hands the session
   factory to `craftainer_crud`; `health_checks.py` and
@@ -86,7 +89,7 @@ beyond what it's explicitly passed or reads from `app.config`.
 
 Import order between all of the above is strict and one-directional —
 lower layers never import from higher ones (`config` → `db` →
-`health_checks`
+`analytics` → `health_checks`
 → `cache` → `rate_limit` → `problem_details` → `oidc` → `models` →
 `maintenance` → `views` →
 `http_headers` → `controllers` → `crud_1` → `main`) — enforced by
@@ -123,7 +126,7 @@ it imports `crud_1`'s finished router.
 
 ```mermaid
 graph LR
-    config --> db --> health_checks --> cache --> rate_limit --> problem_details
+    config --> db --> analytics --> health_checks --> cache --> rate_limit --> problem_details
     problem_details --> oidc --> models --> maintenance
     maintenance --> views --> http_headers --> controllers --> crud_1 --> main
 ```
@@ -231,6 +234,37 @@ Under `MODE=production`, `/docs`, `/redoc` and `/openapi.json` are not served.
 handlers (the standalone `alembic` CLI), so a process that migrates on startup keeps its
 JSON log lines and OTLP log bridge. `configure_logging()` also hands uvicorn's own
 loggers over to the root handlers, so its lines are JSON too.
+
+## Product analytics
+
+([ADR 0027](../../docs/adrs/0027-product-analytics-with-track.md),
+[FR-0026](../../docs/frs/FR-0026-product-analytics-events.md),
+[NFR-0028](../../docs/nfrs/NFR-0028-analytics-privacy.md))
+
+`craftainer_observability.analytics` (the `analytics` extra) reads the `ANALYTICS_*`
+variables itself, so `config.py` has no fields for them. Off unless a backend is set
+(`none` by default; the devcontainer's `umami.env` selects `umami`):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANALYTICS_ENABLED` | `true` | `false` turns every `track()` into a no-op. |
+| `ANALYTICS_BACKEND` | `none` | `none`, `log` (one JSON log line per event), `umami` or `otel`. |
+| `ANALYTICS_ENDPOINT` | unset | Umami's base URL; the adapter appends `/api/batch`. Must be the final URL (redirects are not followed). |
+| `ANALYTICS_SITE_ID` | unset | Umami website ID. |
+| `ANALYTICS_HOSTNAME` | unset | Sent as `payload.hostname`. |
+| `ANALYTICS_CONSENT` | `implied` | `opt-in` records nothing unless the request sends `X-Analytics-Consent: 1`. |
+| `ANALYTICS_RESPECT_GPC` | `true` | Drop events of a request with `Sec-GPC: 1` or `DNT: 1`. |
+| `ANALYTICS_GEO` | `none` | `none` or `coarse`; backend events carry no client address, so no geography either way. |
+| `ANALYTICS_PROP_KEYS` | empty | Comma-separated prop keys allowed through; the sample events use `powers_count`. |
+
+`main.py` adds `AnalyticsContextMiddleware` (pure ASGI), which wraps each request in the
+library's `request_context(gpc=, consent=)` from those headers; `track()` consults it. Hero
+create and delete are recorded as `hero.created` / `hero.deleted` by
+`crud_1/analytics_events.py`'s `AnalyticsEventSink`, a wrapper around Hero's `EventSink`.
+`track()` never raises or blocks, and the lifespan flushes the queue once on shutdown. Tests
+(`tests/unit/conftest.py`'s autouse fixture) clear every `ANALYTICS_*` variable, so none
+reaches a real backend. The privacy rules a new event must keep are in NFR-0028: scalar
+props on the allowlist, no personal data, path-only `url`.
 
 ## Alembic migrations
 

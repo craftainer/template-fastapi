@@ -125,6 +125,7 @@ layers = [
     "rate_limit",
     "cache",
     "health_checks",
+    "analytics",
     "db",
     "config",
 ]

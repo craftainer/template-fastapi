@@ -12,6 +12,7 @@ from alembic.config import Config
 from craftainer_crud.controllers.crud_manifest import api_catalog_router, crud_manifest_router
 from craftainer_crud.controllers.crud_router import ROUTER_VERSION
 from craftainer_crud.interfaces.cache import StatsCache
+from craftainer_observability.analytics import shutdown as analytics_shutdown
 from craftainer_observability.health.router import build_health_router
 from craftainer_observability.logs import configure_logging
 from craftainer_observability.middleware import RequestIDMiddleware
@@ -24,6 +25,7 @@ from craftainer_observability.profiling import install_profiling
 from fastapi import APIRouter, FastAPI
 
 from alembic import command
+from app.analytics import AnalyticsContextMiddleware
 from app.cache import RedisStatsCache, run_invalidation
 from app.config import get_settings
 from app.controllers import (
@@ -94,7 +96,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Once startup work is done (and `GC_FREEZE` isn't false), `gc.collect(); gc.freeze()`
     moves everything allocated so far out of the cyclic GC's reach. Shutdown ends with
-    `close_health_checks()` (the Redis check's client) and `engine.dispose()`, so clients
+    `close_health_checks()` (the Redis check's client), a final analytics flush and
+    `engine.dispose()`, so clients
     and pooled connections close cleanly.
     """
     if settings.run_migrations_on_startup and settings.mode != "mock":  # pragma: no branch
@@ -113,7 +116,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await close_health_checks()
         finally:
-            await engine.dispose()
+            try:
+                # Final flush of queued analytics events; joins the flusher thread (up to
+                # 5 s), so off the event loop. Never raises.
+                await asyncio.to_thread(analytics_shutdown)
+            finally:
+                await engine.dispose()
 
 
 def _service_version() -> str:
@@ -243,6 +251,9 @@ _mount_mode_specific_routers(app, settings.mode)
 # bypasses the security headers on purpose: pyinstrument's HTML needs inline scripts.
 # Both instrument_* calls are no-ops unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
 install_profiling(app, enabled=settings.profiling_enabled, production=_production)
+# The analytics context (GPC/DNT/consent signals for track(), ADR 0027) sits inside the
+# request-ID middleware: it needs nothing from it and wraps only the app itself.
+app.add_middleware(AnalyticsContextMiddleware)
 app.add_middleware(RequestIDMiddleware)
 instrument_app(app)
 instrument_engine(engine)
