@@ -260,6 +260,9 @@ services:
       MQTT_PASSWORD: *smoke_mqtt_password
       # Required under MODE=production (config.py); smoke-test-only value.
       SUBSCRIBER_SECRET: smoke-test-subscriber-secret-0123456789
+      # Required under MODE=production (config.py, RFC 9728 resource identifier): an
+      # https origin with no path. Smoke-test-only value; nothing resolves it.
+      PUBLIC_BASE_URL: https://api.smoke.invalid
     volumes:
       - smoke-tls:/tls:ro
     depends_on:
