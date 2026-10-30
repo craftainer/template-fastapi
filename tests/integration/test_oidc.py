@@ -19,8 +19,14 @@ client = TestClient(app)
 def _fetch_access_token() -> str:
     """Obtain a real access token for the dev realm's "viewer" user."""
     settings = get_settings()
+    # The in-network address (the discovery URL's realm), not settings.oidc_token_url:
+    # that one is the browser-facing localhost URL Swagger UI uses, unreachable from here.
+    token_url = (
+        settings.discovery_url.removesuffix("/.well-known/openid-configuration")
+        + "/protocol/openid-connect/token"
+    )
     response = httpx.post(
-        settings.oidc_token_url,
+        token_url,
         data={
             "grant_type": "password",
             "client_id": "test-cli",

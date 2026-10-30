@@ -14,7 +14,7 @@ import threading
 import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import metadata
 from pathlib import Path
@@ -61,6 +61,10 @@ _COVERAGE_SUBPROCESS_ENV = {
 # two legs cover both lookup paths.
 E2E_APP_VERSION = "e2e-1.2.3"
 E2E_APP_COMMIT = "e2e-commit"
+E2E_PUBLIC_BASE_URL = "https://api.e2e.example"
+E2E_SECURITY_CONTACT = "mailto:security@e2e.example"
+# Computed at import: Settings refuses an Expires more than a year ahead or in the past.
+E2E_SECURITY_EXPIRES = (datetime.now(UTC) + timedelta(days=180)).strftime("%Y-%m-%dT%H:%M:%SZ")
 _APP_VERSION_BY_LEG = {"mock": E2E_APP_VERSION}
 _INSTALLED_VERSION = metadata.version("template-fastapi")
 
@@ -91,6 +95,14 @@ _LEG_ENV: dict[str, dict[str, str]] = {
         "PROFILING_ENABLED": "true",
         "GC_FREEZE": "true",
         "APP_COMMIT": E2E_APP_COMMIT,
+        # RFC 9728 resource origin, and the optional security.txt (RFC 9116) fully
+        # configured; the other legs leave both unset (defaults, security.txt off).
+        "PUBLIC_BASE_URL": E2E_PUBLIC_BASE_URL,
+        "SECURITY_TXT_CONTACT": E2E_SECURITY_CONTACT,
+        "SECURITY_TXT_EXPIRES": E2E_SECURITY_EXPIRES,
+        "SECURITY_TXT_POLICY": "https://example.com/security-policy",
+        "SECURITY_TXT_PREFERRED_LANGUAGES": "en, de",
+        "SECURITY_TXT_CANONICAL": "https://example.com/.well-known/security.txt",
     },
     "mock": {
         "STATS_CACHE_TTL_SECONDS": "300",
@@ -450,8 +462,14 @@ def access_token(app_mode: str, base_url: str) -> Callable[[str], str]:
 
     def _fetch(username: str) -> str:
         """Log in `username` (dev-realm password == username) and return their access token."""
+        # The in-network address (the discovery URL's realm), not settings.oidc_token_url:
+        # that one is the browser-facing localhost URL Swagger UI uses, unreachable from here.
+        token_url = (
+            settings.discovery_url.removesuffix("/.well-known/openid-configuration")
+            + "/protocol/openid-connect/token"
+        )
         response = httpx.post(
-            settings.oidc_token_url,
+            token_url,
             data={
                 "grant_type": "password",
                 "client_id": "test-cli",

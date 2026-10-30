@@ -28,6 +28,13 @@ _PRODUCTION_KWARGS: dict[str, object] = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _clear_oidc_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop the devcontainer's http:// OIDC_* settings, which would override production kwargs."""
+    for name in ("OIDC_ISSUER", "OIDC_ISSUER_URL", "OIDC_DISCOVERY_URL"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_database_url_assembles_dsn_from_pieces() -> None:
     """database_url combines user/password/host/port/db into one asyncpg DSN."""
     settings = Settings(
@@ -140,8 +147,14 @@ def test_security_txt_valid_config_constructs() -> None:
         ({"security_txt_expires": datetime(2020, 1, 1, tzinfo=UTC)}, "in the future"),
         ({"security_txt_expires": datetime(2099, 1, 1)}, "time zone"),
         ({"security_txt_contact": "http://insecure.example"}, "https:, mailto: or tel:"),
-        ({"security_txt_policy": "http://p.example"}, "security_txt_policy must be an https"),
-        ({"security_txt_canonical": "ftp://c.example"}, "security_txt_canonical must be an https"),
+        (
+            {"security_txt_policy": "http://p.example"},
+            "security_txt_policy and security_txt_canonical must be https",
+        ),
+        (
+            {"security_txt_canonical": "ftp://c.example"},
+            "security_txt_policy and security_txt_canonical must be https",
+        ),
         ({"security_txt_preferred_languages": "en\nContact: evil"}, "single line"),
     ],
 )

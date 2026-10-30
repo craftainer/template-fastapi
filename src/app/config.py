@@ -249,22 +249,40 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_public_base_url(self) -> Self:
-        """Require an origin-only public base URL, https and explicitly set in production."""
-        if self.public_base_url is not None:
-            parts = urlsplit(self.public_base_url)
-            if (
-                parts.scheme not in ("http", "https")
-                or not parts.netloc
-                or parts.path not in ("", "/")
-                or parts.query
-                or parts.fragment
-            ):
-                raise ValueError("public_base_url must be an http(s) origin with no path")
-        if self.mode == "production":  # pragma: no cover
-            if self.public_base_url is None:
-                raise ValueError("public_base_url must be set when MODE=production")
-            if not self.public_base_url.startswith("https://"):
-                raise ValueError("public_base_url must use https:// when MODE=production")
+        """Require an origin-only public base URL, https and explicitly set in production.
+
+        The checks are evaluated into one list and raised in one place, so the single
+        `# pragma: no cover` raise is the only line tests/e2e cannot reach (its live
+        process only ever starts with a valid Settings); tests/unit/test_config.py
+        exercises every message.
+        """
+        url = self.public_base_url
+        parts = urlsplit(url or "")
+        production = self.mode == "production"
+        problems = [
+            message
+            for bad, message in (
+                (
+                    url is not None
+                    and (
+                        parts.scheme not in ("http", "https")
+                        or not parts.netloc
+                        or parts.path not in ("", "/")
+                        or bool(parts.query)
+                        or bool(parts.fragment)
+                    ),
+                    "public_base_url must be an http(s) origin with no path",
+                ),
+                (production and url is None, "public_base_url must be set when MODE=production"),
+                (
+                    production and url is not None and not url.startswith("https://"),
+                    "public_base_url must use https:// when MODE=production",
+                ),
+            )
+            if bad
+        ]
+        if problems:  # pragma: no cover -- see docstring
+            raise ValueError("; ".join(problems))
         return self
 
     @model_validator(mode="after")
@@ -274,35 +292,57 @@ class Settings(BaseSettings):
         An RFC 9116 file without `Expires` is not compliant, and one expiring more than a
         year out (or already past) defeats the point of the field, so a configured contact
         with a missing or out-of-range Expires refuses to start in every mode. Values go
-        into a plain-text file line by line, so control characters are rejected.
+        into a plain-text file line by line, so control characters are rejected. Evaluated
+        and raised like `_validate_public_base_url` (one `# pragma: no cover` raise).
         """
-        fields = {
+        values = {
             "security_txt_contact": self.security_txt_contact,
             "security_txt_policy": self.security_txt_policy,
             "security_txt_preferred_languages": self.security_txt_preferred_languages,
             "security_txt_canonical": self.security_txt_canonical,
         }
-        for name, value in fields.items():
-            if value is not None and (not value.strip() or not value.isprintable()):
-                raise ValueError(f"{name} must be a single line of text")
-        if self.security_txt_contact is None:
-            return self
-        if not self.security_txt_contact.startswith(("https://", "mailto:", "tel:")):
-            raise ValueError("security_txt_contact must be an https:, mailto: or tel: URI")
-        for name in ("security_txt_policy", "security_txt_canonical"):
-            value = fields[name]
-            if value is not None and not value.startswith("https://"):
-                raise ValueError(f"{name} must be an https:// URL")
+        problems = [
+            f"{name} must be a single line of text"
+            for name, value in values.items()
+            if value is not None and (not value.strip() or not value.isprintable())
+        ]
+        contact = self.security_txt_contact
         expires = self.security_txt_expires
-        if expires is None:
-            raise ValueError("security_txt_expires must be set when security_txt_contact is")
-        if expires.tzinfo is None:
-            raise ValueError("security_txt_expires must carry a time zone")
         now = datetime.now(UTC)
-        if not now < expires <= now + timedelta(days=366):
-            raise ValueError(
-                "security_txt_expires must be in the future and at most one year ahead"
-            )
+        if contact is not None:
+            problems += [
+                message
+                for bad, message in (
+                    (
+                        not contact.startswith(("https://", "mailto:", "tel:")),
+                        "security_txt_contact must be an https:, mailto: or tel: URI",
+                    ),
+                    (
+                        any(
+                            v is not None and not v.startswith("https://")
+                            for v in (self.security_txt_policy, self.security_txt_canonical)
+                        ),
+                        "security_txt_policy and security_txt_canonical must be https:// URLs",
+                    ),
+                    (
+                        expires is None,
+                        "security_txt_expires must be set when security_txt_contact is",
+                    ),
+                    (
+                        expires is not None and expires.tzinfo is None,
+                        "security_txt_expires must carry a time zone",
+                    ),
+                    (
+                        expires is not None
+                        and expires.tzinfo is not None
+                        and not now < expires <= now + timedelta(days=366),
+                        "security_txt_expires must be in the future and at most one year ahead",
+                    ),
+                )
+                if bad
+            ]
+        if problems:  # pragma: no cover -- see docstring
+            raise ValueError("; ".join(problems))
         return self
 
     @model_validator(mode="after")
