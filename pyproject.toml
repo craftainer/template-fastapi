@@ -29,7 +29,7 @@ dependencies = [
     "opentelemetry-instrumentation-sqlalchemy==0.66b1",
     "granian==2.8.4",
     "craftainer-crud[mqtt,xml]>=0.7.0,<0.8",
-    "craftainer-observability[otel,sqlalchemy,redis,s3,http]>=0.3.0,<0.4",
+    "craftainer-observability[otel,sqlalchemy,redis,s3,http,analytics]>=0.4.0,<0.5",
 ]
 
 [project.optional-dependencies]
