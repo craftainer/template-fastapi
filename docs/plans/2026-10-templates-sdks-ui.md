@@ -9,6 +9,11 @@ reaches G-final, because this plan touches `lib-crud-py` and this repo's
 Pre-flight runbook:
 [`2026-10-templates-sdks-ui-preflight.md`](2026-10-templates-sdks-ui-preflight.md).
 
+Update 2026-10-30: item AX3 (the axum manifest route) moved to the
+template-base plan `2026-10-bff-wellknown-analytics-owasp.md`, item RS2
+([link](https://github.com/craftainer/template-base/blob/main/docs/plans/2026-10-bff-wellknown-analytics-owasp.md); that file lives in the template-base workspace until it is
+committed there). The rest of this plan stays.
+
 ## Goal
 
 Grow the `craftainer` template family from "one FastAPI template and two
@@ -33,7 +38,7 @@ outside the server:
    (list, detail, create/edit, delete, filter, sort, stats, predictions,
    revisions), each in the five most common variants.
 6. **`template-axum` parity**: extract its generic CRUD and observability
-   layers into published crates, add the manifest, and port the
+   layers into published crates, add the manifest (moved to the [template-base plan](https://github.com/craftainer/template-base/blob/main/docs/plans/2026-10-bff-wellknown-analytics-owasp.md), item RS2), and port the
    measured wins from the FastAPI performance plan, measuring first.
 
 Everything runs as a rolling queue of Sonnet 5.5 `plan-executor` agents
@@ -327,9 +332,8 @@ Then: `lib-crud-views-ts` 0.1.0 (G-rel, then G-tp), Python client against
 | ID | Item | Write set | Depends on |
 | --- | --- | --- | --- |
 | UI4 | `template-react` uses `lib-crud-sdk-ts` + `lib-crud-views-ts`: a manifest-driven admin replaces `HeroesPage`; Playwright e2e against `template-fastapi` (E2E lane) | template-react: `src/pages/`, `src/App.tsx`, `src/api/`, `tests/e2e/`, ADR 0006 | VW1–VW4 released, FA1 |
-| AX3 | `lib-crud-rs`: manifest route, conformance against MF1's fixtures | `lib-crud-rs`: `src/manifest/`, tests | AX1, MF1 |
 | AX4… | Parity items from RS4 (conditional requests, stats cache, pool settings, OTel traces and metrics, graceful shutdown), one item each with disjoint write sets, each A/B-measured by L2 | per RS4 | AX1/AX2, L2 baseline |
-| AX9 | `template-axum` switches to the published crates and deletes the moved code | template-axum: `Cargo.toml`, `Cargo.lock`, `src/`, `tests/`, ADR 0020 | AX1–AX4 released |
+| AX9 | `template-axum` switches to the published crates and deletes the moved code | template-axum: `Cargo.toml`, `Cargo.lock`, `src/`, `tests/`, ADR 0020 | AX1, AX2, AX4… released; template-base plan RS2 landed (axum manifest) |
 
 **Wave 5: close-out.**
 
@@ -422,6 +426,7 @@ gap analysis lists, each A/B-tested with the earlier plan's rule.
 | 2026-10-19 | User decision: the orchestrator decides alone only where a common best practice exists; anything else goes to the user with options, sources and a labeled lean (G-choice). A standing rule in `CLAUDE.md` since template-base v1.6.0. |
 | 2026-10-19 | User decision, naming: repos `lib-<name>-<py\|ts\|rs>`; registries `craftainer-<name>` (PyPI, crates.io) and `@craftainer/<name>` (npm); SDKs are `crud-sdk`; Python import names match the distribution (`craftainer_crud`, `craftainer_observability`, `craftainer_crud_sdk`). `tool-crud`/`tool-observability` are renamed on GitHub in pre-flight. |
 | 2026-10-19 | User decision, old PyPI projects: `craftainer-tool-crud` and `craftainer-tool-observability` get a final `0.1.2` notice release (old code, `DeprecationWarning`, README pointer), then are archived on PyPI, not yanked, so existing pins keep working (RN3, G-legacy). |
+| 2026-10-30 | Z1 trim: the axum api-catalog and manifest (AX3) moved to the template-base plan [`2026-10-bff-wellknown-analytics-owasp.md`](https://github.com/craftainer/template-base/blob/main/docs/plans/2026-10-bff-wellknown-analytics-owasp.md), item RS2 (user decision of 2026-10-29: "AX3/AX4 (axum catalog/manifest)"). That file lives in the template-base workspace until committed. AX4… (RS4's parity items: conditional requests, stats cache, pool settings, OTel, graceful shutdown) stays here, since RS2 there covers only the catalog and manifest; to be confirmed. AX9 now also waits for RS2 there. "RS2" in VW0 and the Track RS table is this plan's views survey, not that item. |
 
 ## Open questions
 
