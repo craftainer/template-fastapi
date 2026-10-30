@@ -8,6 +8,7 @@ include:
   - ./stack/redis/compose.yml
   - ./stack/mqtt/compose.yml
   - ./stack/selenium/compose.yml
+  - ./stack/umami/compose.yml
 
 # env_file below pulls in each stack service's own credentials (see
 # stack/README.md's "Configuration" section); src/app/config.py assembles
