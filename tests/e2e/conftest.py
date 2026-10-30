@@ -454,7 +454,7 @@ def access_token(app_mode: str, base_url: str) -> Callable[[str], str]:
             settings.oidc_token_url,
             data={
                 "grant_type": "password",
-                "client_id": settings.oidc_client_id,
+                "client_id": "test-cli",
                 "username": username,
                 "password": username,
             },

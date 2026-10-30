@@ -23,7 +23,7 @@ def _fetch_access_token() -> str:
         settings.oidc_token_url,
         data={
             "grant_type": "password",
-            "client_id": settings.oidc_client_id,
+            "client_id": "test-cli",
             "username": "viewer",
             "password": "viewer",
         },
