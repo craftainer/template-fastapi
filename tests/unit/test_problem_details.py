@@ -19,6 +19,10 @@ def problem_app() -> FastAPI:
     def boom_http() -> None:
         raise HTTPException(404, "not found here")
 
+    @app.get("/boom-challenge")
+    def boom_challenge() -> None:
+        raise HTTPException(401, "nope", headers={"WWW-Authenticate": 'Bearer realm="x"'})
+
     @app.get("/boom-validation")
     def boom_validation(required: int) -> dict[str, int]:
         return {"required": required}
@@ -28,6 +32,14 @@ def problem_app() -> FastAPI:
         raise ValueError("something broke")
 
     return app
+
+
+def test_http_exception_headers_are_kept(problem_app: FastAPI) -> None:
+    """A 401's WWW-Authenticate challenge survives the problem-details rendering."""
+    response = TestClient(problem_app).get("/boom-challenge")
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == 'Bearer realm="x"'
+    assert response.headers["content-type"] == "application/problem+json"
 
 
 def test_http_exception_becomes_problem_detail(problem_app: FastAPI) -> None:

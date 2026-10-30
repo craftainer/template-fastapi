@@ -272,19 +272,49 @@ threadpool (`decode_bearer_token_async`; sync `decode_bearer_token` is
 unchanged). `prefetch_jwks()` warms the cache at startup, only logging a
 warning if the IdP is down, and is a no-op under `MODE=mock`.
 
-`oidc_audience` (`OIDC_AUDIENCE`) is required — `config.py`'s validation
-refuses to construct `Settings` with `MODE=production` and no
-`oidc_audience` set — because `decode_bearer_token` only verifies the
-JWT's `aud` claim when it's set, and an unchecked audience would accept
-a token issued for any other client of the same provider. `dev`/`mock`
-stay opt-in (`../../.devcontainer/stack/keycloak/keycloak.env` sets it
-anyway, via the `api` client's `api-audience` protocol mapper in
-`realm-export.json`, so every mode's tokens actually carry it).
-`config.py`'s validation similarly refuses `MODE=production` with
-`oidc_issuer_url` left at `http://` (the JWKS/discovery fetch, and the
-Authorization Code token exchange, would otherwise happen in cleartext),
-or with `postgres_password`/`s3_access_key`/`s3_secret_key` left at their
-local/devcontainer default values.
+### Configuration and resource-server metadata
+
+([ADR 0026](../../docs/adrs/0026-resource-server-metadata-and-bff.md),
+[FR-0025](../../docs/frs/FR-0025-resource-server-metadata.md))
+
+- `OIDC_ISSUER`: the exact `iss` a token must carry (string comparison, no
+  normalisation). Falls back to the legacy `OIDC_ISSUER_URL`.
+- `OIDC_DISCOVERY_URL`: the full `.../.well-known/openid-configuration` URL
+  the backend fetches (it may be an in-network host). Defaults to the
+  expected issuer plus that suffix, so an instance with only
+  `OIDC_ISSUER_URL` set behaves as before. The devcontainer needs the split:
+  Keycloak's `KC_HOSTNAME` makes tokens carry `http://localhost:8080/...`
+  while the backend reaches `http://keycloak:8080/...`.
+- `OIDC_AUDIENCE` (default `api`): always verified, with no way to switch it
+  off (RFC 9700 section 2.3); `exp`, `iss` and `aud` are required claims.
+  The bundled realm's `api` and `bff` clients both add `api` through
+  audience mappers.
+- `OIDC_SCOPES_SUPPORTED` (JSON list, default `["openid"]`): advertised
+  `scopes_supported`; authorization itself is by role.
+- `PUBLIC_BASE_URL`: this service's own origin (no path). It is the RFC 9728
+  `resource` and the base of the URLs below, never derived from the `Host`
+  header. Required and https under `MODE=production`.
+- `config.py` also refuses `MODE=production` with an http:// issuer or
+  discovery URL, or with `postgres_password`/`s3_access_key`/`s3_secret_key`
+  at their local defaults.
+
+`well_known.py` serves, unauthenticated and behind the security headers:
+
+- `GET /.well-known/oauth-protected-resource` (RFC 9728): `resource`,
+  `authorization_servers` (the expected issuer), `scopes_supported`,
+  `bearer_methods_supported: ["header"]`, `resource_name`.
+  Every 401 sends `WWW-Authenticate: Bearer resource_metadata="<that URL>"`,
+  plus `error="invalid_token"` when a presented token was rejected.
+- `GET /.well-known/security.txt` (RFC 9116), only when `SECURITY_TXT_CONTACT`
+  is set (suggested: `https://github.com/craftainer/<repo>/security/advisories/new`).
+  `SECURITY_TXT_EXPIRES` is then required (timezone-aware, future, at most
+  one year ahead) and startup fails otherwise; optional
+  `SECURITY_TXT_POLICY`, `SECURITY_TXT_PREFERRED_LANGUAGES`,
+  `SECURITY_TXT_CANONICAL`. Renew `Expires` at least yearly.
+
+The RFC 9727 `/.well-known/api-catalog` is mounted from `main.py`.
+`OIDC_AUTHORIZATION_URL`/`OIDC_TOKEN_URL` only feed Swagger UI's browser
+login flow, so they must be browser-reachable URLs.
 
 `oidc.py` logs a `WARNING` (with the request path) on every rejected
 bearer token, and `require_roles` logs one (path + subject + the roles

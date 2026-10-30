@@ -147,15 +147,28 @@ def _rsa_jwks_client(kid: str = "k1") -> tuple[PyJWKClient, rsa.RSAPrivateKey]:
     return client, private
 
 
+ISSUER = "http://localhost:8080/realms/test"
+_FAR_FUTURE = 4_102_444_800  # 2100-01-01
+
+
+def _claims_token(private: rsa.RSAPrivateKey, **claims: object) -> str:
+    """A signed token with valid exp/iss/aud (api), overridable (None drops a claim)."""
+    payload: dict[str, Any] = {"sub": "u", "iss": ISSUER, "aud": "api", "exp": _FAR_FUTURE}
+    payload.update(claims)
+    payload = {k: v for k, v in payload.items() if v is not None}
+    return jwt.encode(payload, private, algorithm="RS256", headers={"kid": "k1"})
+
+
 def _rs_token(private: rsa.RSAPrivateKey, kid: str) -> str:
     return jwt.encode({"sub": "u"}, private, algorithm="RS256", headers={"kid": kid})
 
 
 @pytest.fixture
 def dev_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Non-mock mode, no audience check, fresh JWKS-client cache."""
+    """Non-mock mode, audience "api", issuer ISSUER, fresh JWKS-client cache."""
     monkeypatch.setattr(oidc.settings, "mode", "dev")
-    monkeypatch.setattr(oidc.settings, "oidc_audience", None)
+    monkeypatch.setattr(oidc.settings, "oidc_audience", "api")
+    monkeypatch.setattr(oidc.settings, "oidc_issuer", ISSUER)
     monkeypatch.setattr(oidc.settings, "oidc_algorithm", "RS256")
     oidc._get_jwks_client.cache_clear()
 
@@ -183,10 +196,9 @@ async def test_warm_jwks_stays_on_the_event_loop(
 ) -> None:
     """A cached kid is verified without a threadpool hop."""
     client, private = _rsa_jwks_client()
-    monkeypatch.setattr(oidc.settings, "oidc_issuer_url", "")
     _install_client(monkeypatch, client)
     calls = _spy_threadpool(monkeypatch)
-    token = jwt.encode({"sub": "u", "iss": ""}, private, algorithm="RS256", headers={"kid": "k1"})
+    token = _claims_token(private)
     claims = await oidc.decode_bearer_token_async(token)
     assert claims["sub"] == "u"
     assert calls == []
@@ -308,3 +320,92 @@ async def test_prefetch_jwks_is_a_noop_in_mock_mode(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(oidc, "_get_jwks_client", _boom)
     await oidc.prefetch_jwks()
+
+
+@pytest.fixture
+def signed(monkeypatch: pytest.MonkeyPatch, dev_mode: None) -> rsa.RSAPrivateKey:
+    """dev_mode plus a warm JWKS client for key "k1"; returns the matching private key."""
+    client, private = _rsa_jwks_client()
+    _install_client(monkeypatch, client)
+    return private
+
+
+def test_valid_token_is_accepted(signed: rsa.RSAPrivateKey) -> None:
+    """A token with the expected issuer and audience passes."""
+    assert decode_bearer_token(_claims_token(signed))["aud"] == "api"
+
+
+def test_audience_list_containing_the_expected_value_is_accepted(
+    signed: rsa.RSAPrivateKey,
+) -> None:
+    """Keycloak emits `aud` as a list when several mappers apply; one match is enough."""
+    assert decode_bearer_token(_claims_token(signed, aud=["account", "api"]))["sub"] == "u"
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [
+        {"aud": "someone-else"},
+        {"aud": None},
+        {"iss": "http://keycloak:8080/realms/test"},
+        {"iss": None},
+        {"exp": None},
+    ],
+)
+def test_wrong_or_missing_aud_iss_exp_is_rejected(
+    signed: rsa.RSAPrivateKey, claims: dict[str, Any]
+) -> None:
+    """The aud check cannot be skipped; iss must equal the configured issuer exactly."""
+    with pytest.raises(HTTPException) as exc_info:
+        decode_bearer_token(_claims_token(signed, **claims))
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.headers is not None
+    assert 'error="invalid_token"' in exc_info.value.headers["WWW-Authenticate"]
+
+
+def test_issuer_is_independent_of_the_discovery_url(
+    monkeypatch: pytest.MonkeyPatch, dev_mode: None
+) -> None:
+    """Discovery is fetched from discovery_url while tokens are checked against oidc_issuer."""
+    oidc._get_jwks_client.cache_clear()
+    monkeypatch.setattr(
+        oidc.settings, "oidc_discovery_url", "http://keycloak:8080/realms/test/.well-known/x"
+    )
+    fetched: list[str] = []
+
+    def _get(url: str, *, timeout: float) -> httpx.Response:
+        fetched.append(url)
+        return httpx.Response(
+            200, json={"jwks_uri": "http://keycloak:8080/certs"}, request=httpx.Request("GET", url)
+        )
+
+    monkeypatch.setattr(httpx, "get", _get)
+    oidc._get_jwks_client()
+    assert fetched == ["http://keycloak:8080/realms/test/.well-known/x"]
+    oidc._get_jwks_client.cache_clear()
+
+
+def test_missing_token_challenge_points_at_the_metadata_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No credentials: 401 with a bare Bearer challenge carrying resource_metadata."""
+    monkeypatch.setattr(oidc.settings, "public_base_url", "https://api.example.com")
+    app = FastAPI()
+
+    @app.get("/whoami")
+    def whoami(claims: Annotated[dict[str, Any], Depends(get_current_claims)]) -> dict[str, Any]:
+        return claims
+
+    response = TestClient(app).get("/whoami", headers={"Host": "evil.example"})
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == (
+        'Bearer resource_metadata="https://api.example.com/.well-known/oauth-protected-resource"'
+    )
+
+
+def test_bearer_challenge_adds_the_error_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An error code is appended after resource_metadata."""
+    monkeypatch.setattr(oidc.settings, "public_base_url", "https://api.example.com")
+    assert oidc.bearer_challenge("invalid_token")["WWW-Authenticate"].endswith(
+        'oauth-protected-resource", error="invalid_token"'
+    )

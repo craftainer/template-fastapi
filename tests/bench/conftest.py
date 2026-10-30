@@ -48,6 +48,8 @@ def bearer_token(signing_key: rsa.RSAPrivateKey, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(oidc.settings, "oidc_algorithm", "RS256")
     monkeypatch.setattr(oidc.settings, "oidc_audience", BENCH_AUDIENCE)
     monkeypatch.setattr(oidc.settings, "oidc_issuer_url", BENCH_ISSUER)
+    # OIDC_ISSUER (set by keycloak.env in the devcontainer) outranks OIDC_ISSUER_URL.
+    monkeypatch.setattr(oidc.settings, "oidc_issuer", BENCH_ISSUER)
     return jwt.encode(
         {
             "sub": "bench-user",

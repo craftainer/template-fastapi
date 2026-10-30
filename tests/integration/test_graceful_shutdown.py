@@ -106,11 +106,17 @@ def _uvicorn(tmp_path: Path, name: str) -> Iterator[tuple[subprocess.Popen[bytes
 def _access_token() -> str:
     """Password-grant login of the dev realm's `maintainer` (password == username)."""
     settings = get_settings()
+    # In-network realm address (not the browser-facing oidc_token_url) and the dev-only
+    # password-grant client (the public `api` client has direct grants off).
+    token_url = (
+        settings.discovery_url.removesuffix("/.well-known/openid-configuration")
+        + "/protocol/openid-connect/token"
+    )
     response = httpx.post(
-        settings.oidc_token_url,
+        token_url,
         data={
             "grant_type": "password",
-            "client_id": settings.oidc_client_id,
+            "client_id": "test-cli",
             "username": "maintainer",
             "password": "maintainer",
         },

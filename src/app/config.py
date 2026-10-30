@@ -8,8 +8,10 @@ run against in the first place. tests/unit/test_config.py exercises both
 directly and still counts toward its own 95% gate.
 """
 
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -168,11 +170,21 @@ class Settings(BaseSettings):
     # just Keycloak (see src/app/oidc.py). authorization_url/token_url are
     # static so FastAPI can build the Swagger UI login flow at import time,
     # without a network round trip; the JWKS used to validate tokens is
-    # instead discovered lazily from issuer_url (see oidc.py), so unit tests
-    # that never authenticate never need network access. audience is left
-    # unset outside "production" (see _require_oidc_audience_in_production
-    # below): the bundled dev realm's "api" client does not set one.
+    # instead discovered lazily from the discovery document (see oidc.py), so
+    # unit tests that never authenticate never need network access.
+    #
+    # The expected issuer (the `iss` a token must carry, and what RFC 9728
+    # advertises) is a different thing from the URL the backend reaches the
+    # provider at: with Keycloak's KC_HOSTNAME set, tokens carry the public
+    # `http://localhost:8080/realms/...` while the backend fetches discovery
+    # from `http://keycloak:8080/...` inside the compose network. So:
+    #   OIDC_ISSUER        expected `iss` (falls back to OIDC_ISSUER_URL)
+    #   OIDC_DISCOVERY_URL full `.../.well-known/openid-configuration` URL
+    #                      (falls back to `<expected issuer>/.well-known/...`)
+    # OIDC_ISSUER_URL is the original single variable and keeps working alone.
     oidc_issuer_url: str = "http://localhost:8080/realms/template-fastapi"
+    oidc_issuer: str | None = None
+    oidc_discovery_url: str | None = None
     oidc_authorization_url: str = (
         "http://localhost:8080/realms/template-fastapi/protocol/openid-connect/auth"
     )
@@ -182,20 +194,155 @@ class Settings(BaseSettings):
     )
     oidc_client_id: str = "api"
     oidc_algorithm: str = "RS256"
-    oidc_audience: str | None = None
+    # Always verified (RFC 9700 section 2.3): a token must carry this `aud`. There is
+    # no way to switch the check off; set OIDC_AUDIENCE to the value your provider's
+    # audience mapper emits (the bundled realm's `api` and `bff` clients both add `api`).
+    oidc_audience: str = Field(default="api", min_length=1)
+    # Advertised as RFC 9728 `scopes_supported`; the API authorizes by role, not scope.
+    # Env OIDC_SCOPES_SUPPORTED is a JSON list.
+    oidc_scopes_supported: list[str] = Field(default_factory=lambda: ["openid"])
+
+    # This service's own public origin (scheme + host[:port], no path): the RFC 9728
+    # `resource` and the base of the `resource_metadata` URL in WWW-Authenticate. Taken
+    # from configuration, never from the request's Host header, which a client controls.
+    # Required (and https) under MODE=production; defaults to localhost otherwise.
+    public_base_url: str | None = None
+
+    # RFC 9116 security.txt, served at /.well-known/security.txt only when
+    # SECURITY_TXT_CONTACT is set. Contact is one URI (https:, mailto: or tel:), e.g.
+    # https://github.com/craftainer/<repo>/security/advisories/new. Expires is required
+    # alongside it (RFC 3339 with a zone, in the future and at most one year ahead).
+    security_txt_contact: str | None = None
+    security_txt_expires: datetime | None = None
+    security_txt_policy: str | None = None
+    security_txt_preferred_languages: str | None = None
+    security_txt_canonical: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def expected_issuer(self) -> str:
+        """The `iss` a bearer token must carry (and the RFC 9728 authorization server).
+
+        Used verbatim: `iss` is compared as an exact string (RFC 8414 section 2), and some
+        providers include a trailing slash in it.
+        """
+        return self.oidc_issuer or self.oidc_issuer_url
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def discovery_url(self) -> str:
+        """Where the backend fetches the OIDC discovery document (may be an internal URL)."""
+        base = self.expected_issuer.rstrip("/")
+        return self.oidc_discovery_url or f"{base}/.well-known/openid-configuration"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def resource_url(self) -> str:
+        """This service's public origin, without a trailing slash."""
+        return (self.public_base_url or "http://localhost:8000").rstrip("/")
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def resource_metadata_url(self) -> str:
+        """Absolute URL of the RFC 9728 protected-resource metadata document."""
+        return f"{self.resource_url}/.well-known/oauth-protected-resource"
 
     @model_validator(mode="after")
-    def _require_oidc_audience_in_production(self) -> Self:
-        """Refuse to construct production Settings with no audience check configured.
+    def _validate_public_base_url(self) -> Self:
+        """Require an origin-only public base URL, https and explicitly set in production.
 
-        oidc.decode_bearer_token only verifies the "aud" claim when oidc_audience is
-        set, so an unset audience in production would accept a token issued for any
-        other client of the same provider. dev/mock stay opt-in (the bundled dev
-        Keycloak realm sets no audience mapper), so this only tightens the mode that
-        actually faces real traffic.
+        The checks are evaluated into one list and raised in one place, so the single
+        `# pragma: no cover` raise is the only line tests/e2e cannot reach (its live
+        process only ever starts with a valid Settings); tests/unit/test_config.py
+        exercises every message.
         """
-        if self.mode == "production" and self.oidc_audience is None:  # pragma: no cover
-            raise ValueError("oidc_audience must be set when MODE=production")
+        url = self.public_base_url
+        parts = urlsplit(url or "")
+        production = self.mode == "production"
+        problems = [
+            message
+            for bad, message in (
+                (
+                    url is not None
+                    and (
+                        parts.scheme not in ("http", "https")
+                        or not parts.netloc
+                        or parts.path not in ("", "/")
+                        or bool(parts.query)
+                        or bool(parts.fragment)
+                    ),
+                    "public_base_url must be an http(s) origin with no path",
+                ),
+                (production and url is None, "public_base_url must be set when MODE=production"),
+                (
+                    production and url is not None and not url.startswith("https://"),
+                    "public_base_url must use https:// when MODE=production",
+                ),
+            )
+            if bad
+        ]
+        if problems:  # pragma: no cover -- see docstring
+            raise ValueError("; ".join(problems))
+        return self
+
+    @model_validator(mode="after")
+    def _validate_security_txt(self) -> Self:
+        """Check the security.txt fields: a contact needs a valid, near-term Expires.
+
+        An RFC 9116 file without `Expires` is not compliant, and one expiring more than a
+        year out (or already past) defeats the point of the field, so a configured contact
+        with a missing or out-of-range Expires refuses to start in every mode. Values go
+        into a plain-text file line by line, so control characters are rejected. Evaluated
+        and raised like `_validate_public_base_url` (one `# pragma: no cover` raise).
+        """
+        values = {
+            "security_txt_contact": self.security_txt_contact,
+            "security_txt_policy": self.security_txt_policy,
+            "security_txt_preferred_languages": self.security_txt_preferred_languages,
+            "security_txt_canonical": self.security_txt_canonical,
+        }
+        problems = [
+            f"{name} must be a single line of text"
+            for name, value in values.items()
+            if value is not None and (not value.strip() or not value.isprintable())
+        ]
+        contact = self.security_txt_contact
+        expires = self.security_txt_expires
+        now = datetime.now(UTC)
+        if contact is not None:
+            problems += [
+                message
+                for bad, message in (
+                    (
+                        not contact.startswith(("https://", "mailto:", "tel:")),
+                        "security_txt_contact must be an https:, mailto: or tel: URI",
+                    ),
+                    (
+                        any(
+                            v is not None and not v.startswith("https://")
+                            for v in (self.security_txt_policy, self.security_txt_canonical)
+                        ),
+                        "security_txt_policy and security_txt_canonical must be https:// URLs",
+                    ),
+                    (
+                        expires is None,
+                        "security_txt_expires must be set when security_txt_contact is",
+                    ),
+                    (
+                        expires is not None and expires.tzinfo is None,
+                        "security_txt_expires must carry a time zone",
+                    ),
+                    (
+                        expires is not None
+                        and expires.tzinfo is not None
+                        and not now < expires <= now + timedelta(days=366),
+                        "security_txt_expires must be in the future and at most one year ahead",
+                    ),
+                )
+                if bad
+            ]
+        if problems:  # pragma: no cover -- see docstring
+            raise ValueError("; ".join(problems))
         return self
 
     @model_validator(mode="after")
@@ -287,17 +434,20 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_https_oidc_issuer_in_production(self) -> Self:
-        """Refuse to construct production Settings with a non-https oidc_issuer_url.
+        """Refuse to construct production Settings with a non-https issuer or discovery URL.
 
-        decode_bearer_token fetches the issuer's OIDC discovery document and JWKS
-        over whatever scheme oidc_issuer_url uses -- http:// in production would send
-        that (and, for the Authorization Code flow itself, the token exchange) in
-        cleartext.
+        decode_bearer_token fetches the OIDC discovery document and JWKS over whatever
+        scheme the discovery URL uses -- http:// in production would send that (and, for
+        the Authorization Code flow itself, the token exchange) in cleartext. The expected
+        issuer is checked too: it is what clients are told to trust (RFC 9728).
         """
-        if self.mode == "production" and not self.oidc_issuer_url.startswith(  # pragma: no cover
-            "https://"
-        ):
-            raise ValueError("oidc_issuer_url must use https:// when MODE=production")
+        if self.mode == "production":  # pragma: no cover
+            if not self.expected_issuer.startswith("https://"):
+                raise ValueError(
+                    "oidc_issuer_url/oidc_issuer must use https:// when MODE=production"
+                )
+            if not self.discovery_url.startswith("https://"):
+                raise ValueError("oidc_discovery_url must use https:// when MODE=production")
         return self
 
     @model_validator(mode="after")

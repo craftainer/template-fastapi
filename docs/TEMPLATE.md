@@ -117,8 +117,10 @@ paths listed, so one sync installs the new files and deletes the old ones.
 Without a devcontainer: install [`uv`](https://docs.astral.sh/uv/) and
 [`prek`](https://prek.j178.dev/), export your own `DATABASE_URL` /
 `S3_ENDPOINT_URL` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `REDIS_URL` /
-`OIDC_ISSUER_URL` / `OIDC_AUTHORIZATION_URL` / `OIDC_TOKEN_URL` /
-`OIDC_CLIENT_ID` (see `src/app/config.py` for the defaults), then
+`OIDC_ISSUER` (or the legacy `OIDC_ISSUER_URL`) / `OIDC_DISCOVERY_URL` /
+`OIDC_AUTHORIZATION_URL` / `OIDC_TOKEN_URL` / `OIDC_CLIENT_ID` /
+`OIDC_AUDIENCE` / `PUBLIC_BASE_URL`, and optionally `SECURITY_TXT_CONTACT`
+(+ `SECURITY_TXT_EXPIRES`) (see `src/app/config.py` for the defaults), then
 `uv sync --extra dev` and run uvicorn the same way. Run `prek install`
 once to enable the git hooks.
 

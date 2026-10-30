@@ -7,11 +7,36 @@ auto-imports `realm-export.json`, so a working realm, client, and test user
 exist immediately — no manual admin-console setup required.
 
 - Compose file: `compose.yml`
-- Image: `quay.io/keycloak/keycloak:26.7.3`
+- Image: `quay.io/keycloak/keycloak:26.7.4`
 - Host (from other containers): `keycloak`
 - Port (container-internal): `8080`
 - Realm: `template-fastapi`
-- Client ID: `api` (public client, no client secret)
+- Clients (all in `realm-export.json`):
+  - `api` — public, auth-code + PKCE (S256) only, no password grant. Used
+    by Swagger UI: redirect URI `http://localhost:8000/docs/oauth2-redirect`,
+    web origin `http://localhost:8000` (exact, no wildcards). Carries the
+    client roles the backend checks (`resource_access.api.roles`).
+  - `bff` — confidential (`client-secret`), auth-code + PKCE for a
+    backend-for-frontend; redirect URIs `http://localhost:5173/bff/callback`
+    and `http://localhost:8081/bff/callback`, post-logout URIs the two
+    origins (`##`-separated in the attribute), back-channel logout to
+    `http://host.docker.internal:8787/bff/backchannel-logout`, refresh
+    tokens on, token exchange off. Its secret is **dev-only**: `BFF_CLIENT_SECRET`
+    in `keycloak.env`, substituted into the import as `${BFF_CLIENT_SECRET}`.
+  - `test-cli` — **dev-only**, public, password grant only (no browser
+    flow). Tests and perf scripts mint tokens with it; never create an
+    equivalent outside local dev.
+  All three add `api` to access tokens' `aud` (audience mapper). Roles reach
+  tokens through the default `roles` scope (full scope allowed), so every
+  client yields the same `resource_access.api.roles`.
+- Realm: refresh tokens rotate (`revokeRefreshToken`, `refreshTokenMaxReuse: 0`);
+  SSO session idle 1800 s, max 36000 s.
+- Hostname: `KC_HOSTNAME=http://localhost:8080` plus
+  `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` (see `compose.yml`), so `iss` is
+  always `http://localhost:8080/realms/template-fastapi`, even for tokens
+  minted via `http://keycloak:8080`, while discovery and back-channel calls
+  still work on the internal name. `extra_hosts` maps
+  `host.docker.internal` for back-channel logout calls to a host-side BFF.
 - Admin console user / password: `admin` / `admin`
 - Test users / password (same as username): `viewer`, `editor`, `security`,
   `maintainer`, `detective` — all with the same `offline_access` /
@@ -20,7 +45,7 @@ exist immediately — no manual admin-console setup required.
   what each role grants is up to the app's own routes; see
   `src/app/README.md`'s "RBAC" section for `src/app/oidc.py`'s
   `require_roles` and how routes enforce it.
-- Issuer URL (from other containers): `http://keycloak:8080/realms/template-fastapi`
+- Issuer (`iss` claim): `http://localhost:8080/realms/template-fastapi`; discovery/token/JWKS from other containers: `http://keycloak:8080/realms/template-fastapi`
 - Admin credentials and the `OIDC_*` URLs: defined in `keycloak.env`, next to this file
 
 Unlike the other stack services, Keycloak's port is listed in
