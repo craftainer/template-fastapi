@@ -109,7 +109,10 @@ jobs:
           export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
           export RUN_MIGRATIONS_ON_STARTUP=false
           uv sync --locked --all-extras
-          uv run pytest tests/integration tests/e2e --no-cov -p no:cacheprovider
+          # Keep the cacheprovider plugin loaded: the N-1 pyproject may set
+          # cache_dir, which pytest rejects as an unknown ini option once
+          # the plugin is disabled. Point the cache outside the tree instead.
+          uv run pytest tests/integration tests/e2e --no-cov -o cache_dir=/tmp/pytest-n1
           SCRIPT
 
       - name: Set compose project name
