@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The plan in `docs/plans/2026-10-templates-sdks-ui.md` gives clients (the
+The template family gives clients (the
 Python and TypeScript SDKs, the React UI layer) one machine-readable
 description of every CRUD resource, the CRUD manifest (contract I1,
 specified in `craftainer-crud`'s `docs/manifest.md` and its ADR 0002).
