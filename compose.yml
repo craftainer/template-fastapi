@@ -181,6 +181,9 @@ services:
     environment:
       KC_HTTPS_CERTIFICATE_FILE: /opt/keycloak/tls/keycloak.crt
       KC_HTTPS_CERTIFICATE_KEY_FILE: /opt/keycloak/tls/keycloak.key
+      # The devcontainer stack pins the public issuer to http://localhost:8080; here the
+      # api validates `iss` as the https URL clients reach, so pin that instead.
+      KC_HOSTNAME: https://keycloak:8443
     depends_on:
       smoke-tls-cert:
         condition: service_completed_successfully
@@ -241,6 +244,10 @@ services:
       # trusts it too -- both instead of failing TLS verification against
       # the usual public CA bundle.
       OIDC_ISSUER_URL: https://keycloak:8443/realms/template-fastapi
+      # keycloak.env (loaded above) points these at the devcontainer's http:// URLs, which
+      # MODE=production refuses; override with the smoke stack's https issuer.
+      OIDC_ISSUER: https://keycloak:8443/realms/template-fastapi
+      OIDC_DISCOVERY_URL: https://keycloak:8443/realms/template-fastapi/.well-known/openid-configuration
       SSL_CERT_FILE: /tls/keycloak.crt
       # boto3/botocore does *not* honor SSL_CERT_FILE (unlike httpx/redis-py
       # above) -- AWS_CA_BUNDLE is its own equivalent env var, needed so the
