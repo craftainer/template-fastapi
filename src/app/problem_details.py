@@ -8,7 +8,7 @@ consistent `application/problem+json` body, instead of FastAPI's default
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from http import HTTPStatus
 
 from fastapi import FastAPI, Request, status
@@ -29,7 +29,12 @@ class ProblemDetailResponse(JSONResponse):
 
 
 def _problem(
-    *, status_code: int, title: str, detail: str | Sequence[object], instance: str
+    *,
+    status_code: int,
+    title: str,
+    detail: str | Sequence[object],
+    instance: str,
+    headers: Mapping[str, str] | None = None,
 ) -> ProblemDetailResponse:
     """Build an RFC 9457 problem-details body for the given status/title/detail."""
     return ProblemDetailResponse(
@@ -41,18 +46,24 @@ def _problem(
             "detail": detail,
             "instance": instance,
         },
+        headers=headers,
     )
 
 
 async def _handle_http_exception(
     request: Request, exc: StarletteHTTPException
 ) -> ProblemDetailResponse:
-    """Render any raised HTTPException as a problem-details body."""
+    """Render any raised HTTPException as a problem-details body.
+
+    The exception's own headers are kept: a 401's `WWW-Authenticate` challenge (RFC 6750,
+    with the RFC 9728 `resource_metadata`) and a 429's `Retry-After` live there.
+    """
     return _problem(
         status_code=exc.status_code,
         title=HTTPStatus(exc.status_code).phrase,
         detail=exc.detail,
         instance=request.url.path,
+        headers=exc.headers,
     )
 
 
