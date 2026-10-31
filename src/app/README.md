@@ -252,7 +252,7 @@ variables itself, so `config.py` has no fields for them. Off unless a backend is
 | `ANALYTICS_ENDPOINT` | unset | Umami's base URL; the adapter appends `/api/batch`. Must be the final URL (redirects are not followed). |
 | `ANALYTICS_SITE_ID` | unset | Umami website ID. |
 | `ANALYTICS_HOSTNAME` | unset | Sent as `payload.hostname`. |
-| `ANALYTICS_CONSENT` | `implied` | `opt-in` records nothing unless the request sends `X-Analytics-Consent: 1`. |
+| `ANALYTICS_CONSENT` | `implied` | `opt-in` records nothing unless the request sends `Analytics-Consent: 1`. |
 | `ANALYTICS_RESPECT_GPC` | `true` | Drop events of a request with `Sec-GPC: 1` or `DNT: 1`. |
 | `ANALYTICS_GEO` | `none` | `none` or `coarse`; backend events carry no client address, so no geography either way. |
 | `ANALYTICS_PROP_KEYS` | empty | Comma-separated prop keys allowed through; the sample events use `powers_count`. |

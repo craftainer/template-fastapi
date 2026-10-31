@@ -32,7 +32,7 @@ We will:
 - Wrap each request in the library's `request_context(gpc=, consent=)` from a pure ASGI
   middleware, `app.analytics.AnalyticsContextMiddleware`. `Sec-GPC: 1` or `DNT: 1` sets
   `gpc`, and the library drops the request's events while `ANALYTICS_RESPECT_GPC` is true
-  (the default). `X-Analytics-Consent: 1` sets `consent`, which matters only under
+  (the default). `Analytics-Consent: 1` sets `consent`, which matters only under
   `ANALYTICS_CONSENT=opt-in`: without it no event is recorded. A browser never sends that
   header by itself, so a front end or BFF that collected consent adds it to its calls.
 - Record two sample domain events from Hero's CRUD, `hero.created` and `hero.deleted`,
@@ -60,8 +60,11 @@ We will:
 - Backend events carry `payload.ip = server` (the library's constant), so Umami stores no
   client address and derives no geography. A deployment cannot get visitor-level analytics
   from this service; page-level analytics belong to the BFF, which sees the browser.
-- `X-Analytics-Consent` is this template's own convention. A deployment that uses
-  `opt-in` has to make its front end send it, or no event is ever recorded.
+- `Analytics-Consent` is this template's own convention. A deployment that uses
+  `opt-in` has to make its front end send it, or no event is ever recorded. The name has
+  no `X-` prefix (RFC 6648). Backends trust this header only behind the BFF, which strips
+  any inbound copy and sets it from its own consent state; a direct client can set it,
+  which is accepted for opt-in mode in development and documented here.
 - The wrapper is an indirection around Hero's sink; a resource that wants events does the
   same, with its own `props_for`.
 - Umami OSS has no retention setting; the 25-month limit is a manual purge

@@ -12,7 +12,7 @@ reads that from the headers and wraps the request in the library's `request_cont
 
 - `Sec-GPC: 1` (Global Privacy Control) or `DNT: 1` (Do Not Track) sets `gpc`; the library
   then drops every event of the request while `ANALYTICS_RESPECT_GPC` is true (the default).
-- `X-Analytics-Consent: 1` sets `consent`. It matters only with `ANALYTICS_CONSENT=opt-in`,
+- `Analytics-Consent: 1` sets `consent`. It matters only with `ANALYTICS_CONSENT=opt-in`,
   where no event is recorded for a request without it. A browser never sends this header
   by itself: a front end or BFF that has collected consent adds it to its calls.
 
@@ -25,7 +25,7 @@ from craftainer_observability.analytics import request_context
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-CONSENT_HEADER = "X-Analytics-Consent"
+CONSENT_HEADER = "Analytics-Consent"
 
 
 def _signalled(headers: Headers, name: str) -> bool:

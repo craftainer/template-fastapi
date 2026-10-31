@@ -98,19 +98,19 @@ def test_gpc_is_ignored_when_respect_gpc_is_off(
 def test_opt_in_records_nothing_without_the_consent_header(
     client: TestClient, analytics_log: Callable[..., None], caplog: pytest.LogCaptureFixture
 ) -> None:
-    """ANALYTICS_CONSENT=opt-in: no X-Analytics-Consent: 1, no event."""
+    """ANALYTICS_CONSENT=opt-in: no Analytics-Consent: 1, no event."""
     analytics_log(consent="opt-in")
     assert client.get("/sync").status_code == 200
-    assert client.get("/sync", headers={"X-Analytics-Consent": "0"}).status_code == 200
+    assert client.get("/sync", headers={"Analytics-Consent": "0"}).status_code == 200
     assert _tracked(caplog) == []
 
 
 def test_opt_in_records_with_the_consent_header(
     client: TestClient, analytics_log: Callable[..., None], caplog: pytest.LogCaptureFixture
 ) -> None:
-    """ANALYTICS_CONSENT=opt-in: `X-Analytics-Consent: 1` lets the request's events through."""
+    """ANALYTICS_CONSENT=opt-in: `Analytics-Consent: 1` lets the request's events through."""
     analytics_log(consent="opt-in")
-    assert client.get("/sync", headers={"X-Analytics-Consent": "1"}).status_code == 200
+    assert client.get("/sync", headers={"Analytics-Consent": "1"}).status_code == 200
     assert _tracked(caplog) == ["demo.sync_hit"]
 
 
@@ -119,7 +119,7 @@ def test_gpc_beats_consent(
 ) -> None:
     """A consent header does not override Global Privacy Control."""
     analytics_log(consent="opt-in")
-    response = client.get("/sync", headers={"X-Analytics-Consent": "1", "Sec-GPC": "1"})
+    response = client.get("/sync", headers={"Analytics-Consent": "1", "Sec-GPC": "1"})
     assert response.status_code == 200
     assert _tracked(caplog) == []
 
@@ -129,7 +129,7 @@ def test_consent_header_changes_nothing_under_implied_consent(
 ) -> None:
     """With ANALYTICS_CONSENT=implied the consent header is irrelevant."""
     analytics_log()
-    assert client.get("/sync", headers={"X-Analytics-Consent": "1"}).status_code == 200
+    assert client.get("/sync", headers={"Analytics-Consent": "1"}).status_code == 200
     assert _tracked(caplog) == ["demo.sync_hit"]
 
 
@@ -154,7 +154,7 @@ def test_context_does_not_outlive_the_request() -> None:
         seen.append((context.gpc, context.consent))
         return {"ok": True}
 
-    response = TestClient(app).get("/ctx", headers={"DNT": "1", "X-Analytics-Consent": "1"})
+    response = TestClient(app).get("/ctx", headers={"DNT": "1", "Analytics-Consent": "1"})
     assert response.status_code == 200
     assert seen == [(True, True)]
     assert get_request_context() is None
