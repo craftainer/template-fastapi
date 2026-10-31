@@ -103,7 +103,11 @@ on pull requests that touch `alembic/versions/` or the model packages
 3. checks the latest stable release tag (`vMAJOR.MINOR.PATCH`) out into a
    worktree and runs that tag's `tests/integration` and `tests/e2e`
    against the migrated database with `RUN_MIGRATIONS_ON_STARTUP=false`,
-   so the previous release has to keep working on the new schema.
+   so the previous release has to keep working on the new schema. Only that
+   pytest invocation gets `OIDC_TOKEN_URL` and `OIDC_AUTHORIZATION_URL` set
+   to the in-network `http://keycloak:8080/...` the release's tests were
+   written for; the stack publishes the browser-facing `localhost:8080`
+   values now, which nothing serves inside the devcontainer.
 
 **Skips until the first release with `RUN_MIGRATIONS_ON_STARTUP`.** Older
 code always migrates on startup and would try to migrate a database whose
