@@ -53,7 +53,7 @@ We will:
 ## Consequences
 
 - With `ANALYTICS_BACKEND` unset (`none`) the template behaves as before; the
-  devcontainer's `umami.env` selects `umami` and the seeded website.
+  devcontainer's `analytics.env` selects `umami` and the seeded website.
 - Because the library, not this app, validates events, a new event or prop needs three
   things: a conforming name (`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, at most 50 characters),
   a scalar value of at most 200 characters, and its key added to `ANALYTICS_PROP_KEYS`.
