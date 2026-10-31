@@ -243,7 +243,7 @@ loggers over to the root handlers, so its lines are JSON too.
 
 `craftainer_observability.analytics` (the `analytics` extra) reads the `ANALYTICS_*`
 variables itself, so `config.py` has no fields for them. Off unless a backend is set
-(`none` by default; the devcontainer's `umami.env` selects `umami`):
+(`none` by default; the devcontainer's `analytics.env` selects `umami`):
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
