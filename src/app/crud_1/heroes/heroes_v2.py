@@ -11,6 +11,7 @@ for why a resource-version router should never bake in its own prefix.
 `crud_router.py`'s "Generic CRUD router factories" and `docs/adrs/0009-...md`.
 """
 
+from collections.abc import Mapping
 from typing import Annotated, Any
 
 from craftainer_crud.controllers.crud_router import ROUTER_VERSION, build_resource_router
@@ -31,6 +32,7 @@ from craftainer_crud.models.revision import Revision
 from craftainer_crud.repositories.base import Repository
 from fastapi import Depends
 
+from app.crud_1.analytics_events import AnalyticsEventSink
 from app.crud_1.wiring import bulk_rate_limit, manifest_registry, stats_cache
 from app.models.hero import Hero as HeroModel
 from app.oidc import get_current_claims, require_roles
@@ -40,6 +42,15 @@ _hero_repository = build_repository_provider(HeroModel)
 _revision_repository = build_repository_provider(Revision)
 _hero_event_sink = build_event_sink_provider("hero")
 _hero_event_source = build_event_source_provider("hero")
+
+
+def _hero_analytics_props(_action: str, snapshot: Mapping[str, Any]) -> Mapping[str, Any]:
+    """The analytics props of a hero event: only how many powers, never a name or owner.
+
+    `powers_count` must be on `ANALYTICS_PROP_KEYS` to be sent (the library drops any other
+    key). A number carries no personal data, unlike the hero's name.
+    """
+    return {"powers_count": len(snapshot.get("powers") or [])}
 
 
 def get_hero_event_source() -> EventSource:
@@ -80,7 +91,8 @@ def get_hero_crud(
     `events=_hero_event_sink()`: every create/update/update_many/delete/
     delete_many **and** restore/restore_many is published for real-time streaming
     -- see craftainer_crud.interfaces.base.EventSink's own docstring and `GET <prefix>/events`,
-    added below via `event_source_dependency`.
+    added below via `event_source_dependency`. The sink is wrapped in `AnalyticsEventSink`,
+    which also records `hero.created`/`hero.deleted` product-analytics events (ADR 0027).
 
     MODE=mock uses the shared in-memory repository instead of `session` -- an
     unused AsyncSession's commit() never opens a connection, so `session` stays a
@@ -101,7 +113,11 @@ def get_hero_crud(
         # underlying CRUD operation just to name who did it.
         owner=OwnerScope("owner_id", claims["sub"], read_scoped=False),
         revisions=RepositoryRevisionSink(_revision_repository(session)),
-        events=_hero_event_sink(),
+        events=AnalyticsEventSink(
+            _hero_event_sink(),
+            url=f"/crud/v{ROUTER_VERSION}/heroes/v2",
+            props_for=_hero_analytics_props,
+        ),
         resource="hero",
         actor=str(claims.get("sub", "unknown")),
     )

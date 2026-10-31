@@ -19,6 +19,9 @@ any lower layer, but nothing else may import from here except `main`
   - `__init__.py` — combines `heroes_v2.py`/`heroes_v1.py`'s routers,
     assigning each its real `/heroes/v2`/`/heroes/v1` prefix explicitly,
     into the one `router` this package's own `__init__.py` includes.
+- `analytics_events.py` — `AnalyticsEventSink`, a wrapper around a resource's `EventSink`
+  that, after the wrapped sink publishes, records `<resource>.created` / `.deleted`
+  product-analytics events via `track()` (ADR 0027). Hero's `get_hero_crud` uses it.
 - `__init__.py` — combines every resource's router (currently just
   `heroes/`) into the one `router` `app.main` mounts at
   `/crud/v{ROUTER_VERSION}`, so the router-version segment is named once,

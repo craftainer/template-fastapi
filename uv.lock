@@ -599,17 +599,20 @@ wheels = [
 
 [[package]]
 name = "craftainer-observability"
-version = "0.3.0"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/41/ef/222055ab875adf173294654dd6fe17981c88a8fa82bb1bf4f7aa40624802/craftainer_observability-0.3.0.tar.gz", hash = "sha256:6b7986d7c9a8b598a6d880f5ca395ff96a1b74825ef9b4bcc31f5e0778c27b29", size = 199229, upload-time = "2026-10-23T12:54:43.592Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/3f/f7d0b67bfabcc5abd6766447b7fdd98f517779e4af994d83f60aaf6b549c/craftainer_observability-0.4.0.tar.gz", hash = "sha256:0e22b87b9379f098eb27ab69dc66783830c3d41402fbb89ebd33c9f3513c2520", size = 270236, upload-time = "2026-10-30T19:37:03.881Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f2/d6/786d3005b0653caf0f23ea9e07370645dc780c52c5fb44198332f80f81f4/craftainer_observability-0.3.0-py3-none-any.whl", hash = "sha256:03dbf9eb0fde5079f24862f75048950041c9b5e61094c8f99e024612ed9a205e", size = 38319, upload-time = "2026-10-23T12:54:42.63Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/b2/b1ff61a2f900088abac392bdd18c2b41471b6acedb8e1dec18bfd091b97a/craftainer_observability-0.4.0-py3-none-any.whl", hash = "sha256:3b67562a38f23907ae71cfe8165f7b2e67519fddfe9153950470c33ce112988e", size = 47517, upload-time = "2026-10-30T19:37:02.877Z" },
 ]
 
 [package.optional-dependencies]
+analytics = [
+    { name = "httpx" },
+]
 http = [
     { name = "httpx" },
 ]
@@ -2548,7 +2551,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "boto3" },
     { name = "craftainer-crud", extra = ["mqtt", "xml"] },
-    { name = "craftainer-observability", extra = ["http", "otel", "redis", "s3", "sqlalchemy"] },
+    { name = "craftainer-observability", extra = ["analytics", "http", "otel", "redis", "s3", "sqlalchemy"] },
     { name = "debugpy" },
     { name = "defusedxml" },
     { name = "fastapi" },
@@ -2602,7 +2605,7 @@ requires-dist = [
     { name = "boto3-stubs", extras = ["s3"], marker = "extra == 'dev'", specifier = "==1.43.98" },
     { name = "craftainer-crud", extras = ["mqtt", "xml"], specifier = ">=0.7.0,<0.8" },
     { name = "craftainer-crud-sdk", marker = "extra == 'dev'", specifier = ">=0.2.0,<0.3" },
-    { name = "craftainer-observability", extras = ["otel", "sqlalchemy", "redis", "s3", "http"], specifier = ">=0.3.0,<0.4" },
+    { name = "craftainer-observability", extras = ["otel", "sqlalchemy", "redis", "s3", "http", "analytics"], specifier = ">=0.4.0,<0.5" },
     { name = "debugpy", specifier = "==1.8.22" },
     { name = "defusedxml", specifier = "==0.7.1" },
     { name = "fastapi", specifier = "==0.141.1" },
