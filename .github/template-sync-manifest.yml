@@ -153,12 +153,32 @@ replace:
   - docs/plans/README.md
   - docs/plans/template.md
 
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/template-sync-manifest.yml
   # The generic CRUD framework plus its worked Hero example (app code and
   # tests alike) -- see docs/TEMPLATE.md's "Example CRUD resource: Hero" and
   # the header note above about what "replace" means for a path an instance
   # has deleted.
   - src/
   - tests/
+=======
+  # template-docker's own layer on top of base: the image-release Makefile
+  # (identical for every image-shipping app; instances customise it only
+  # through variables in image.mk), the smoke test, and the runner-setup
+  # driver. Hook scripts are listed one by one, not as globs: an instance's
+  # own scripts/runner-setup.d/*.sh are ignore tier (below).
+  # Same precedent as template-python-package: the Makefile implements the
+  # release contract identically for every instance, so it's template-owned.
+  - Makefile
+  - scripts/image-smoke.sh
+  - scripts/runner-setup.sh
+  - scripts/runner-setup.d/README.md
+  - scripts/check-dockerfile-versions.sh
+  - scripts/image-scan.sh
+  - scripts/image-dast.sh
+  - scripts/skopeo.sh
+  - scripts/skopeo-dir.sh
+  - scripts/test-image-scripts.sh
+>>>>>>> /tmp/template-new/.github/template-sync-manifest.yml
 
 ignore:
   # Each instance chooses its own license and copyright holder.
