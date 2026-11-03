@@ -5,15 +5,10 @@
   (features, mounts, forwarded ports, editor settings).
 - `Dockerfile` — the devcontainer image (a single `develop` stage), built
   with the repo root as context; `Dockerfile.dockerignore` holds its
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.devcontainer/README.md
-  build-context excludes. Owned by template-base. The top-level
-  `../Dockerfile` is the app's runtime image (`../docs/TEMPLATE.md`).
-=======
   build-context excludes. Its `FROM` and `# syntax=` lines are pinned by
   digest, written literally so Renovate can update tag and digest
-  together. The top-level `Dockerfile` is reserved for an
-  instance's runtime image (`../docs/TEMPLATE.md`).
->>>>>>> /tmp/template-new/.devcontainer/README.md
+  together. The top-level `../Dockerfile` is the app's runtime image
+  (`../docs/TEMPLATE.md`).
 - `compose.yml` — the dev service (`myapp`), built from `Dockerfile`'s
   `develop` stage. Owned by template-base. It also declares the optional
   `github_token` build secret (from the `GITHUB_TOKEN` environment
