@@ -153,17 +153,51 @@ replace:
   - docs/plans/README.md
   - docs/plans/template.md
 
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/template-sync-manifest.yml
   # The generic CRUD framework plus its worked Hero example (app code and
   # tests alike) -- see docs/TEMPLATE.md's "Example CRUD resource: Hero" and
   # the header note above about what "replace" means for a path an instance
   # has deleted.
   - src/
   - tests/
+=======
+  # template-docker's own layer on top of base: the image-release Makefile
+  # (identical for every image-shipping app; instances customise it only
+  # through variables in image.mk), the smoke test, and the runner-setup
+  # driver. Hook scripts are listed one by one, not as globs: an instance's
+  # own scripts/runner-setup.d/*.sh are ignore tier (below).
+  # Same precedent as template-python-package: the Makefile implements the
+  # release contract identically for every instance, so it's template-owned.
+  - Makefile
+  - scripts/image-smoke.sh
+  - scripts/runner-setup.sh
+  - scripts/runner-setup.d/README.md
+  - scripts/check-dockerfile-versions.sh
+  - scripts/image-scan.sh
+  - scripts/image-dast.sh
+  - scripts/skopeo.sh
+  - scripts/skopeo-dir.sh
+  - scripts/test-image-scripts.sh
+>>>>>>> /tmp/template-new/.github/template-sync-manifest.yml
 
 ignore:
   # Each instance chooses its own license and copyright holder.
   - LICENSE
 
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/template-sync-manifest.yml
+=======
+  # Each instance's README is entirely its own (image, usage, runtime); a
+  # merge against this template's README conflicted on every sync, so it
+  # is instance-owned from creation, like the Dockerfile.
+  - README.md
+
+  # The instance's own image: its Dockerfile (toolchain, build, runtime
+  # stages) and the image.mk variables that tune the template's Makefile.
+  # The skeletons shipped here are examples to replace, never synced.
+  - Dockerfile
+  - image.mk
+
+>>>>>>> /tmp/template-new/.github/template-sync-manifest.yml
   # The instance's ZAP baseline rule levels (seeded with a commented header;
   # an instance adds its own FAIL/IGNORE lines, with a reason each).
   - .zap/rules.tsv
@@ -197,6 +231,7 @@ ignore:
   - .github/template-sync-manifest.local.yml
 
 merge:
+<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/template-sync-manifest.yml
   # Project identity (name/description/version) is interpolated per instance;
   # everything else in these two files is template-owned.
   - README.md
@@ -204,6 +239,9 @@ merge:
 
   # Baseline excludes the instance extends with its own entries, and the
   # per-repo values for template-docker's Makefile (`-include image.mk`).
+=======
+  # Baseline excludes the instance extends with its own entries.
+>>>>>>> /tmp/template-new/.github/template-sync-manifest.yml
   - .dockerignore
   - image.mk
 
