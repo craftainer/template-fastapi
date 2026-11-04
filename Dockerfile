@@ -9,7 +9,7 @@
 # two equal.
 
 # renovate: datasource=python-version depName=python
-ARG PYTHON_VERSION=3.14.8
+ARG PYTHON_VERSION=3.15.2
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=astral-sh/uv
