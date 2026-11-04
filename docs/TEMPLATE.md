@@ -126,7 +126,6 @@ once to enable the git hooks.
 
 ## Checks
 
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/docs/TEMPLATE.md
 `ruff` (lint + format), `mypy --strict`, `pytest`, and `pip-audit`
 (dependency vulnerabilities, run against exactly what `uv.lock` resolves)
 are all configured to fail on any violation — see `pyproject.toml`.
@@ -139,20 +138,10 @@ dependencies, GitHub Actions, and every Dockerfile/compose image tag.
 YAML/TOML/JSON checks, `conventional-pre-commit` (Conventional Commits,
 enforced at the `commit-msg` stage), the `template-sync-manifest`
 completeness check, the `devcontainer-lock` lockfile-consistency check,
-and three security scanners (below).
-=======
-`.pre-commit-config.yaml` defines whitespace/EOF fixers, YAML/TOML/JSON
-checks, `conventional-pre-commit` (Conventional Commits, enforced at the
-`commit-msg` stage), the `template-sync-manifest` completeness check, and
-the `devcontainer-lock` lockfile-consistency check, `ruff-check`/`ruff-format`
-(`astral-sh/ruff-pre-commit`, scoped to `.github/scripts/*.py` so base can't
-ship scripts that fail a Python instance's own ruff hook; keep its `rev` equal
-to the ruff the Python templates pin), and three security scanners (below). An instance layers
-its own language-specific hooks on top (lint,
-format, type check, test suite, dependency-vulnerability scan, ...),
-matching the shape `template-fastapi`'s own `.pre-commit-config.yaml`
-already establishes for `ruff`/`mypy`/`pytest`/`pip-audit`.
->>>>>>> /tmp/template-new/docs/TEMPLATE.md
+a second `ruff-check`/`ruff-format` pair (`astral-sh/ruff-pre-commit`,
+scoped to `.github/scripts/*.py` so base can't ship scripts that fail a
+Python instance's own ruff hook; keep its `rev` equal to the ruff pinned in
+`pyproject.toml`), and three security scanners (below).
 
 `check-merge-conflict` runs with `--assume-in-merge`, so it flags committed
 conflict markers (a line starting `<<<<<<< `, `=======` or `>>>>>>> `) in any

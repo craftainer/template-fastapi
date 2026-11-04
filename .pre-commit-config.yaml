@@ -49,12 +49,6 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
 
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.pre-commit-config.yaml
-  # ruff, mypy, pytest and uv itself are already project dev-dependencies
-  # (see pyproject.toml) — running them via `uv run` keeps their pinned
-  # versions as the single source of truth instead of a second, separate
-  # pin per tool in this file.
-=======
   # Guard for the upstream-owned scripts in .github/scripts/: base ships
   # them to every instance, whose own ruff-format hook then checks them
   # against .github/scripts/ruff.toml (the closest config wins), so an
@@ -74,7 +68,10 @@ repos:
         files: ^\.github/scripts/.*\.py$
         stages: [pre-commit, manual]
 
->>>>>>> /tmp/template-new/.pre-commit-config.yaml
+  # ruff, mypy, pytest and uv itself are already project dev-dependencies
+  # (see pyproject.toml) — running them via `uv run` keeps their pinned
+  # versions as the single source of truth instead of a second, separate
+  # pin per tool in this file.
   - repo: local
     hooks:
       - id: ruff-check
@@ -232,11 +229,7 @@ repos:
       # RUST_VERSION) to this entry.
       - id: check-dockerfile-versions
         name: check-dockerfile-versions (ARG defaults match across Dockerfiles)
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.pre-commit-config.yaml
-        entry: bash scripts/check-dockerfile-versions.sh DEBIAN_VERSION PYTHON_VERSION
-=======
-        entry: bash scripts/check-dockerfile-versions.sh SSL_CERT_FILE SSL_CERT_DIR
->>>>>>> /tmp/template-new/.pre-commit-config.yaml
+        entry: bash scripts/check-dockerfile-versions.sh PYTHON_VERSION SSL_CERT_FILE SSL_CERT_DIR
         language: system
         # Also when the check itself, or this entry (the ARG list), changes.
         files: ^((\.devcontainer/)?Dockerfile|scripts/check-dockerfile-versions\.sh|\.pre-commit-config\.yaml)$
