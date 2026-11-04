@@ -4,7 +4,7 @@
 # devcontainer image is the base-owned .devcontainer/Dockerfile's `develop`
 # stage.
 
-# PYTHON_VERSION and DEBIAN_VERSION are also declared in
+# PYTHON_VERSION, SSL_CERT_FILE and SSL_CERT_DIR are also declared in
 # .devcontainer/Dockerfile; scripts/check-dockerfile-versions.sh keeps the
 # two equal.
 
