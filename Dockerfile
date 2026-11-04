@@ -13,7 +13,7 @@ ARG PYTHON_VERSION=3.14.8
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.17
+ARG UV_VERSION=0.13.6
 
 ARG APP_UID=1000
 
