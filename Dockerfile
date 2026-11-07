@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.28
+# syntax=docker/dockerfile:1.28@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
 # Runtime image (builder → runner), the repo's only top-level Dockerfile, in
 # the layout template-docker expects (docs/TEMPLATE.md's "Image layer"). The
 # devcontainer image is the base-owned .devcontainer/Dockerfile's `develop`
