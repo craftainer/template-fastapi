@@ -583,7 +583,7 @@ wheels = [
 
 [[package]]
 name = "craftainer-crud"
-version = "0.8.1"
+version = "0.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
@@ -591,9 +591,9 @@ dependencies = [
     { name = "python-multipart" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d6/c8/368140d17547e2765043179a426a41995f4442cee3fd2fc349c58e73a902/craftainer_crud-0.8.1.tar.gz", hash = "sha256:9c1f8a50c747a3dfe15d5edd8fe2fe81d8daff0cddb9fc97f9bbf276263744cc", size = 434634, upload-time = "2026-11-01T08:55:13.285Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/65/9e/dfaddc4cf74e784d24999e7ad07f5282ddaac480ee58194a29d5aa441bb9/craftainer_crud-0.10.0.tar.gz", hash = "sha256:3e0ed636fb1493fc97c9d11c7b9c780000a4aa231847fbaf7b6995a3aa1066ec", size = 501683, upload-time = "2026-11-12T22:54:18.421Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ca/d7/90578e3d5bf3264b7980ca2b29d99f0c092c3a0e3b007c8544e8181a2c34/craftainer_crud-0.8.1-py3-none-any.whl", hash = "sha256:05a2532b4b796535d1e020e7c29728ad59bc88b97225898207682c102548abaa", size = 134468, upload-time = "2026-11-01T08:55:12.106Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/d6/ccf0960dbc040b1d540ed0d0dd42e307df6f70489152826dad9af37fad56/craftainer_crud-0.10.0-py3-none-any.whl", hash = "sha256:106eb306f1bbfd307f8e5a979cacd05abf394418f55e04c213bae66c60dfca2c", size = 150809, upload-time = "2026-11-12T22:54:17.174Z" },
 ]
 
 [package.optional-dependencies]
@@ -619,14 +619,14 @@ wheels = [
 
 [[package]]
 name = "craftainer-observability"
-version = "0.4.0"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/02/3f/f7d0b67bfabcc5abd6766447b7fdd98f517779e4af994d83f60aaf6b549c/craftainer_observability-0.4.0.tar.gz", hash = "sha256:0e22b87b9379f098eb27ab69dc66783830c3d41402fbb89ebd33c9f3513c2520", size = 270236, upload-time = "2026-10-30T19:37:03.881Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a0/7e/ec7f8d9a59aa88cd2e3dd1587219db202235d4ed96f792f57574c70ec8dc/craftainer_observability-0.5.0.tar.gz", hash = "sha256:40a5207ef985afb36ada677edc4621baa2d02dd027ea4a7457a2f1bd79091800", size = 335563, upload-time = "2026-11-12T20:19:09.943Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/b2/b1ff61a2f900088abac392bdd18c2b41471b6acedb8e1dec18bfd091b97a/craftainer_observability-0.4.0-py3-none-any.whl", hash = "sha256:3b67562a38f23907ae71cfe8165f7b2e67519fddfe9153950470c33ce112988e", size = 47517, upload-time = "2026-10-30T19:37:02.877Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/af/636189c3f7bd54dff57c6320d7129d1f3af44a4dc8d892ecbf8108138424/craftainer_observability-0.5.0-py3-none-any.whl", hash = "sha256:15c401c0aff47c6a5e00ed33056624189b12d439a5a779fe98218a2d8c084315", size = 56574, upload-time = "2026-11-12T20:19:08.918Z" },
 ]
 
 [package.optional-dependencies]
@@ -2611,9 +2611,9 @@ requires-dist = [
     { name = "asyncpg", specifier = "==0.32.0" },
     { name = "boto3", specifier = "==1.43.123" },
     { name = "boto3-stubs", extras = ["s3"], marker = "extra == 'dev'", specifier = "==1.43.123" },
-    { name = "craftainer-crud", extras = ["mqtt", "xml"], specifier = ">=0.8.1,<0.9" },
+    { name = "craftainer-crud", extras = ["mqtt", "xml"], specifier = ">=0.10.0,<0.11" },
     { name = "craftainer-crud-sdk", marker = "extra == 'dev'", specifier = ">=0.3.1,<0.4" },
-    { name = "craftainer-observability", extras = ["otel", "sqlalchemy", "redis", "s3", "http", "analytics"], specifier = ">=0.4.0,<0.5" },
+    { name = "craftainer-observability", extras = ["otel", "sqlalchemy", "redis", "s3", "http", "analytics"], specifier = ">=0.5.0,<0.6" },
     { name = "debugpy", specifier = "==1.8.22" },
     { name = "defusedxml", specifier = "==0.7.1" },
     { name = "fastapi", specifier = "==0.162.0" },
