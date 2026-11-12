@@ -38,7 +38,7 @@ IMAGE_SCAN_STRICT ?=
 # (a customManager in .github/renovate.json). The SBOM tool runs as root with
 # dist/ (the image tar) mounted read-write, so a retagged image must not run.
 # Apache-2.0.
-SYFT_IMAGE := anchore/syft:v1.52.0@sha256:500e2d872ac019436926e8322b4fc1f39441d94d21f6f4046c6ff29b30e8cb02
+SYFT_IMAGE := anchore/syft:v1.55.0@sha256:4cc92b64ca74ffca4c94d4c8fcc01f217731375300be14d0b6eeb2e82eaa110a
 
 # Pinned by tag and digest; Renovate updates both together. Apache-2.0. The
 # `-immutable` tag, not `vX.Y.Z`: quay.io rebuilds the plain tags daily and
