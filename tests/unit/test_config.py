@@ -30,8 +30,24 @@ _PRODUCTION_KWARGS: dict[str, object] = {
 
 @pytest.fixture(autouse=True)
 def _clear_oidc_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Drop the devcontainer's http:// OIDC_* settings, which would override production kwargs."""
-    for name in ("OIDC_ISSUER", "OIDC_ISSUER_URL", "OIDC_DISCOVERY_URL"):
+    """Drop the devcontainer's OIDC_* and MQTT_* settings, which would override the kwargs.
+
+    The devcontainer's stack points OIDC at http:// URLs and the MQTT broker at TLS with
+    credentials; these tests assert the defaults and production kwargs, not that environment.
+    """
+    for name in (
+        "OIDC_ISSUER",
+        "OIDC_ISSUER_URL",
+        "OIDC_DISCOVERY_URL",
+        "MQTT_PORT",
+        "MQTT_USE_TLS",
+        "MQTT_USERNAME",
+        "MQTT_PASSWORD",
+        "MQTT_CA_FILE",
+        "MQTT_CLIENT_CERT",
+        "MQTT_CLIENT_KEY",
+        "MQTT_ALLOW_INSECURE",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 

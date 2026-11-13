@@ -117,8 +117,8 @@ TLS with a self-signed certificate and refuses anonymous clients
 (`../../.devcontainer/stack/mqtt/`). The PR's code trusts the certificate
 through `MQTT_CA_FILE`; releases that predate that setting build their MQTT
 TLS context from the default trust store, so step 3 exports
-`SSL_CERT_FILE=$MQTT_CA_FILE` just before the tag's tests run (after the
-dependency sync).
+`SSL_CERT_FILE` to the system CA bundle plus that certificate just before the
+tag's tests run (after the dependency sync).
 
 **Skips until the first release with `RUN_MIGRATIONS_ON_STARTUP`.** Older
 code always migrates on startup and would try to migrate a database whose

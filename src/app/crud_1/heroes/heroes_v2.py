@@ -30,12 +30,12 @@ from craftainer_crud.manifest import ManifestOptions
 from craftainer_crud.models.base import DBSession
 from craftainer_crud.models.revision import Revision
 from craftainer_crud.repositories.base import Repository
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 
 from app.crud_1.analytics_events import AnalyticsEventSink
 from app.crud_1.wiring import bulk_rate_limit, manifest_registry, stats_cache
 from app.models.hero import Hero as HeroModel
-from app.oidc import bearer_challenge, get_current_claims, require_roles
+from app.oidc import get_current_claims, require_roles, subject_of
 from app.views.hero_v2 import HeroV2, HeroV2Create, HeroV2Update
 
 _hero_repository = build_repository_provider(HeroModel)
@@ -88,14 +88,7 @@ def get_hero_owner_scope(
     Also the router's `scope_dependency`, so `GET <prefix>/events` resolves just this (token
     claims) and holds no database session for the stream's life (craftainer_crud ADR 0009).
     """
-    sub = claims.get("sub")
-    if not isinstance(sub, str) or not sub.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers=bearer_challenge("invalid_token"),
-        )
-    return OwnerScope("owner_id", sub, read_scoped=False)
+    return OwnerScope("owner_id", subject_of(claims), read_scoped=False)
 
 
 HeroOwnerScope = Annotated[OwnerScope, Depends(get_hero_owner_scope)]

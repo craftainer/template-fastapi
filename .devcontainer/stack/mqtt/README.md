@@ -39,8 +39,13 @@ of the stack); the running containers keep the old broker.
 - Reach this service from a tool running inside the devcontainer network
   rather than publishing the port to the host — `mosquitto_pub`/
   `mosquitto_sub` (shipped in the broker image itself; run them via
-  `docker compose exec mqtt mosquitto_pub -h localhost -t <topic> -m
-  <message>`) for manual publish/subscribe testing.
+  `docker compose exec mqtt sh -c 'mosquitto_pub -h mqtt -p 8883
+  --cafile /tls/mqtt.crt -u "$MQTT_USERNAME" -P "$MQTT_PASSWORD" -t <topic>
+  -m <message>'`; the broker only accepts TLS and credentials) for manual
+  publish/subscribe testing.
+- Delete the `mqtt-tls` volume (`docker compose down -v` removes it with the
+  rest) to regenerate the certificate if its pair is ever stale or mismatched;
+  `mqtt-tls-cert` only writes one when a file is missing or empty.
 
 ## Don't
 
@@ -54,8 +59,10 @@ of the stack); the running containers keep the old broker.
 ## Removing this service
 
 Delete this directory and remove its compose file entry from
-`.devcontainer/compose.instance.yml`'s `include:` list (and the `myapp` service's
-matching `depends_on:` entry there) — this also removes the real
+`.devcontainer/compose.instance.yml`'s `include:` list, and from the `myapp`
+service there the matching `depends_on:` entry, the `./stack/mqtt/mqtt.env`
+`env_file:` entry, the `mqtt-tls:/mqtt-tls:ro` volume and the `MQTT_*`
+environment entries (the file and the volume would no longer exist) — this also removes the real
 (non-`MODE=mock`) backend for `craftainer_crud.interfaces.base.MQTTEventSink`/
 `MQTTEventSource`, so a resource using `event_source_dependency` would
 need `MODE=mock` or a different broker configured via

@@ -30,8 +30,14 @@ We will:
   sets `MODE`; every launcher sets it: `.devcontainer/compose.instance.yml` (`dev`), the smoke
   stack `compose.yml` (`production`), `image.mk`'s image runs (`mock`, `dev`) and the test
   suites.
-- Build Alembic's engine with `app.db.build_engine(get_settings())`, so migrations use the
-  same TLS mode and timeouts as requests. `build_connect_args` is the single mapping.
+- Build Alembic's connection with `app.db.build_connect_args`, so migrations use the same
+  TLS mode and connect timeout as requests (one connection, no pool).
+  **Deliberate deviation:** `DB_COMMAND_TIMEOUT` is not applied to migrations. It bounds a
+  request's statements, and an index build or table rewrite legitimately runs longer; a
+  command timeout would abort the DDL and keep the app from starting. The connect timeout
+  and TLS are what stop a black-holed or downgraded connection.
+- Refuse a token without a usable `sub` with 401 `invalid_token` wherever the caller is
+  identified (`app.oidc.subject_of`): Hero's owner scope and `/audit`.
 - Map MQTT onto `craftainer_crud.config.MQTTConfig` with its TLS options (`MQTT_CA_FILE`,
   `MQTT_CLIENT_CERT`, `MQTT_CLIENT_KEY`) and `MQTT_ALLOW_INSECURE`. Production still requires
   TLS, a username and a password, and now also refuses `MQTT_ALLOW_INSECURE`. The port

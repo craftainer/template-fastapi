@@ -5,7 +5,8 @@
 # this file's own directory (see ../README.md's "Devcontainer stack pattern").
 services:
   # One-shot: writes a self-signed dev certificate (SAN DNS:mqtt, what the app and the
-  # healthcheck connect to) into the `mqtt-tls` volume, once. The broker serves it and the
+  # healthcheck connect to) into the `mqtt-tls` volume, once (only when a file is missing or
+  # empty; delete the volume to regenerate). The broker serves it and the
   # app mounts the volume read-only to trust it (MQTT_CA_FILE). World-readable on purpose:
   # the broker, the app and this one-shot run as different users, and the pair has no value
   # outside this local stack.
@@ -14,11 +15,11 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - >-
-        [ -f /tls/mqtt.crt ] && [ -f /tls/mqtt.key ] ||
-        { openssl req -x509 -newkey rsa:2048 -nodes -days 3650
+        { [ -s /tls/mqtt.crt ] && [ -s /tls/mqtt.key ]
+        || openssl req -x509 -newkey rsa:2048 -nodes -days 3650
         -keyout /tls/mqtt.key -out /tls/mqtt.crt -subj /CN=mqtt
-        -addext subjectAltName=DNS:mqtt,DNS:localhost
-        && chmod 644 /tls/mqtt.key /tls/mqtt.crt; }
+        -addext subjectAltName=DNS:mqtt,DNS:localhost; }
+        && chmod 644 /tls/mqtt.key /tls/mqtt.crt
     volumes:
       - mqtt-tls:/tls
 
