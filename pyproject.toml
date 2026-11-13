@@ -28,7 +28,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi==0.66b2",
     "opentelemetry-instrumentation-sqlalchemy==0.66b2",
     "granian==2.8.7",
-    "craftainer-crud[mqtt,xml]>=0.10.0,<0.11",
+    "craftainer-crud[mqtt,xml]>=0.11.0,<0.12",
     "craftainer-observability[otel,sqlalchemy,redis,s3,http,analytics]>=0.5.0,<0.6",
 ]
 
@@ -54,7 +54,7 @@ dev = [
     "py-spy==0.4.2",
     "pyinstrument==5.1.3",
     "squawk-cli==2.71.0",
-    "craftainer-crud-sdk>=0.3.1,<0.4",
+    "craftainer-crud-sdk>=0.4.0,<0.5",
 ]
 
 [build-system]
