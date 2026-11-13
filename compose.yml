@@ -5,9 +5,10 @@
 # never referenced by devcontainer.json) -- selenium is left out since
 # nothing here needs a browser driver.
 #
-# Unlike .devcontainer/compose.yml, this file leaves MODE at the runner
-# stage's own production default (Dockerfile) -- that's the whole point of
-# this smoke test -- which means it must also satisfy src/app/config.py's
+# Unlike .devcontainer/compose.yml, this file runs the api with MODE=production
+# (set explicitly below: the app and the Dockerfile have no MODE default) -- that's
+# the whole point of this smoke test -- which means it must also satisfy
+# src/app/config.py's
 # production-only guardrails: postgres_password/s3_access_key/s3_secret_key
 # can't be left at the stack fragments' shared local-dev defaults,
 # oidc_issuer_url/s3_endpoint_url/redis_url must all be encrypted, and
@@ -211,10 +212,10 @@ services:
       - ./.devcontainer/stack/keycloak/keycloak.env
     environment:
       # Fixed in-network hostnames/ports, not credentials -- same values
-      # .devcontainer/compose.yml sets literally. No MODE override: the
-      # runner stage's own ENV MODE=production default (Dockerfile) is
-      # exactly what this smoke test wants to exercise against real
-      # dependencies, not MODE=mock's in-memory fakes.
+      # .devcontainer/compose.yml sets literally. MODE is explicit: the app refuses
+      # to start without it, and production is exactly what this smoke test wants to
+      # exercise against real dependencies, not MODE=mock's in-memory fakes.
+      MODE: production
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       # Satisfies the production postgres_sslmode guardrail; the postgres
@@ -263,6 +264,10 @@ services:
       MQTT_HOST: mqtt
       MQTT_PORT: "8883"
       MQTT_USE_TLS: "true"
+      # The broker's self-signed certificate, trusted explicitly (not through the
+      # process-wide SSL_CERT_FILE): craftainer_crud builds a verifying TLS 1.2+ context
+      # from this file.
+      MQTT_CA_FILE: /tls/keycloak.crt
       MQTT_USERNAME: *smoke_mqtt_user
       MQTT_PASSWORD: *smoke_mqtt_password
       # Required under MODE=production (config.py); smoke-test-only value.

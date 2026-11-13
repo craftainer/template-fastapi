@@ -4,7 +4,10 @@ The checks themselves and the generic registry/router framework are tested in th
 craftainer-observability package repo.
 """
 
+import itertools
+
 import pytest
+from craftainer_observability.health import router as ready_router
 from craftainer_observability.health.base import HealthCheckResult
 from craftainer_observability.health.registry import HealthRegistry
 from fastapi.testclient import TestClient
@@ -15,6 +18,18 @@ from app.health_checks import MockHealthCheck, close_health_checks, get_health_r
 from app.main import app
 
 client = TestClient(app)
+# Module-level so the clock keeps rising across tests: the router's cache outlives each one.
+_ticks = itertools.count(step=10.0)
+
+
+@pytest.fixture(autouse=True)
+def _stale_ready_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every `/health/ready` result stale at once, so each request runs the checks.
+
+    The library caches the result for `HEALTH_READY_CACHE_TTL_SECONDS` (default 1 s). These
+    tests swap the registry between requests, so the clock the cache reads jumps 10 s per call.
+    """
+    monkeypatch.setattr(ready_router, "monotonic", lambda: next(_ticks))
 
 
 async def test_mock_health_check_always_reports_healthy() -> None:

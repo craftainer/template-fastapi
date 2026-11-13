@@ -75,8 +75,7 @@ ENV PYTHONUNBUFFERED=1 \
     SSL_CERT_FILE=${SSL_CERT_FILE} \
     SSL_CERT_DIR=${SSL_CERT_DIR} \
     REQUESTS_CA_BUNDLE=${SSL_CERT_FILE} \
-    CURL_CA_BUNDLE=${SSL_CERT_FILE} \
-    MODE=production
+    CURL_CA_BUNDLE=${SSL_CERT_FILE}
 
 # Create the user and the few writable directories first (home, /app/data),
 # then copy the app read-only on top: no recursive chgrp/chmod layer, and the

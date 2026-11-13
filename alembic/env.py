@@ -12,10 +12,11 @@ from craftainer_crud.models import (
 )
 from craftainer_crud.models.base import Base
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from alembic import context
 from app.config import get_settings
+from app.db import build_engine
 from app.models import hero  # noqa: F401 -- import registers Hero on Base.metadata
 
 config = context.config
@@ -53,8 +54,14 @@ def _do_run_migrations(connection: Connection) -> None:
 
 
 async def _run_async_migrations() -> None:
-    """Connect over asyncpg and run migrations through the sync-style API via run_sync."""
-    connectable: AsyncEngine = create_async_engine(get_settings().database_url)
+    """Connect over asyncpg and run migrations through the sync-style API via run_sync.
+
+    The engine comes from `app.db.build_engine`, so migrations use the same TLS mode
+    (`POSTGRES_SSLMODE`) and connect/command timeouts as the request path: without that,
+    the DDL session would fall back to asyncpg's default (`prefer`, plaintext on downgrade)
+    and a black-holed database would hang startup with no connect timeout.
+    """
+    connectable: AsyncEngine = build_engine(get_settings())
 
     async with connectable.connect() as connection:
         await connection.run_sync(_do_run_migrations)

@@ -69,9 +69,9 @@ stack used only for CI's smoke test
 ([.github/workflows/README.md](../.github/workflows/README.md)'s
 `smoke.yml` entry): it builds `api` from the `runner` stage instead of
 `develop`, uses the same Postgres/S3/Keycloak/Redis fragments but
-leaves out Selenium (nothing here needs a browser driver), and runs
-with no `MODE` override so the `runner` stage's own `MODE=production`
-default is what gets exercised.
+leaves out Selenium (nothing here needs a browser driver), and sets
+`MODE: production` explicitly (the app and the image have no `MODE`
+default, ADR 0028), so production is what gets exercised.
 
 Running `MODE=production` for real means also satisfying
 `src/app/config.py`'s production-only guardrails, which the shared

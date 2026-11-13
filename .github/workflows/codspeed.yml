@@ -48,6 +48,11 @@ jobs:
 
       - name: Run benchmarks
         uses: CodSpeedHQ/action@61efe07e57e55bedeab750c434504de272a56e8c # v5.6.1
+        # The app has no MODE default (it refuses to start without one), and this bare
+        # runner has no devcontainer environment to supply it. tests/bench swaps in the
+        # mock repository itself.
+        env:
+          MODE: dev
         with:
           mode: simulation
           # pyproject.toml's cache_dir points into the devcontainer's home, which
