@@ -5,6 +5,7 @@ craftainer-observability package repo.
 """
 
 import itertools
+import time
 
 import pytest
 from craftainer_observability.health import router as ready_router
@@ -29,7 +30,9 @@ def _stale_ready_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     The library caches the result for `HEALTH_READY_CACHE_TTL_SECONDS` (default 1 s). These
     tests swap the registry between requests, so the clock the cache reads jumps 10 s per call.
     """
-    monkeypatch.setattr(ready_router, "monotonic", lambda: next(_ticks))
+    # Real time plus a growing offset: a result cached earlier in the session (by a test
+    # that used the real clock) is stale too, not just ones this fixture cached.
+    monkeypatch.setattr(ready_router, "monotonic", lambda: time.monotonic() + next(_ticks))
 
 
 async def test_mock_health_check_always_reports_healthy() -> None:
