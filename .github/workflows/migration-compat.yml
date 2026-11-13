@@ -110,6 +110,15 @@ jobs:
           export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
           export RUN_MIGRATIONS_ON_STARTUP=false
           uv sync --locked --all-extras
+          # The dev broker serves TLS with a self-signed certificate (.devcontainer/
+          # stack/mqtt/). The PR's code trusts it through MQTT_CA_FILE; the previous
+          # release predates that setting and builds its MQTT context from the default
+          # trust store, which honors SSL_CERT_FILE. Point it at the system bundle plus
+          # that certificate (not the certificate alone, which would drop every other
+          # CA), and only now, after uv sync.
+          n1_ca_bundle="$(mktemp)"
+          cat "${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" "$MQTT_CA_FILE" > "$n1_ca_bundle"
+          export SSL_CERT_FILE="$n1_ca_bundle"
           # Keep the cacheprovider plugin loaded: the N-1 pyproject may set
           # cache_dir, which pytest rejects as an unknown ini option once
           # the plugin is disabled. Point the cache outside the tree instead.

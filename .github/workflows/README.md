@@ -112,6 +112,14 @@ on pull requests that touch `alembic/versions/` or the model packages
    against the migrated database with `RUN_MIGRATIONS_ON_STARTUP=false`,
    so the previous release has to keep working on the new schema.
 
+The tag runs against the *PR's* devcontainer stack, whose MQTT broker serves
+TLS with a self-signed certificate and refuses anonymous clients
+(`../../.devcontainer/stack/mqtt/`). The PR's code trusts the certificate
+through `MQTT_CA_FILE`; releases that predate that setting build their MQTT
+TLS context from the default trust store, so step 3 exports
+`SSL_CERT_FILE` to the system CA bundle plus that certificate just before the
+tag's tests run (after the dependency sync).
+
 **Skips until the first release with `RUN_MIGRATIONS_ON_STARTUP`.** Older
 code always migrates on startup and would try to migrate a database whose
 revision it doesn't know. A first step reads the latest release tag's
