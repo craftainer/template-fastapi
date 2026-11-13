@@ -20,7 +20,7 @@ from app.main import app
 
 client = TestClient(app)
 # Module-level so the clock keeps rising across tests: the router's cache outlives each one.
-_ticks = itertools.count(step=10.0)
+_ticks = itertools.count(start=10.0, step=10.0)
 
 
 @pytest.fixture(autouse=True)

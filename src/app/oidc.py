@@ -206,7 +206,8 @@ def subject_of(claims: dict[str, Any]) -> str:
     rather than index `claims["sub"]` (a KeyError is a 500) or treat it as an unowned caller.
     """
     sub = claims.get("sub")
-    if not isinstance(sub, str) or not sub.strip():
+    # e2e-unreachable: the live api's tokens always carry `sub`; covered by tests/unit.
+    if not isinstance(sub, str) or not sub.strip():  # pragma: no cover
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
