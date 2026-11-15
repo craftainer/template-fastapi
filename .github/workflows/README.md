@@ -14,7 +14,6 @@
   `SEMVER_RELEASE_TYPE=` with an optional `major`, `minor` or `patch`
   value, failing otherwise), so a `!`-marked PR title (or, on
   `main`, head commit subject) runs `cargo semver-checks` as `major`.
-<<<<<<< /home/runner/work/template-fastapi/template-fastapi/.github/workflows/README.md
 - `smoke.yml` — builds the `runner` stage of the root `Dockerfile` via
   the root `compose.yml`, starts it against the real Postgres, RustFS,
   Redis, and Keycloak backing services, in production mode (TLS and
@@ -25,8 +24,6 @@
   arch-specific runtime break (e.g. a C-extension dependency missing an
   arm64 wheel), since `checks.yml`'s test run uses `MODE=mock`
   in-process fakes for some paths rather than the built image.
-=======
->>>>>>> /tmp/template-new/.github/workflows/README.md
 - `release.yml` — manually triggered, and only from the default branch:
   the `version` job's first step fails on any other ref, and `build`,
   `release` and `publish-packages` repeat the check in their own `if:`.
