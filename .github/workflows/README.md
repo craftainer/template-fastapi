@@ -11,7 +11,8 @@
   does not, so the step is skipped here) and the hooks step forwards its
   `SEMVER_RELEASE_TYPE` into the container (the step appends the script's
   output to `$GITHUB_ENV` only if it is empty or exactly
-  `SEMVER_RELEASE_TYPE=<lowercase word>`, failing otherwise), so a `!`-marked PR title (or, on
+  `SEMVER_RELEASE_TYPE=` with an optional `major`, `minor` or `patch`
+  value, failing otherwise), so a `!`-marked PR title (or, on
   `main`, head commit subject) runs `cargo semver-checks` as `major`.
 - `smoke.yml` — builds the `runner` stage of the root `Dockerfile` via
   the root `compose.yml`, starts it against the real Postgres, RustFS,
