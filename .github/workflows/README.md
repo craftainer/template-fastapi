@@ -123,8 +123,10 @@ verified end-to-end on arm64 hardware on 2026-09-06.
 ## Migration compatibility
 
 `migration-compat.yml` enforces `../../docs/nfrs/NFR-0027-expand-contract-migrations.md`
-on pull requests that touch `alembic/versions/` or the model packages
-(and on demand). Inside the devcontainer, like `checks.yml`, it:
+on pull requests that touch `alembic/`, `alembic.ini`, any Python file under
+`src/` (whatever the package is named), `uv.lock`, `pyproject.toml`, the
+lint script or the workflow itself (and on demand). The `paths` filter uses
+positive patterns only, so docs- and README-only changes don't trigger it. Inside the devcontainer, like `checks.yml`, it:
 
 1. lints the PR's new or changed revisions with Squawk
    (`../../scripts/lint-migrations.sh`);
@@ -151,7 +153,9 @@ revision it doesn't know. A first step reads the latest release tag's
 writes the reason to the run summary and a notice annotation, still runs
 the lint, and finishes green (steps 2 and 3 are the only ones skipped).
 It starts enforcing on its own once a release containing the setting
-exists.
+exists. That first step still reads `src/app/config.py`; an instance that
+renames the package has to keep that path or patch the step (it is not yet
+configurable).
 
 ## Perf and microbenchmarks
 
