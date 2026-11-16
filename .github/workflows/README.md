@@ -147,15 +147,13 @@ tag's tests run (after the dependency sync).
 
 **Skips until the first release with `RUN_MIGRATIONS_ON_STARTUP`.** Older
 code always migrates on startup and would try to migrate a database whose
-revision it doesn't know. A first step reads the latest release tag's
-`src/app/config.py`; if there is no stable tag, or the file has no
-`run_migrations_on_startup` setting, the N-1 part is skipped: the job
+revision it doesn't know. A first step searches the latest release tag with `git grep` for
+`run_migrations_on_startup` in its Python files under `src/`; if there is no
+stable tag, or nothing there mentions the setting, the N-1 part is skipped: the job
 writes the reason to the run summary and a notice annotation, still runs
 the lint, and finishes green (steps 2 and 3 are the only ones skipped).
 It starts enforcing on its own once a release containing the setting
-exists. That first step still reads `src/app/config.py`; an instance that
-renames the package has to keep that path or patch the step (it is not yet
-configurable).
+exists. The search is package-agnostic, so a renamed `src/<pkg>/` works; a `git grep` error (anything but match or no match) fails the step instead of skipping.
 
 ## Perf and microbenchmarks
 
