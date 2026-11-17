@@ -123,8 +123,10 @@ verified end-to-end on arm64 hardware on 2026-09-06.
 ## Migration compatibility
 
 `migration-compat.yml` enforces `../../docs/nfrs/NFR-0027-expand-contract-migrations.md`
-on pull requests that touch `alembic/versions/` or the model packages
-(and on demand). Inside the devcontainer, like `checks.yml`, it:
+on pull requests that touch `alembic/`, `alembic.ini`, any Python file under
+`src/` (whatever the package is named), `uv.lock`, `pyproject.toml`, the
+lint script or the workflow itself (and on demand). The `paths` filter uses
+positive patterns only, so docs- and README-only changes don't trigger it. Inside the devcontainer, like `checks.yml`, it:
 
 1. lints the PR's new or changed revisions with Squawk
    (`../../scripts/lint-migrations.sh`);
@@ -145,13 +147,13 @@ tag's tests run (after the dependency sync).
 
 **Skips until the first release with `RUN_MIGRATIONS_ON_STARTUP`.** Older
 code always migrates on startup and would try to migrate a database whose
-revision it doesn't know. A first step reads the latest release tag's
-`src/app/config.py`; if there is no stable tag, or the file has no
-`run_migrations_on_startup` setting, the N-1 part is skipped: the job
+revision it doesn't know. A first step searches the latest release tag with `git grep` for
+`run_migrations_on_startup` in its Python files under `src/`; if there is no
+stable tag, or nothing there mentions the setting, the N-1 part is skipped: the job
 writes the reason to the run summary and a notice annotation, still runs
 the lint, and finishes green (steps 2 and 3 are the only ones skipped).
 It starts enforcing on its own once a release containing the setting
-exists.
+exists. The search is package-agnostic, so a renamed `src/<pkg>/` works; a `git grep` error (anything but match or no match) fails the step instead of skipping.
 
 ## Perf and microbenchmarks
 
