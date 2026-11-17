@@ -157,7 +157,10 @@ replace:
   # the header note above about what "replace" means for a path an instance
   # has deleted.
   # src/README.md is merge tier, so src/ is listed as its package, not as a
-  # directory (a path matching two tiers fails the completeness check).
+  # directory (a path matching two tiers fails the completeness check). An
+  # instance's own package (e.g. src/<name>/) is therefore in no tier: it
+  # lists it under ignore in its template-sync-manifest.local.yml
+  # (docs/TEMPLATE.md, "Classifying your own package").
   - src/app/
   - tests/
 
