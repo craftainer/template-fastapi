@@ -57,8 +57,11 @@ this file current" for where a new convention belongs.
 
 Base-owned files stay `replace` tier (a sync overwrites them) and expose
 hooks an instance fills with files it owns, so an instance never edits a
-base-owned file directly. Don't edit `.devcontainer/Dockerfile`, `scripts/develop.sh`
-or `compose.yml` in an instance; use the hooks below.
+base-owned file directly. Don't edit `.devcontainer/Dockerfile` or
+`scripts/develop.sh` in an instance; use the hooks below. The exceptions
+are the files an instance can only customize in place, which are `merge`
+tier so a sync keeps its edits: the root `compose.yml` (the smoke stack),
+`docs/README.md` and `src/README.md`.
 
 | Hook | Base side (template-owned) | Instance side (instance-owned) |
 |---|---|---|
