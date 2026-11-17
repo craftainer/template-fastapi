@@ -70,6 +70,25 @@ tier so a sync keeps its edits: the root `compose.yml` (the smoke stack),
 | Extra compose services / dev-service settings | `devcontainer.json` `"dockerComposeFile": ["compose.yml", "compose.instance.yml"]` | `.devcontainer/compose.instance.yml` (base ships a stub, `ignore` tier) |
 | Instance skills and agents | base's manifest lists each of its own skills (`.claude/skills/<name>/`) and agents (`.claude/agents/<name>.md`) one by one under `replace`, not as a directory glob; a deleted base skill or agent keeps its line as a tombstone so sync removes it from instances. An instance's own name must not reuse a base or tombstoned one, since sync would overwrite or remove it | `.claude/skills/<name>/`, `.claude/agents/<name>.md`, listed in `.github/template-sync-manifest.local.yml`'s `ignore:` |
 | Runtime image | nothing (the devcontainer image lives in `.devcontainer/`) | top-level `Dockerfile` + `.dockerignore`, listed in `.github/template-sync-manifest.local.yml`'s `ignore:` |
+| Instance package | `src/app/` (`replace` tier: the template's own example package) and `src/README.md` (`merge`) | an instance's own package, e.g. `src/<name>/`, listed in `.github/template-sync-manifest.local.yml`'s `ignore:` (see below) |
+
+**Classifying your own package.** The manifest lists `src/app/`, not `src/`
+(`src/README.md` is `merge` tier, and a path that matches two tiers fails the
+completeness check), so a package an instance adds or renames to, say
+`src/trustbridge/`, matches no tier and the `template-sync-manifest` hook
+fails with "not classified" until you list it. Add it to
+`.github/template-sync-manifest.local.yml`:
+
+```yaml
+ignore:
+  - src/trustbridge/
+```
+
+The same goes for any other top-level directory of your own under `src/`.
+Because `src/app/` stays `replace` tier, a sync recreates it if you removed or
+renamed it; an instance that has renamed `app` should expect that directory to
+reappear in the sync PR and delete it there, or ask for it to be moved to
+`ignore` in a template release.
 
 Files with no include mechanism of their own (JSON configs,
 `.pre-commit-config.yaml` — prek has no include) are `merge` tier, so an
