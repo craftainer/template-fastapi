@@ -11,7 +11,7 @@ services:
   # the broker, the app and this one-shot run as different users, and the pair has no value
   # outside this local stack.
   mqtt-tls-cert:
-    image: alpine/openssl:latest@sha256:6821afa2476e11be343f29275f2ca24291720ff0a7148bd131fd8e314ff26d9e
+    image: alpine/openssl:latest@sha256:9698e7956c08e713265da24c4587205beba3eaa6af2b319d73575d30a6ff033e
     entrypoint: ["sh", "-c"]
     command:
       - >-
